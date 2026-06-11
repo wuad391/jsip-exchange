@@ -25,7 +25,7 @@ let make_order
 
 (* --- add / find / remove --- *)
 
-let%test_unit "add and find an order" =
+let%expect_test "add and find an order" =
   let book = Order_book.create Harness.aapl in
   let order = make_order ~side:Buy ~price_cents:15000 ~order_id:1 () in
   Order_book.add book order;
@@ -34,14 +34,14 @@ let%test_unit "add and find an order" =
     ~expect:(Some order)
 ;;
 
-let%test_unit "find returns None for unknown order" =
+let%expect_test "find returns None for unknown order" =
   let book = Order_book.create Harness.aapl in
   [%test_result: _ option]
     (Order_book.find book (Order_id.For_testing.of_int 1))
     ~expect:None
 ;;
 
-let%test_unit "remove an order" =
+let%expect_test "remove an order" =
   let book = Order_book.create Harness.aapl in
   let order = make_order ~side:Sell ~price_cents:15100 ~order_id:1 () in
   Order_book.add book order;
@@ -54,7 +54,7 @@ let%test_unit "remove an order" =
     ~expect:None
 ;;
 
-let%test_unit "remove returns None for unknown order" =
+let%expect_test "remove returns None for unknown order" =
   let book = Order_book.create Harness.aapl in
   [%test_result: _ option]
     (Order_book.For_testing.remove book (Order_id.For_testing.of_int 1))
@@ -63,12 +63,12 @@ let%test_unit "remove returns None for unknown order" =
 
 (* --- is_empty / count --- *)
 
-let%test_unit "is_empty on fresh book" =
+let%expect_test "is_empty on fresh book" =
   let book = Order_book.create Harness.aapl in
   [%test_result: bool] (Order_book.is_empty book) ~expect:true
 ;;
 
-let%test_unit "count tracks orders on each side independently" =
+let%expect_test "count tracks orders on each side independently" =
   let book = Order_book.create Harness.aapl in
   Order_book.add
     book
@@ -123,13 +123,13 @@ let%expect_test "orders_on_side returns all orders on a side" =
 
 (* --- find_match --- *)
 
-let%test_unit "find_match returns None for empty book" =
+let%expect_test "find_match returns None for empty book" =
   let book = Order_book.create Harness.aapl in
   let order = make_order ~side:Buy ~price_cents:15000 ~order_id:1 () in
   [%test_result: _ option] (Order_book.find_match book order) ~expect:None
 ;;
 
-let%test_unit "find_match finds a tradable resting order" =
+let%expect_test "find_match finds a tradable resting order" =
   let book = Order_book.create Harness.aapl in
   let resting = make_order ~side:Sell ~price_cents:15000 ~order_id:1 () in
   Order_book.add book resting;
@@ -140,7 +140,7 @@ let%test_unit "find_match finds a tradable resting order" =
     ~expect:(Order.order_id resting)
 ;;
 
-let%test_unit "find_match returns None when prices don't cross" =
+let%expect_test "find_match returns None when prices don't cross" =
   let book = Order_book.create Harness.aapl in
   Order_book.add
     book
@@ -149,7 +149,7 @@ let%test_unit "find_match returns None when prices don't cross" =
   [%test_result: _ option] (Order_book.find_match book incoming) ~expect:None
 ;;
 
-let%test_unit "find_match: buy matches against asks, not bids" =
+let%expect_test "find_match: buy matches against asks, not bids" =
   let book = Order_book.create Harness.aapl in
   Order_book.add
     book
@@ -165,7 +165,7 @@ let%test_unit "find_match: buy matches against asks, not bids" =
 
 (* --- best_bid_offer --- *)
 
-let%test_unit "best_bid_offer: highest bid, lowest ask" =
+let%expect_test "best_bid_offer: highest bid, lowest ask" =
   let book = Order_book.create Harness.aapl in
   let high_bid = 15050 in
   let low_ask = 15100 in
@@ -190,12 +190,12 @@ let%test_unit "best_bid_offer: highest bid, lowest ask" =
     ~expect:(Some (Price.of_int_cents low_ask))
 ;;
 
-let%test_unit "best_bid_offer: empty book" =
+let%expect_test "best_bid_offer: empty book" =
   let book = Order_book.create Harness.aapl in
   [%test_result: Bbo.t] (Order_book.best_bid_offer book) ~expect:Bbo.empty
 ;;
 
-let%test_unit "best_bid_offer: aggregates size at best level" =
+let%expect_test "best_bid_offer: aggregates size at best level" =
   let book = Order_book.create Harness.aapl in
   let size1 = 50 in
   let size2 = 75 in

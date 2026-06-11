@@ -43,7 +43,7 @@ let make_order
     ~order_id:(Order_id.Generator.next gen)
 ;;
 
-let%test_unit "create: remaining_size starts equal to size" =
+let%expect_test "create: remaining_size starts equal to size" =
   let order = make_order ~size:75 () in
   [%test_result: Size.t] (Order.size order) ~expect:(Size.of_int 75);
   [%test_result: Size.t]
@@ -58,7 +58,7 @@ let%expect_test "create: rejects non-positive size" =
   [%expect {| ("Order.create: size must be positive" (req.size -5)) |}]
 ;;
 
-let%test_unit "fill: reduces remaining size" =
+let%expect_test "fill: reduces remaining size" =
   let order = make_order ~size:100 () in
   Order.fill order ~by:(Size.of_int 30);
   [%test_result: Size.t]
@@ -88,7 +88,7 @@ let%expect_test "fill: rejects overfill" =
     |}]
 ;;
 
-let%test_unit "is_fully_filled: true only when remaining = 0" =
+let%expect_test "is_fully_filled: true only when remaining = 0" =
   let order = make_order ~size:100 () in
   [%test_result: bool] (Order.is_fully_filled order) ~expect:false;
   Order.fill order ~by:(Size.of_int 50);

@@ -164,8 +164,8 @@ let%expect_test "current_bbos tracks latest BBO per symbol in \
     |}]
 ;;
 
-let%test_unit "every variant of [Harness.sample_events] gets a distinct \
-               color"
+let%expect_test "every variant of [Harness.sample_events] gets a distinct \
+                 color"
   =
   let colors = List.map Harness.sample_events ~f:Event_log.Color.of_event in
   let unique =

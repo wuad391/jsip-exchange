@@ -219,7 +219,7 @@ let%expect_test "orders for different symbols don't cross" =
 (* Engine queries *)
 (* ================================================================ *)
 
-let%test_unit "book: returns book for known symbol, None for unknown" =
+let%expect_test "book: returns book for known symbol, None for unknown" =
   let t = Harness.create () in
   let engine = Harness.engine t in
   [%test_result: bool]
@@ -278,7 +278,7 @@ let%expect_test "BBO update: reflects new best after fill" =
   [%expect {| BBO AAPL bid=- ask=- |}]
 ;;
 
-let%test_unit "BBO update: not emitted when BBO unchanged" =
+let%expect_test "BBO update: not emitted when BBO unchanged" =
   let t = Harness.create () in
   (* Add a sell at $151, then another at $152. The BBO doesn't change on the
      second add (best ask is still $151). *)
@@ -325,7 +325,7 @@ let%expect_test "trade report emitted for each fill" =
     |}]
 ;;
 
-let%test_unit "no market data events on rejection" =
+let%expect_test "no market data events on rejection" =
   let t = Harness.create () in
   let events =
     Harness.submit_quiet

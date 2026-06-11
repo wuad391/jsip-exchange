@@ -137,15 +137,15 @@ external client would use — `Bot_runtime.create` takes `submit` and
 The `app/` directory contains runnable binaries that compose the
 libraries into complete programs.
 
-| Application           | What it does                                                                                                                                                                                             |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app/server`          | Exchange server that listens for RPC connections on a TCP port. Supports `-seed-market-maker` (pre-seed the book) and `-trade-back-and-forth` (two MMs trading in a loop to generate sustained traffic). |
-| `app/client`          | Interactive client that connects to the server. Supports `BUY`, `SELL`, `BOOK`, and `SUBSCRIBE` commands.                                                                                                |
-| `app/market_maker`    | Library for a bot that seeds the book with resting orders around a fair value.                                                                                                                           |
-| `app/bots`            | Library where trading bots live. One module per bot; currently empty — we'll be adding bots as we build out the exchange.                                                                                |
-| `app/scenarios`       | Library where named scenarios live. One module per scenario (`Calm_day`, `Active_day`, `Earnings_shock`, `Flash_crash`); each satisfies `Scenario.S` and is registered in `Jsip_scenarios.all`.          |
-| `app/scenario_runner` | CLI that picks a scenario from `Jsip_scenarios`, starts a server, instantiates a `Fundamental_oracle`, schedules `News_injector` events, and starts the scenario's bots.                                 |
-| `app/monitor`         | Bonsai_term TUI: subscribes to the exchange's audit log and renders a filterable, color-coded stream of every event the matching engine produces.                                                        |
+| Application           | What it does                                                                                                                                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/server`          | Exchange server that listens for RPC connections on a TCP port. Supports `-seed-market-maker` (pre-seed the book) and `-trade-back-and-forth` (two MMs trading in a loop to generate sustained traffic).                                    |
+| `app/client`          | Interactive client that connects to the server. Supports `BUY`, `SELL`, `BOOK`, and `SUBSCRIBE` commands.                                                                                                                                   |
+| `app/market_maker`    | Library for a bot that seeds the book with resting orders around a fair value.                                                                                                                                                              |
+| `app/bots`            | Library where trading bots live. One module per bot; currently empty — we'll be adding bots as we build out the exchange.                                                                                                                   |
+| `app/scenarios`       | Library where named scenarios live. One module per scenario (`Calm_day`, `Active_day`, `Earnings_shock`, `Flash_crash`); each satisfies `Scenario.S` and is registered in `Jsip_scenarios.all`.                                             |
+| `app/scenario_runner` | CLI that picks a scenario from `Jsip_scenarios`, starts a server, instantiates a `Fundamental_oracle`, schedules `News_injector` events, and starts the scenario's bots.                                                                    |
+| `app/monitor`         | Bonsai_term TUI (text-based user interface — a styled terminal app, similar in spirit to `htop` or `vim`): subscribes to the exchange's audit log and renders a filterable, color-coded stream of every event the matching engine produces. |
 
 ### Test Harness (`lib/test_harness/src/`)
 
@@ -176,6 +176,9 @@ dune build
 # Run all tests
 dune runtest
 
+# Format the code
+dune fmt
+
 # Run the server and client (in separate terminals):
 
 # Run the exchange server with a market maker pre-seeding the book
@@ -195,18 +198,6 @@ dune exec app/scenario_runner/bin/main.exe -- -scenario calm-day -port 12345 -se
 # Watch the exchange's audit log in a filterable TUI
 dune exec app/monitor/bin/main.exe -- -host localhost -port 12345
 ```
-
-### API documentation
-
-Generate browsable HTML documentation from the doc comments in `.mli`
-files:
-
-```sh
-dune build @doc
-dune ocaml doc
-```
-
-<!-- CR-soon abauer for abauer: Check that this works well on a JSIP macbook. -->
 
 ### Client commands
 
@@ -238,26 +229,35 @@ the exchange's responses to your orders.
 
 ## Testing
 
-The project uses two styles of testing:
+Every test in the project is a `let%expect_test`, but they come in a few
+flavors depending on how they check correctness:
 
-- **Expect tests** (`let%expect_test`): run a scenario, print output to
-  stdout, and compare against expected output embedded in the source file.
-  Good for testing complex interactions where the output tells a story
-  (e.g., matching scenarios, book state). If the output changes, the test
-  fails and shows you a diff. Run `dune promote` to accept new output.
+- **Output-comparison tests**: run a scenario, print output to
+  stdout, and compare against expected output embedded in a `[%expect]` block
+  in the source file. Good for testing complex interactions where the output
+  tells a story (e.g., matching scenarios, book state). If the output changes,
+  the test fails and shows you a diff. Run `dune promote` to accept new output.
 
-- **Assert-based tests** (`let%test_unit` with `[%test_result]`): check that a value
-  equals an expected value directly, without printing. Good for simple value-level checks
-  (e.g., "this function returns 42"). On failure, they show the expected and actual values
-  as sexps. In some cases we want to assert that a function raises or doesn't raise an
-  exception in a particular scenario, and for that we use `require_does_raise` or
-  `require_does_not_raise` from `Expect_test_helpers_core`.
+- **Assert-based tests** (`[%test_result]`): check that a value
+  equals an expected value directly, without printing. A `let%expect_test`
+  doesn't need a `[%expect]` block — if the body only asserts and prints
+  nothing, an empty (silent) run is a pass. Good for simple value-level checks
+  (e.g., "this function returns 42"). On failure, `[%test_result]` shows the
+  expected and actual values as _sexps_ (s-expressions — Lisp-style
+  parenthesized text like `((symbol AAPL) (price 150))`, OCaml's standard way
+  to print a structured value as text). In some cases we want to assert that a
+  function raises or doesn't raise an exception in a particular scenario, and
+  for that we use `require_does_raise` or `require_does_not_raise` from
+  `Expect_test_helpers_core`.
 
-- **Wire-shape tests** (`lib/gateway/test/test_rpc_shapes.ml`): a special use of expect
-  tests that pins each RPC's `bin_io` shape digests of the types it sends over the wire.
-  Instead of fingerprinting program behavior, they fingerprint the _protocol_: a digest
-  changes only when a type's serialized layout changes — a new field, a new variant, or an
-  RPC pointed at a different type. They're the precise statement of "what's on the wire."
+- **Protocol-shape tests** (`lib/gateway/test/test_rpc_shapes.ml`): a special use of
+  expect tests that pins each RPC's serialization digests — short hex fingerprints
+  computed from the byte layout of every type the RPC sends. The serialization library
+  we use is called `bin_io` (binary I/O), and `[@@deriving bin_io]` on a type is what
+  asks the compiler to generate the encoding functions. Instead of fingerprinting
+  program behavior, these tests fingerprint the _protocol_: a digest changes only when
+  a type's byte layout changes — a new field, a new variant, or an RPC pointed at a
+  different type. They're the precise statement of "what bytes go over the network."
   When you extend the protocol, update this file (add a block for each new RPC) and
   `dune promote` once you've confirmed an intended change moved a digest.
 

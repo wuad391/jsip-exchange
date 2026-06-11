@@ -1,7 +1,7 @@
 open! Core
 open Jsip_types
 
-let%test_unit "notional_cents: price * size" =
+let%expect_test "notional_cents: price * size" =
   let fill =
     ({ fill_id = 1
      ; symbol = Symbol.of_string "AAPL"

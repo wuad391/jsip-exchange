@@ -83,11 +83,11 @@ let exits_after_press key =
   Controller.should_exit c
 ;;
 
-let%test_unit "pressing q sets should_exit" =
+let%expect_test "pressing q sets should_exit" =
   [%test_result: bool] (exits_after_press (Key.ASCII 'q')) ~expect:true
 ;;
 
-let%test_unit "no other browsing-mode key sets should_exit" =
+let%expect_test "no other browsing-mode key sets should_exit" =
   let check_no_exit key =
     [%test_result: bool]
       ~message:(Sexp.to_string [%sexp (key : Key.t)])
