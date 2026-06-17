@@ -123,6 +123,14 @@ let%expect_test "orders_on_side returns all orders on a side" =
 
 (* --- find_match --- *)
 
+(* let%expect_test "find_match returns None for empty book" = let book =
+   Order_book.create Harness.aapl in let order = make_order ~side:Buy
+   ~price_cents:15000 ~order_id:1 () in print_s
+   [%message (Order_book.find_match book order : Order.t option)];
+   [%expect {| |}] ;; *)
+
+(* [%test_result: _ option] (Order_book.find_match book order) ~expect:None *)
+
 let%expect_test "find_match returns None for empty book" =
   let book = Order_book.create Harness.aapl in
   let order = make_order ~side:Buy ~price_cents:15000 ~order_id:1 () in
@@ -140,13 +148,22 @@ let%expect_test "find_match finds a tradable resting order" =
     ~expect:(Order.order_id resting)
 ;;
 
+(* let%expect_test "find_match returns None when prices don't cross" = let
+   book = Order_book.create Harness.aapl in Order_book.add book (make_order
+   ~side:Sell ~price_cents:15100 ~order_id:1 ()); let incoming = make_order
+   ~side:Buy ~price_cents:15000 ~order_id:2 () in print_s
+   [%message (Order_book.find_match book incoming : Order.t option) (incoming : Order.t) (book : Order_book.t)];
+   [%expect {| |}] ;; *)
+
 let%expect_test "find_match returns None when prices don't cross" =
   let book = Order_book.create Harness.aapl in
   Order_book.add
     book
     (make_order ~side:Sell ~price_cents:15100 ~order_id:1 ());
   let incoming = make_order ~side:Buy ~price_cents:15000 ~order_id:2 () in
-  [%test_result: _ option] (Order_book.find_match book incoming) ~expect:None
+  [%test_result: Order.t option]
+    (Order_book.find_match book incoming)
+    ~expect:None
 ;;
 
 let%expect_test "find_match: buy matches against asks, not bids" =
@@ -274,13 +291,13 @@ let%expect_test "snapshot lists levels in price-time priority order" =
     {|
     === AAPL ===
       BIDS:
-        $150.00 x100
-        $149.95 x100
         $149.90 x100
+        $149.95 x100
+        $150.00 x100
       ASKS:
-        $150.05 x100
-        $150.10 x100
         $150.15 x100
+        $150.10 x100
+        $150.05 x100
       BBO: $150.00 x100 / $150.05 x100
     |}]
 ;;

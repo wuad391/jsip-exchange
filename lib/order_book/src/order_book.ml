@@ -63,6 +63,24 @@ let find t order_id =
   match find_in Buy with Some _ as result -> result | None -> find_in Sell
 ;;
 
+let price_time_compare side o1 o2 =
+  match
+    ( Price.is_more_aggressive
+        side
+        ~price:(Order.price o1)
+        ~than:(Order.price o2)
+    , Price.is_more_aggressive
+        side
+        ~price:(Order.price o2)
+        ~than:(Order.price o1)
+    , Time_in_force.compare (Order.time_in_force o2) (Order.time_in_force o1)
+    )
+  with
+  | true, _, _ -> 1
+  | _, true, _ -> -1
+  | _, _, x -> x
+;;
+
 (* NOTE: This walks the list front-to-back and returns the *first* tradable
    order, not the best-priced one. Orders are in reverse insertion order
    (newest first), so this matches against whatever was most recently added,
@@ -77,16 +95,15 @@ let find_match t incoming =
     List.filter (side_list t opposite_side) ~f:(fun order ->
       Price.is_marketable
         incoming_side
-        ~price:(Order.price order)
-        ~resting_price:(Order.price incoming))
+        ~price:(Order.price incoming)
+        ~resting_price:(Order.price order))
   in
   List.reduce resting_orders ~f:(fun r1 r2 ->
-    if Price.is_more_aggressive
-         incoming_side
-         ~price:(Order.price r2)
-         ~than:(Order.price r1)
-    then r2
-    else r1)
+    match price_time_compare opposite_side r1 r2 with
+    | 1 -> r1
+    | -1 -> r2
+    | 0 -> r1
+    | _ -> raise_s [%message "invalid"])
 ;;
 
 let orders_on_side t side = side_list t side
@@ -130,21 +147,9 @@ let best_bid_offer t : Bbo.t =
    Also check out the hints?? I think there is something we are missing in
    the hints. *)
 let snapshot_side t (side : Side.t) =
-  let compare o1 o2 =
-    match
-      ( Price.compare (Order.price o1) (Order.price o2)
-      , Comparable.reverse
-          Time_in_force.compare
-          (Order.time_in_force o1)
-          (Order.time_in_force o2) )
-    with
-    | 1, _ -> 1
-    | -1, _ -> -1
-    | _, x -> x
-    (* match side with | Buy -> Comparable.reverse Level.compare | Sell ->
-       Level.compare *)
-  in
-  orders_on_side t side |> List.sort ~compare |> List.map ~f:Level.of_order
+  orders_on_side t side
+  |> List.sort ~compare:(price_time_compare side)
+  |> List.map ~f:Level.of_order
 ;;
 
 let snapshot t =
