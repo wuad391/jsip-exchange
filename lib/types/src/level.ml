@@ -1,5 +1,6 @@
 open! Core
 
+(* The level of an order is defined by the price and the size of the order *)
 type t =
   { (* Important that price is defined first for the purposes of the derived
        comparison function *)

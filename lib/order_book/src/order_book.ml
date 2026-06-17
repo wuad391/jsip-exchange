@@ -125,13 +125,26 @@ let best_bid_offer t : Bbo.t =
   { bid = best_level t Buy; ask = best_level t Sell }
 ;;
 
+(* TODO: This function seems kind of ugly. We should check if there is a
+   better way to do this, esp if there is more elegant way to do the compare.
+   Also check out the hints?? I think there is something we are missing in
+   the hints. *)
 let snapshot_side t (side : Side.t) =
-  let compare =
-    match side with
-    | Buy -> Comparable.reverse Level.compare
-    | Sell -> Level.compare
+  let compare o1 o2 =
+    match
+      ( Price.compare (Order.price o1) (Order.price o2)
+      , Comparable.reverse
+          Time_in_force.compare
+          (Order.time_in_force o1)
+          (Order.time_in_force o2) )
+    with
+    | 1, _ -> 1
+    | -1, _ -> -1
+    | _, x -> x
+    (* match side with | Buy -> Comparable.reverse Level.compare | Sell ->
+       Level.compare *)
   in
-  orders_on_side t side |> List.map ~f:Level.of_order |> List.sort ~compare
+  orders_on_side t side |> List.sort ~compare |> List.map ~f:Level.of_order
 ;;
 
 let snapshot t =
