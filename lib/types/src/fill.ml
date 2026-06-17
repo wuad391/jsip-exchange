@@ -39,4 +39,33 @@ let to_string
     (Participant.to_string resting_participant)
 ;;
 
+(* this function satisfies exercise 4 and is used to return a client view.
+   TODO: is there a more elegant way to not repeat the ugly sprintf. could
+   factor out but then have to case again for None *)
+let to_participant_view t participant =
+  match
+    ( Participant.equal participant t.aggressor_participant
+    , Participant.equal participant t.resting_participant )
+  with
+  | true, _ ->
+    Some
+      (sprintf
+         "You %s %d %s at %s."
+         (match t.aggressor_side with Buy -> "bought" | Sell -> "sold")
+         (Size.to_int t.size)
+         (Symbol.to_string t.symbol)
+         (Price.to_string_dollar t.price))
+  | _, true ->
+    Some
+      (sprintf
+         "You %s %d %s at %s."
+         (match Side.flip t.aggressor_side with
+          | Buy -> "bought"
+          | Sell -> "sold")
+         (Size.to_int t.size)
+         (Symbol.to_string t.symbol)
+         (Price.to_string_dollar t.price))
+  | _ -> None
+;;
+
 let notional_cents t = Price.to_int_cents t.price * Size.to_int t.size
