@@ -63,23 +63,32 @@ let find t order_id =
   match find_in Buy with Some _ as result -> result | None -> find_in Sell
 ;;
 
-let price_time_compare side o1 o2 =
-  match
-    ( Price.is_more_aggressive
-        side
-        ~price:(Order.price o1)
-        ~than:(Order.price o2)
-    , Price.is_more_aggressive
-        side
-        ~price:(Order.price o2)
-        ~than:(Order.price o1)
-    , Time_in_force.compare (Order.time_in_force o2) (Order.time_in_force o1)
-    )
-  with
-  | true, _, _ -> 1
-  | _, true, _ -> -1
-  | _, _, x -> x
+let price_time_compare side order1 order2 =
+  let order1_more_than_order2 =
+    Price.is_more_aggressive
+      side
+      ~price:(Order.price order1)
+      ~than:(Order.price order2)
+  in
+  let order2_more_than_order1 =
+    Price.is_more_aggressive
+      side
+      ~price:(Order.price order2)
+      ~than:(Order.price order1)
+  in
+  (* reverse compare order2 and order1 because smaller time is better
+     (positive) *)
+  let time_compare =
+    Order_id.compare (Order.order_id order2) (Order.order_id order1)
+  in
+  match order1_more_than_order2, order2_more_than_order1 with
+  | true, _ -> 1
+  | _, true -> -1
+  | _ -> time_compare
 ;;
+
+(* match o1_more_than_o2, o2_more_than_o1, o1_earlier_than_o2 with | true, _,
+   _ -> 1 | _, true, _ -> -1 | _, _, x -> x *)
 
 (* NOTE: This walks the list front-to-back and returns the *first* tradable
    order, not the best-priced one. Orders are in reverse insertion order
@@ -100,9 +109,8 @@ let find_match t incoming =
   in
   List.reduce resting_orders ~f:(fun r1 r2 ->
     match price_time_compare opposite_side r1 r2 with
-    | 1 -> r1
+    | 1 | 0 -> r1
     | -1 -> r2
-    | 0 -> r1
     | _ -> raise_s [%message "invalid"])
 ;;
 
