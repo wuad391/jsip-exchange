@@ -45,9 +45,7 @@ market-data feed.|}];
           print_endline "ERROR: expected BOOK <symbol>";
           loop ()
         | Some rest ->
-          let symbol =
-            Symbol.of_string (String.uppercase (String.strip rest))
-          in
+          let symbol = Symbol.of_string (String.strip rest) in
           let%bind result =
             Rpc.Rpc.dispatch_exn Rpc_protocol.book_query_rpc conn symbol
           in
@@ -63,9 +61,7 @@ market-data feed.|}];
           print_endline "ERROR: expected SUBSCRIBE <symbol>";
           loop ()
         | Some rest ->
-          let symbol =
-            Symbol.of_string (String.uppercase (String.strip rest))
-          in
+          let symbol = Symbol.of_string (String.strip rest) in
           let%bind result =
             Rpc.Pipe_rpc.dispatch
               Rpc_protocol.market_data_rpc
