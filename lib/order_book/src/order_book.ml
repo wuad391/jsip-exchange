@@ -12,6 +12,7 @@ type t =
 let create symbol = { symbol; bids = []; asks = [] }
 let symbol t = t.symbol
 
+(* grabs the list of orders associated with side *)
 let side_list t side =
   match (side : Side.t) with Buy -> t.bids | Sell -> t.asks
 ;;
@@ -67,37 +68,45 @@ let find t order_id =
    (newest first), so this matches against whatever was most recently added,
    regardless of price. See test_matching_engine.ml for a test that
    demonstrates why this is wrong. *)
+(* Now this has been updated to return the most aggressively priced
+   marketable order on the opposite side using List.reduce *)
 let find_match t incoming =
   let incoming_side = Order.side incoming in
   let opposite_side = Side.flip incoming_side in
-  let resting_orders = side_list t opposite_side in
-  let is_marketable ~price ~resting_price =
-    match (incoming_side : Side.t) with
-    | Buy -> Price.( >= ) price resting_price
-    | Sell -> Price.( <= ) price resting_price
+  let resting_orders =
+    List.filter (side_list t opposite_side) ~f:(fun order ->
+      Price.is_marketable
+        incoming_side
+        ~price:(Order.price order)
+        ~resting_price:(Order.price incoming))
   in
-  List.find resting_orders ~f:(fun resting ->
-    is_marketable
-      ~price:(Order.price incoming)
-      ~resting_price:(Order.price resting))
+  List.reduce resting_orders ~f:(fun r1 r2 ->
+    if Price.is_more_aggressive
+         incoming_side
+         ~price:(Order.price r2)
+         ~than:(Order.price r1)
+    then r2
+    else r1)
 ;;
 
 let orders_on_side t side = side_list t side
 let is_empty t = List.is_empty t.bids && List.is_empty t.asks
 let count t side = List.length (side_list t side)
 
+(* gets the best price on the side *)
 let best_price t side =
-  match side_list t side with
-  | [] -> None
-  | first :: rest ->
-    let is_better =
-      match (side : Side.t) with Buy -> Price.( > ) | Sell -> Price.( < )
-    in
-    Some
-      (List.fold rest ~init:(Order.price first) ~f:(fun best order ->
-         let price = Order.price order in
-         if is_better price best then price else best))
+  let price_list =
+    List.map (side_list t side) ~f:(fun order -> Order.price order)
+  in
+  List.reduce price_list ~f:(fun a b ->
+    if Price.is_more_aggressive side ~price:a ~than:b then a else b)
 ;;
+
+(* match side_list t side with | [] -> None | first :: rest -> let is_better
+   = match (side : Side.t) with Buy -> Price.( > ) | Sell -> Price.( < ) in
+   Some (List.fold rest ~init:(Order.price first) ~f:(fun best order -> let
+   price = Order.price order in if is_better price best then price else
+   best)) *)
 
 let best_level t side : Level.t option =
   match best_price t side with

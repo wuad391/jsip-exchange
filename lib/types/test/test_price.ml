@@ -74,3 +74,69 @@ let%expect_test "negative to_string_dollar" =
   print_endline (Price.to_string_dollar (Price.of_int_cents (-150)));
   [%expect {| -$1.50 |}]
 ;;
+
+let%expect_test "testing is_more_aggressive" =
+  [%test_result: bool]
+    (Price.is_more_aggressive
+       Buy
+       ~price:(Price.of_int_cents 150)
+       ~than:(Price.of_int_cents 110))
+    ~expect:true;
+  [%test_result: bool]
+    (Price.is_more_aggressive
+       Sell
+       ~price:(Price.of_int_cents 150)
+       ~than:(Price.of_int_cents 110))
+    ~expect:false;
+  [%test_result: bool]
+    (Price.is_more_aggressive
+       Buy
+       ~price:(Price.of_int_cents 100)
+       ~than:(Price.of_int_cents 100))
+    ~expect:false;
+  [%test_result: bool]
+    (Price.is_more_aggressive
+       Sell
+       ~price:(Price.of_int_cents 100)
+       ~than:(Price.of_int_cents 100))
+    ~expect:false
+;;
+
+let%expect_test "testing is_marketable" =
+  [%test_result: bool]
+    (Price.is_marketable
+       Buy
+       ~price:(Price.of_int_cents 100)
+       ~resting_price:(Price.of_int_cents 100))
+    ~expect:true;
+  [%test_result: bool]
+    (Price.is_marketable
+       Sell
+       ~price:(Price.of_int_cents 100)
+       ~resting_price:(Price.of_int_cents 100))
+    ~expect:true;
+  [%test_result: bool]
+    (Price.is_marketable
+       Buy
+       ~price:(Price.of_int_cents 150)
+       ~resting_price:(Price.of_int_cents 100))
+    ~expect:true;
+  [%test_result: bool]
+    (Price.is_marketable
+       Sell
+       ~price:(Price.of_int_cents 150)
+       ~resting_price:(Price.of_int_cents 100))
+    ~expect:false;
+  [%test_result: bool]
+    (Price.is_marketable
+       Buy
+       ~price:(Price.of_int_cents 90)
+       ~resting_price:(Price.of_int_cents 100))
+    ~expect:false;
+  [%test_result: bool]
+    (Price.is_marketable
+       Sell
+       ~price:(Price.of_int_cents 90)
+       ~resting_price:(Price.of_int_cents 100))
+    ~expect:true
+;;
