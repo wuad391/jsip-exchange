@@ -56,14 +56,17 @@ let parse ?(default_participant = "anonymous") line =
         let%bind time_in_force, rest =
           match rest with
           | tif_str :: rest' ->
-            (match String.uppercase tif_str with
-             | "IOC" -> Ok (Time_in_force.Ioc, rest')
-             | "DAY" -> Ok (Day, rest')
-             | "AS" -> Ok (Day, rest)
-             | _ ->
-               Error
-                 [%string
-                   "unknown time-in-force: %{tif_str} (expected DAY or IOC)"])
+            Time_in_force.of_string
+              tif_string chekc if of_string errors
+              (match String.uppercase tif_str with
+               | "IOC" -> Ok (Time_in_force.Ioc, rest')
+               | "DAY" -> Ok (Day, rest')
+               | "AS" -> Ok (Day, rest)
+               | _ ->
+                 Error
+                   [%string
+                     "unknown time-in-force: %{tif_str} (expected DAY or \
+                      IOC)"])
           | [] -> Ok (Day, [])
         in
         let%bind participant =
