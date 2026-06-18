@@ -14,12 +14,11 @@ type t =
   | Subscribe of Symbol.t
 
 (* This function is a more robust parser than the old parser previously found
-   in protocol.ml *)
-(* TODO: This is a very ugly function... *)
-let parse ?(default_participant = "anonymous") line =
+   in protocol.ml. When callled, should be wrapped in a try catch *)
+let parse ?(default_participant = Participant.of_string "anonymous") line =
   let line = String.strip line in
   if String.is_empty line
-  then Error "empty command"
+  then Or_error.error_s [%message "empty command"]
   else (
     let parts = String.split line ~on:' ' in
     let submit_parse verb rest =
@@ -35,48 +34,41 @@ let parse ?(default_participant = "anonymous") line =
         let%bind size =
           match Int.of_string_opt size_str with
           | Some n when n > 0 -> Ok n
-          | Some _ -> Error "size must be positive"
-          | None -> Error [%string "invalid size: %{size_str}"]
+          | Some _ -> Or_error.error_s [%message "size must be positive"]
+          | None -> Or_error.error_s [%message "invalid size: %{size_str}"]
         in
         let%bind price =
           try Ok (Price.of_string price_str) with
           | exn ->
             let exn_str = Exn.to_string exn in
-            Error
-              [%string "invalid price: %{price_str}\nexception: %{exn_str}"]
+            Or_error.error_s
+              [%message "invalid price: %{price_str}\nexception: %{exn_str}"]
         in
         let%bind symbol =
           try Ok (Symbol.of_string symbol_str) with
           | exn ->
             let exn_str = Exn.to_string exn in
-            Error
-              [%string
+            Or_error.error_s
+              [%message
                 "invalid symbol: %{symbol_str}\nexception: %{exn_str}"]
         in
         let%bind time_in_force, rest =
           match rest with
           | tif_str :: rest' ->
-            Time_in_force.of_string
-              tif_string chekc if of_string errors
-              (match String.uppercase tif_str with
-               | "IOC" -> Ok (Time_in_force.Ioc, rest')
-               | "DAY" -> Ok (Day, rest')
-               | "AS" -> Ok (Day, rest)
-               | _ ->
-                 Error
-                   [%string
-                     "unknown time-in-force: %{tif_str} (expected DAY or \
-                      IOC)"])
-          | [] -> Ok (Day, [])
+            if String.equal tif_str "as" || String.equal tif_str "AS"
+            then Ok (Time_in_force.Day, rest)
+            else Ok (Time_in_force.of_string tif_str, rest')
+          | [] -> Ok (Time_in_force.Day, [])
         in
         let%bind participant =
           match rest with
           | "as" :: name :: _ | "AS" :: name :: _ ->
             Ok (Participant.of_string name)
-          | [] -> Ok (Participant.of_string default_participant)
+          | [] -> Ok default_participant
           | _ ->
             let trailing = String.concat ~sep:" " rest in
-            Error [%string "unexpected trailing arguments: %{trailing}"]
+            Or_error.error_s
+              [%message "unexpected trailing arguments: %{trailing}"]
         in
         Ok
           (Submit
@@ -89,8 +81,10 @@ let parse ?(default_participant = "anonymous") line =
               }
               : Order.Request.t))
       | _ ->
-        Error
-          "expected: BUY|SELL <symbol> <size> <price> [DAY|IOC] [as <name>]"
+        Or_error.error_s
+          [%message
+            "expected: BUY|SELL <symbol> <size> <price> \
+             [%{Time_in_force.all_str}] [as <name>]"]
     in
     match parts with
     | verb :: symbol :: rest ->
@@ -98,6 +92,8 @@ let parse ?(default_participant = "anonymous") line =
        | "BUY" | "SELL" -> submit_parse verb (symbol :: rest)
        | "BOOK" -> Ok (Book (Symbol.of_string symbol))
        | "SUBSCRIBE" -> Ok (Subscribe (Symbol.of_string symbol))
-       | other -> Error [%string "Invalid verb in parse in exchange_command"])
+       | _ ->
+         Or_error.error_s
+           [%message "Invalid verb in parse in exchange_command"])
     | _ -> raise_s [%message "This is impossible in parse"])
 ;;
