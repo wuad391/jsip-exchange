@@ -30,7 +30,7 @@ type t =
   ; mutable remaining_size : Size.t
   ; time_in_force : Time_in_force.t
   }
-[@@deriving sexp_of, equal, compare]
+[@@deriving sexp, equal, compare]
 
 let to_string
   ({ order_id

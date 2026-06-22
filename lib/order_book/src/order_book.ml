@@ -1,144 +1,133 @@
 open! Core
 open Jsip_types
-open Async_log_kernel.Ppx_log_syntax
+open! Async_log_kernel.Ppx_log_syntax
+
+(* This will be from the perspective of the Buyer so the prices will be
+   sorted in ascending order. *)
+module Order_Key = struct
+  module T = struct
+    type t = int * Order_id.t [@@deriving sexp, compare]
+  end
+
+  include T
+  include Comparable.Make (T)
+end
+
+type order_book_map = Order.t Map.M(Order_Key).t [@@deriving sexp]
 
 type t =
   { symbol : Symbol.t
-  ; mutable bids : Order.t list
-  ; mutable asks : Order.t list
+  ; mutable bids : order_book_map
+  ; mutable asks : order_book_map
+  ; mutable id_hash : (Order_id.t, Order.t) Hashtbl.t
   }
 [@@deriving sexp_of]
 
-let create symbol = { symbol; bids = []; asks = [] }
+let create symbol =
+  { symbol
+  ; bids = Map.empty (module Order_Key)
+  ; asks = Map.empty (module Order_Key)
+  ; id_hash = Hashtbl.create (module Order_id)
+  }
+;;
+
+(* This function converts a Price.t into an int for the bids and asks map. We
+   negate if the side is Buy because higher bids are more competitive, and we
+   are using min_elt. *)
+let rank (price : Price.t) side =
+  let int_price = Price.to_int_cents price in
+  match (side : Side.t) with Sell -> int_price | Buy -> -int_price
+;;
+
+let map_key_of order : Order_Key.t =
+  rank (Order.price order) (Order.side order), Order.order_id order
+;;
+
+let hash_key_of order = Order.order_id order
 let symbol t = t.symbol
 
 (* grabs the list of orders associated with side *)
-let side_list t side =
+let side_map t side =
   match (side : Side.t) with Buy -> t.bids | Sell -> t.asks
 ;;
 
-let set_side_list t side orders =
-  match (side : Side.t) with
-  | Buy -> t.bids <- orders
-  | Sell -> t.asks <- orders
-;;
-
 let add t order =
-  let side = Order.side order in
-  set_side_list t side (order :: side_list t side)
+  if not (Symbol.equal (Order.symbol order) t.symbol)
+  then
+    print_endline
+      [%string "Order_book.add symbol does not match order book symbol"]
+  else if Size.( <= ) (Order.size order) (Size.of_int 0)
+  then print_endline [%string "Order_book.add size is <= 0"]
+  else (
+    let side = Order.side order in
+    let _ = Hashtbl.add t.id_hash ~key:(hash_key_of order) ~data:order in
+    match side with
+    | Buy -> t.bids <- Map.set t.bids ~key:(map_key_of order) ~data:order
+    | Sell -> t.asks <- Map.set t.asks ~key:(map_key_of order) ~data:order)
 ;;
 
+(* factored out as ' and returns option for testing purposes *)
 let remove' t order_id =
-  let remove_from t side order_id =
-    let orders = side_list t side in
-    match
-      List.partition_tf orders ~f:(fun o ->
-        Order_id.equal (Order.order_id o) order_id)
-    with
-    | [], _ -> None
-    | [ found ], rest ->
-      set_side_list t side rest;
-      Some found
-    | matches, _ ->
-      [%log.info
-        "BUG: More than one order matching order_id found when removing"
-          (order_id : Order_id.t)
-          (matches : Order.t list)
-          (t.symbol : Symbol.t)
-          (side : Side.t)];
-      None
-  in
-  match remove_from t Buy order_id with
-  | Some _ as result -> result
-  | None -> remove_from t Sell order_id
+  let find_hash = Hashtbl.find_and_remove t.id_hash order_id in
+  match find_hash with
+  | None -> None
+  | Some order ->
+    let side = Order.side order in
+    let _ =
+      match side with
+      | Buy -> t.bids <- Map.remove t.bids (map_key_of order)
+      | Sell -> t.asks <- Map.remove t.asks (map_key_of order)
+    in
+    Some order
 ;;
 
-let remove t order_id = ignore (remove' t order_id : Order.t option)
-
-let find t order_id =
-  let find_in side =
-    List.find (side_list t side) ~f:(fun o ->
-      Order_id.equal (Order.order_id o) order_id)
-  in
-  match find_in Buy with Some _ as result -> result | None -> find_in Sell
-;;
-
-let price_time_compare side order1 order2 =
-  let order1_more_than_order2 =
-    Price.is_more_aggressive
-      side
-      ~price:(Order.price order1)
-      ~than:(Order.price order2)
-  in
-  let order2_more_than_order1 =
-    Price.is_more_aggressive
-      side
-      ~price:(Order.price order2)
-      ~than:(Order.price order1)
-  in
-  (* reverse compare order2 and order1 because smaller time is better
-     (positive) *)
-  let time_compare =
-    Order_id.compare (Order.order_id order2) (Order.order_id order1)
-  in
-  match order1_more_than_order2, order2_more_than_order1 with
-  | true, _ -> 1
-  | _, true -> -1
-  | _ -> time_compare
-;;
+let remove t order_id = ignore (remove' t order_id)
+let find t order_id = Hashtbl.find t.id_hash order_id
 
 (* match o1_more_than_o2, o2_more_than_o1, o1_earlier_than_o2 with | true, _,
    _ -> 1 | _, true, _ -> -1 | _, _, x -> x *)
 
-(* NOTE: This walks the list front-to-back and returns the *first* tradable
-   order, not the best-priced one. Orders are in reverse insertion order
-   (newest first), so this matches against whatever was most recently added,
-   regardless of price. See test_matching_engine.ml for a test that
-   demonstrates why this is wrong. *)
-(* Now this has been updated to return the most aggressively priced
-   marketable order on the opposite side using List.reduce *)
+(* This returns the most aggressively priced marketable order on the opposite
+   side using List.reduce *)
 let find_match t incoming =
   let incoming_side = Order.side incoming in
   let opposite_side = Side.flip incoming_side in
-  let resting_orders =
-    List.filter (side_list t opposite_side) ~f:(fun order ->
-      Price.is_marketable
-        incoming_side
-        ~price:(Order.price incoming)
-        ~resting_price:(Order.price order))
-  in
-  List.reduce resting_orders ~f:(fun r1 r2 ->
-    match price_time_compare opposite_side r1 r2 with
-    | 1 | 0 -> r1
-    | -1 -> r2
-    | _ -> raise_s [%message "invalid"])
+  let most_aggressive = Map.min_elt (side_map t opposite_side) in
+  match most_aggressive with
+  | None -> None
+  | Some (_, order) ->
+    if Price.is_marketable
+         incoming_side
+         ~price:(Order.price incoming)
+         ~resting_price:(Order.price order)
+    then Some order
+    else None
 ;;
 
-let orders_on_side t side = side_list t side
-let is_empty t = List.is_empty t.bids && List.is_empty t.asks
-let count t side = List.length (side_list t side)
+let orders_on_side t side =
+  List.map (Map.to_alist (side_map t side)) ~f:(fun (_, y) -> y)
+;;
+
+let is_empty t = Map.is_empty t.bids && Map.is_empty t.asks
+let count t side = Map.length (side_map t side)
 
 (* gets the best price on the side *)
 let best_price t side =
-  let price_list =
-    List.map (side_list t side) ~f:(fun order -> Order.price order)
-  in
-  List.reduce price_list ~f:(fun a b ->
-    if Price.is_more_aggressive side ~price:a ~than:b then a else b)
+  let find_min = Map.min_elt (side_map t side) in
+  match find_min with
+  | None -> None
+  | Some (_, order) -> Some (Order.price order)
 ;;
-
-(* match side_list t side with | [] -> None | first :: rest -> let is_better
-   = match (side : Side.t) with Buy -> Price.( > ) | Sell -> Price.( < ) in
-   Some (List.fold rest ~init:(Order.price first) ~f:(fun best order -> let
-   price = Order.price order in if is_better price best then price else
-   best)) *)
 
 let best_level t side : Level.t option =
   match best_price t side with
   | None -> None
   | Some price ->
+    let side_list =
+      List.map (Map.to_alist (side_map t side)) ~f:(fun (_, order) -> order)
+    in
     let total_size =
-      List.fold (side_list t side) ~init:Size.zero ~f:(fun acc order ->
+      List.fold side_list ~init:Size.zero ~f:(fun acc order ->
         if Price.equal (Order.price order) price
         then Size.( + ) acc (Order.remaining_size order)
         else acc)
@@ -150,14 +139,16 @@ let best_bid_offer t : Bbo.t =
   { bid = best_level t Buy; ask = best_level t Sell }
 ;;
 
-(* TODO: This function seems kind of ugly. We should check if there is a
-   better way to do this, esp if there is more elegant way to do the compare.
-   Also check out the hints?? I think there is something we are missing in
-   the hints. *)
 let snapshot_side t (side : Side.t) =
-  orders_on_side t side
-  |> List.sort ~compare:(price_time_compare side)
-  |> List.map ~f:Level.of_order
+  match side with
+  | Buy ->
+    List.map
+      (Map.to_alist ~key_order:`Decreasing (side_map t side))
+      ~f:(fun (_, order) -> Level.of_order order)
+  | Sell ->
+    List.map
+      (Map.to_alist ~key_order:`Decreasing (side_map t side))
+      ~f:(fun (_, order) -> Level.of_order order)
 ;;
 
 let snapshot t =
@@ -171,3 +162,5 @@ let snapshot t =
 module For_testing = struct
   let remove = remove'
 end
+
+(* TODO: is to_alist fast enough? where can i find run times in general? *)

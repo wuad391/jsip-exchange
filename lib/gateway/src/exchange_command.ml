@@ -1,26 +1,31 @@
 open! Core
 open Jsip_types
 
-type verb =
-  | Buy
-  | Sell
-  | Book
-  | Subscribe
-[@@deriving string ~case_insensitive]
+module Verb = struct
+  type t =
+    | Buy
+    | Sell
+    | Book
+    | Subscribe
+  [@@deriving string ~case_insensitive]
+end
 
 type t =
   | Submit of Order.Request.t
   | Book of Symbol.t
   | Subscribe of Symbol.t
+[@@deriving sexp]
 
 (* This function is a more robust parser than the old parser previously found
    in protocol.ml. When callled, should be wrapped in a try catch *)
 let parse ?(default_participant = Participant.of_string "anonymous") line =
   let line = String.strip line in
   if String.is_empty line
-  then Or_error.error_s [%message "empty command"]
+  then Or_error.error_string [%string "empty command"]
   else (
-    let parts = String.split line ~on:' ' in
+    let parts =
+      String.split line ~on:' ' |> List.filter ~f:(Fn.non String.is_empty)
+    in
     let submit_parse verb rest =
       let open Result.Let_syntax in
       let%bind side =
@@ -34,22 +39,23 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
         let%bind size =
           match Int.of_string_opt size_str with
           | Some n when n > 0 -> Ok n
-          | Some _ -> Or_error.error_s [%message "size must be positive"]
-          | None -> Or_error.error_s [%message "invalid size: %{size_str}"]
+          | Some _ -> Or_error.error_string [%string "size must be positive"]
+          | None ->
+            Or_error.error_string [%string "invalid size: %{size_str}"]
         in
         let%bind price =
           try Ok (Price.of_string price_str) with
           | exn ->
             let exn_str = Exn.to_string exn in
-            Or_error.error_s
-              [%message "invalid price: %{price_str}\nexception: %{exn_str}"]
+            Or_error.error_string
+              [%string "invalid price: %{price_str}\nexception: %{exn_str}"]
         in
         let%bind symbol =
           try Ok (Symbol.of_string symbol_str) with
           | exn ->
             let exn_str = Exn.to_string exn in
-            Or_error.error_s
-              [%message
+            Or_error.error_string
+              [%string
                 "invalid symbol: %{symbol_str}\nexception: %{exn_str}"]
         in
         let%bind time_in_force, rest =
@@ -67,8 +73,8 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
           | [] -> Ok default_participant
           | _ ->
             let trailing = String.concat ~sep:" " rest in
-            Or_error.error_s
-              [%message "unexpected trailing arguments: %{trailing}"]
+            Or_error.error_string
+              [%string "unexpected trailing arguments: %{trailing}"]
         in
         Ok
           (Submit
@@ -88,12 +94,9 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
     in
     match parts with
     | verb :: symbol :: rest ->
-      (match String.uppercase verb with
-       | "BUY" | "SELL" -> submit_parse verb (symbol :: rest)
-       | "BOOK" -> Ok (Book (Symbol.of_string symbol))
-       | "SUBSCRIBE" -> Ok (Subscribe (Symbol.of_string symbol))
-       | _ ->
-         Or_error.error_s
-           [%message "Invalid verb in parse in exchange_command"])
+      (match Verb.of_string verb with
+       | Buy | Sell -> submit_parse verb (symbol :: rest)
+       | Book -> Ok (Book (Symbol.of_string symbol))
+       | Subscribe -> Ok (Subscribe (Symbol.of_string symbol)))
     | _ -> raise_s [%message "This is impossible in parse"])
 ;;
