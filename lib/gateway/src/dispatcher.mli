@@ -10,6 +10,8 @@
       matching engine produces. Intended for the exchange operator's monitor;
       not appropriate to expose to ordinary clients.
 
+    - **Sessions**, table mapping each participant to their session
+
     [dispatch] is the single place that decides "for each event, who gets
     it". *)
 
@@ -53,6 +55,10 @@ val subscribe_audit : t -> Exchange_event.t Pipe.Reader.t
 
     Each session lookup is O(1) and independent of subscriber count. *)
 val dispatch : t -> Exchange_event.t list -> unit
+
+val is_active : t -> Participant.t -> Bool.t
+val set_up_session : t -> Participant.t -> unit Deferred.t
+val lookup_session : t -> Participant.t -> Session.t Option.t
 
 module For_testing : sig
   val audit_subscriber_count : t -> int

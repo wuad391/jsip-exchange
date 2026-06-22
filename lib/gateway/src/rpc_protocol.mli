@@ -50,3 +50,6 @@ val market_data_rpc
     production exchange would gate this RPC behind operator-level
     credentials; this simulator does not, but the same intent applies. *)
 val audit_log_rpc : (unit, Exchange_event.t, Error.t) Rpc.Pipe_rpc.t
+
+(** This RPC lets you log-in :D. That is all I know right now yay. TODO *)
+val login_rpc : (String.t, Participant.t Or_error.t) Rpc.Rpc.t

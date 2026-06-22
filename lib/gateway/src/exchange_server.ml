@@ -3,6 +3,13 @@ open! Async
 open Jsip_types
 open Jsip_order_book
 
+module Connection_state = struct
+  type t = { mutable session : Session.t option }
+
+  let participant t = Option.map t.session ~f:Session.participant
+  let update_session t session = t.session <- Some session
+end
+
 type t =
   { engine : Matching_engine.t
   ; dispatcher : Dispatcher.t
@@ -60,6 +67,39 @@ let start ~symbols ~port () =
             ignore state;
             let reader = Dispatcher.subscribe_audit dispatcher in
             return (Ok reader))
+        ; Rpc.Rpc.implement
+            Rpc_protocol.login_rpc
+            (fun state participant_str ->
+               if String.is_empty (String.strip participant_str)
+               then
+                 return
+                   (Or_error.error_string
+                      "Whitespace names not allowed for login_rpc")
+               else (
+                 let participant = Participant.of_string participant_str in
+                 if Dispatcher.is_active dispatcher participant
+                 then
+                   return
+                     (Or_error.error_string
+                        [%string
+                          "Participant %{(participant_str)#String} already \
+                           has a session active."])
+                 else (
+                   let _ =
+                     Dispatcher.set_up_session dispatcher participant
+                   in
+                   let find_session =
+                     Dispatcher.lookup_session dispatcher participant
+                   in
+                   match find_session with
+                   | None ->
+                     return
+                       (Or_error.error_string "This should not be possible")
+                   | Some session ->
+                     let () =
+                       Connection_state.update_session state session
+                     in
+                     return (Ok participant))))
         ]
       ~on_unknown_rpc:`Close_connection
       ~on_exception:Log_on_background_exn
@@ -67,7 +107,7 @@ let start ~symbols ~port () =
   let%map tcp_server =
     Rpc.Connection.serve
       ~implementations
-      ~initial_connection_state:(fun _addr _conn -> ())
+      ~initial_connection_state:Connection_state.t
       ~where_to_listen:(Tcp.Where_to_listen.of_port port)
       ()
   in

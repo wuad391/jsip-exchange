@@ -162,5 +162,3 @@ let snapshot t =
 module For_testing = struct
   let remove = remove'
 end
-
-(* TODO: is to_alist fast enough? where can i find run times in general? *)
