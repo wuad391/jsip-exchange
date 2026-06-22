@@ -8,3 +8,4 @@ type t =
 [@@deriving sexp]
 
 val parse : ?default_participant:Participant.t -> string -> t Or_error.t
+val to_string : t -> string

@@ -7,7 +7,9 @@ module Verb = struct
     | Sell
     | Book
     | Subscribe
-  [@@deriving string ~case_insensitive]
+  [@@deriving string ~case_insensitive, enumerate]
+
+  let all_str = String.concat (List.map all ~f:to_string) ~sep:", "
 end
 
 type t =
@@ -15,6 +17,13 @@ type t =
   | Book of Symbol.t
   | Subscribe of Symbol.t
 [@@deriving sexp]
+
+let to_string t =
+  match t with
+  | Submit request -> [%string "%{request#Order.Request}"]
+  | Book symbol -> [%string "BOOK %{symbol#Symbol}"]
+  | Subscribe symbol -> [%string "SUBSCRIBE %{symbol#Symbol}"]
+;;
 
 (* This function is a more robust parser than the old parser previously found
    in protocol.ml. When callled, should be wrapped in a try catch *)
@@ -24,14 +33,16 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
   then Or_error.error_string [%string "empty command"]
   else (
     let parts =
-      String.split line ~on:' ' |> List.filter ~f:(Fn.non String.is_empty)
+      String.split line ~on:' '
+      |> List.map ~f:String.strip
+      |> List.filter ~f:(Fn.non String.is_empty)
     in
     let submit_parse verb rest =
       let open Result.Let_syntax in
       let%bind side =
         match verb with
-        | "BUY" -> Ok Side.Buy
-        | "SELL" -> Ok Side.Sell
+        | Ok Verb.Buy -> Ok Side.Buy
+        | Ok Sell -> Ok Side.Sell
         | _ -> raise_s [%message "This should also not be possible..."]
       in
       match rest with
@@ -63,7 +74,16 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
           | tif_str :: rest' ->
             if String.equal tif_str "as" || String.equal tif_str "AS"
             then Ok (Time_in_force.Day, rest)
-            else Ok (Time_in_force.of_string tif_str, rest')
+            else (
+              match
+                Or_error.try_with (fun _ -> Time_in_force.of_string tif_str)
+              with
+              | Ok tif -> Ok (tif, rest')
+              | Error _ ->
+                Or_error.error_string
+                  [%string
+                    "unknown time-in-force: %{tif_str#String} (expected \
+                     %{Time_in_force.all_str#String})"])
           | [] -> Ok (Time_in_force.Day, [])
         in
         let%bind participant =
@@ -87,16 +107,26 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
               }
               : Order.Request.t))
       | _ ->
-        Or_error.error_s
-          [%message
+        Or_error.error_string
+          [%string
             "expected: BUY|SELL <symbol> <size> <price> \
-             [%{Time_in_force.all_str}] [as <name>]"]
+             [%{Time_in_force.all_str#String}] [as <name>]"]
     in
     match parts with
     | verb :: symbol :: rest ->
-      (match Verb.of_string verb with
-       | Buy | Sell -> submit_parse verb (symbol :: rest)
-       | Book -> Ok (Book (Symbol.of_string symbol))
-       | Subscribe -> Ok (Subscribe (Symbol.of_string symbol)))
-    | _ -> raise_s [%message "This is impossible in parse"])
+      let verb_type = Or_error.try_with (fun _ -> Verb.of_string verb) in
+      (match verb_type with
+       | Ok Verb.Buy | Ok Sell -> submit_parse verb_type (symbol :: rest)
+       | Ok Verb.Book -> Ok (Book (Symbol.of_string symbol))
+       | Ok Verb.Subscribe -> Ok (Subscribe (Symbol.of_string symbol))
+       | Error _ ->
+         Or_error.error_string
+           [%string
+             "unknown command %{verb#String} (expected \
+              %{Verb.all_str#String})"])
+    | _ ->
+      Or_error.error_string
+        [%string
+          "expected: BUY|SELL <symbol> <size> <price> \
+           [%{Time_in_force.all_str#String}] [as <name>]"])
 ;;
