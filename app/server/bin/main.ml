@@ -22,11 +22,25 @@ let default_symbols =
 ;;
 
 let connect_as ~where_to_connect participant =
-  (* TODO: once login_rpc exists (week 2, exercise 1), dispatch it here so
-     the server knows which participant this connection belongs to. For now
-     we just open the TCP connection. *)
-  ignore participant;
-  Rpc.Connection.client where_to_connect >>| Result.ok_exn
+  let%bind conn = Rpc.Connection.client where_to_connect >>| Result.ok_exn in
+  let%bind login_result =
+    Rpc.Rpc.dispatch_exn
+      Rpc_protocol.login_rpc
+      conn
+      (Participant.to_string participant)
+  in
+  let () =
+    match login_result with
+    | Ok _ ->
+      print_endline
+        [%string
+          "%{(Participant.to_string participant)#String} is logged in."]
+    | Error _ ->
+      print_endline
+        [%string
+          "Error logging %{(Participant.to_string participant)#String} in."]
+  in
+  return conn
 ;;
 
 let seed_market_maker ~where_to_connect =
@@ -42,6 +56,14 @@ let seed_market_maker ~where_to_connect =
     }
   in
   let%bind conn = connect_as ~where_to_connect mm_participant in
+  let%bind login_result =
+    Rpc.Rpc.dispatch_exn Rpc_protocol.login_rpc conn "MarketMaker"
+  in
+  let () =
+    match login_result with
+    | Ok _ -> print_endline [%string "MarketMaker is logged in."]
+    | Error _ -> print_endline [%string "Error logging MarketMaker in."]
+  in
   Market_maker.seed_book config conn
 ;;
 

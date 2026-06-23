@@ -1,6 +1,7 @@
 open! Core
 open! Async
 open Jsip_gateway
+open Jsip_types
 
 let with_server ~symbols f =
   let%bind server = Exchange_server.start ~symbols ~port:0 () in
@@ -16,8 +17,25 @@ let connect_as ~port _participant =
   let where =
     Tcp.Where_to_connect.of_host_and_port { host = "localhost"; port }
   in
-  let%map conn = Rpc.Connection.client where >>| Result.ok_exn in
-  { conn }
+  let%bind conn = Rpc.Connection.client where >>| Result.ok_exn in
+  let%bind login_result =
+    Rpc.Rpc.dispatch_exn
+      Rpc_protocol.login_rpc
+      conn
+      (Participant.to_string _participant)
+  in
+  let () =
+    match login_result with
+    | Ok _ ->
+      print_endline
+        [%string
+          "%{(Participant.to_string _participant)#String} is logged in."]
+    | Error _ ->
+      print_endline
+        [%string
+          "Error logging %{(Participant.to_string _participant)#String} in."]
+  in
+  return { conn }
 ;;
 
 let connection client = client.conn

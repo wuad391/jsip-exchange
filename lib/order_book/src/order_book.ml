@@ -1,9 +1,16 @@
+(* TODO: consider implementing a hash queue or other data structure with O(1)
+   remove *)
+
 open! Core
 open Jsip_types
 open! Async_log_kernel.Ppx_log_syntax
 
+(* 1. could use two modules. one for Buy and one for sell (most clear)
+   2. could also make the key Price.t Order_id.t Side.t *)
+
 (* This will be from the perspective of the Buyer so the prices will be
    sorted in ascending order. *)
+
 module Order_Key = struct
   module T = struct
     type t = int * Order_id.t [@@deriving sexp, compare]
@@ -60,7 +67,9 @@ let add t order =
   then print_endline [%string "Order_book.add size is <= 0"]
   else (
     let side = Order.side order in
-    let _ = Hashtbl.add t.id_hash ~key:(hash_key_of order) ~data:order in
+    let () =
+      Hashtbl.add_exn t.id_hash ~key:(hash_key_of order) ~data:order
+    in
     match side with
     | Buy -> t.bids <- Map.set t.bids ~key:(map_key_of order) ~data:order
     | Sell -> t.asks <- Map.set t.asks ~key:(map_key_of order) ~data:order)
@@ -73,7 +82,7 @@ let remove' t order_id =
   | None -> None
   | Some order ->
     let side = Order.side order in
-    let _ =
+    let () =
       match side with
       | Buy -> t.bids <- Map.remove t.bids (map_key_of order)
       | Sell -> t.asks <- Map.remove t.asks (map_key_of order)
@@ -124,9 +133,11 @@ let best_level t side : Level.t option =
   | None -> None
   | Some price ->
     let side_list =
+      (* TODO Map.data exists!! *)
       List.map (Map.to_alist (side_map t side)) ~f:(fun (_, order) -> order)
     in
     let total_size =
+      (* filter and then list.sum. *)
       List.fold side_list ~init:Size.zero ~f:(fun acc order ->
         if Price.equal (Order.price order) price
         then Size.( + ) acc (Order.remaining_size order)

@@ -91,7 +91,8 @@ let%expect_test "parse error: empty string" =
 let%expect_test "parse error: unknown command" =
   print_parse "HOLD\n   AAPL\n\n 100 150.00";
   [%expect
-    {| "unknown command HOLD (expected Buy, Sell, Book, Subscribe)" |}]
+    {| "unknown command HOLD (expected Buy, Sell, Book, or
+              Subscribe)" |}]
 ;;
 
 (* I changed this because it does not make sense to allow orders that are
@@ -100,10 +101,8 @@ let%expect_test "parse error: missing fields" =
   print_parse "BUY AAPL";
   print_parse "BUY";
   [%expect
-    {|
-    "expected: BUY|SELL <symbol> <size> <price> [DAY or IOC] [as <name>]"
-    "expected: BUY|SELL <symbol> <size> <price> [DAY or IOC] [as <name>]"
-    |}]
+    {| "expected: BUY|SELL <symbol> <size> <price> [DAY|IOC] [as <name>]" 
+       "expected: BUY|SELL <symbol> <size> <price> [DAY|IOC] [as <name>]" |}]
 ;;
 
 let%expect_test "parse error: invalid size" =
@@ -120,10 +119,7 @@ let%expect_test "parse error: invalid size" =
 let%expect_test "parse error: invalid price" =
   print_parse "BUY AAPL\n   100\n\n xyz";
   [%expect
-    {|
-     "invalid price: xyz\
-    \nexception: (Invalid_argument \"Float.of_string xyz\")"
-    |}]
+    {| "invalid price: xyz exception: (Invalid_argument "Float.of_string xyz")" |}]
 ;;
 
 let%expect_test "parse error: unknown time-in-force" =
@@ -133,22 +129,22 @@ let%expect_test "parse error: unknown time-in-force" =
 
 let%expect_test "checking book" =
   print_parse "BOOK YAY";
-  [%expect {| BOOK YAY |}]
+  [%expect {| "Book YAY" |}]
 ;;
 
 let%expect_test "checking subscribe" =
   print_parse "SUBSCRIBE Yay";
-  [%expect {| SUBSCRIBE YAY |}]
+  [%expect {| "Subscribe YAY" |}]
 ;;
 
 let%expect_test "default participant: used when none specified" =
   let _ = print_parse_default "BUY AAPL 100 150.00" "Default" in
   (* print_endline [%string "participant=%{req.participant#Participant}"]; *)
-  [%expect {| BUY AAPL 100@$150.00 DAY as Default |}]
+  [%expect {| participant=DefaultTrader |}]
 ;;
 
 let%expect_test "default participant: overridden by explicit 'as'" =
   let _ = print_parse_default "BUY AAPL 100 150.00 as\n\n Alice" "default" in
   (* print_endline [%string "participant=%{req.participant#Participant}"]; *)
-  [%expect {| BUY AAPL 100@$150.00 DAY as Alice |}]
+  [%expect {| participant=Alice |}]
 ;;

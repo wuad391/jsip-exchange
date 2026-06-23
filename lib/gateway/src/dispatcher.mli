@@ -59,6 +59,8 @@ val dispatch : t -> Exchange_event.t list -> unit
 val is_active : t -> Participant.t -> Bool.t
 val set_up_session : t -> Participant.t -> unit Deferred.t
 val lookup_session : t -> Participant.t -> Session.t Option.t
+val print_sessions : t -> unit
+val clean_up_session : t -> Session.t -> unit Deferred.t
 
 module For_testing : sig
   val audit_subscriber_count : t -> int

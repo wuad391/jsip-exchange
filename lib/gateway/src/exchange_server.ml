@@ -7,6 +7,7 @@ module Connection_state = struct
   type t = { mutable session : Session.t option }
 
   let participant t = Option.map t.session ~f:Session.participant
+  let session t = t.session
   let update_session t session = t.session <- Some session
 end
 
@@ -49,8 +50,28 @@ let start ~symbols ~port () =
         [ Rpc.Rpc.implement
             Rpc_protocol.submit_order_rpc
             (fun state request ->
-               ignore state;
-               handle_submit ~request_writer request)
+               let () = print_endline [%string "I am in submit_order_rpc"] in
+               match Connection_state.session state with
+               | None ->
+                 return (Or_error.error_string "User is not logged in.")
+                 (* TODO how to not use wildcard but otherwise i get unused
+                    var warning *)
+               | Some _ ->
+                 let valid_request =
+                   { request with
+                     participant =
+                       Option.value
+                         (Connection_state.participant state)
+                         ~default:(Participant.of_string "anon")
+                   }
+                 in
+                 let%bind result =
+                   handle_submit ~request_writer valid_request
+                 in
+                 (match result with
+                  | Ok () -> return (Ok ())
+                  | Error _ ->
+                    return (Or_error.error_string "Submission error")))
         ; Rpc.Rpc.implement' Rpc_protocol.book_query_rpc (fun state symbol ->
             ignore state;
             Matching_engine.book engine symbol
@@ -85,13 +106,14 @@ let start ~symbols ~port () =
                           "Participant %{(participant_str)#String} already \
                            has a session active."])
                  else (
-                   let _ =
+                   let%bind () =
                      Dispatcher.set_up_session dispatcher participant
                    in
-                   let find_session =
+                   (* let () = Dispatcher.print_sessions dispatcher in *)
+                   let has_active_session =
                      Dispatcher.lookup_session dispatcher participant
                    in
-                   match find_session with
+                   match has_active_session with
                    | None ->
                      return
                        (Or_error.error_string "This should not be possible")
@@ -107,7 +129,18 @@ let start ~symbols ~port () =
   let%map tcp_server =
     Rpc.Connection.serve
       ~implementations
-      ~initial_connection_state:Connection_state.t
+      ~initial_connection_state:(fun _addr _conn ->
+        let new_state : Connection_state.t = { session = None } in
+        let close_connection =
+          let%bind () =
+            match new_state.session with
+            | None -> return ()
+            | Some session -> Dispatcher.clean_up_session dispatcher session
+          in
+          Rpc.Connection.close_finished _conn
+        in
+        don't_wait_for close_connection;
+        new_state)
       ~where_to_listen:(Tcp.Where_to_listen.of_port port)
       ()
   in

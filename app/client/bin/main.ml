@@ -17,9 +17,16 @@ let run_client ~host ~port ~participant_name =
     Tcp.Where_to_connect.of_host_and_port { host; port }
   in
   let%bind conn = Rpc.Connection.client where_to_connect >>| Result.ok_exn in
-  print_endline
-    [%string
-      {|
+  let%bind login_result =
+    Rpc.Rpc.dispatch_exn Rpc_protocol.login_rpc conn participant_name
+  in
+  (match login_result with
+   | Error s ->
+     print_endline [%string "Login error: %{(Error.to_string_hum s)#String}"]
+   | Ok _ ->
+     print_endline
+       [%string
+         {|
 Connected to exchange at %{host}:%{port#Int} as %{participant#Participant}
 Commands: BUY|SELL <symbol> <size> <price> [IOC|DAY]
           BOOK <symbol>
@@ -27,7 +34,7 @@ Commands: BUY|SELL <symbol> <size> <price> [IOC|DAY]
 
 Order acknowledgements, fills, and cancellations are temporarily printed
 by the server process; the SUBSCRIBE command attaches you to a per-symbol
-market-data feed.|}];
+market-data feed.|}]);
   let rec loop () =
     print_string "> ";
     match%bind Reader.read_line (Lazy.force Reader.stdin) with

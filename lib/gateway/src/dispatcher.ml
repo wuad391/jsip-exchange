@@ -20,19 +20,25 @@ let create () =
 (* TODO: is there more to be done here? *)
 let clean_up_session t session =
   let participant = Session.participant session in
-  let _ = Hashtbl.remove t.sessions participant in
-  return ()
+  return (Hashtbl.remove t.sessions participant)
+;;
+
+let print_sessions (t : t) =
+  print_endline [%string "Starting to print sesssions....\n"];
+  Hashtbl.iter_keys t.sessions ~f:(fun key ->
+    print_s [%message (key : Participant.t)];
+    ())
 ;;
 
 let set_up_session t participant =
-  let find_session = Hashtbl.find t.sessions participant in
+  let has_active_session = Hashtbl.find t.sessions participant in
   let%bind () =
-    match find_session with
+    match has_active_session with
     | None -> return ()
     | Some old_session -> clean_up_session t old_session
   in
   let new_session = Session.create participant in
-  let _ = Hashtbl.add t.sessions ~key:participant ~data:new_session in
+  let () = Hashtbl.add_exn t.sessions ~key:participant ~data:new_session in
   return ()
 ;;
 
