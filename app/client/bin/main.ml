@@ -11,6 +11,15 @@ open! Async
 open Jsip_types
 open Jsip_gateway
 
+let read_print_events (read_pipe : Exchange_event.t Pipe.Reader.t) =
+  let%bind events = Pipe.read' read_pipe in
+  match events with
+  | `Eof -> return ()
+  | `Ok event_queue ->
+    return
+      (print_endline (Protocol.format_events (Queue.to_list event_queue)))
+;;
+
 let run_client ~host ~port ~participant_name =
   let participant = Participant.of_string participant_name in
   let where_to_connect =
@@ -37,6 +46,10 @@ by the server process; the SUBSCRIBE command attaches you to a per-symbol
 market-data feed.|}]);
   let rec loop () =
     print_string "> ";
+    let%bind session_feed, _ =
+      Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc conn ()
+    in
+    let%bind () = read_print_events session_feed in
     match%bind Reader.read_line (Lazy.force Reader.stdin) with
     | `Eof ->
       print_endline "\nDisconnected.";

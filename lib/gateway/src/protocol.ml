@@ -93,7 +93,7 @@ let parse_command_with_default_participant line ~default =
     else Ok request
 ;;
 
-let format_event = function
+let format_event ?participant = function
   | Exchange_event.Order_accept { order_id; request } ->
     sprintf
       "ACCEPTED id=%s %s %s %d@%s %s"

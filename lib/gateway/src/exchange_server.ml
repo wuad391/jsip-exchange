@@ -122,6 +122,15 @@ let start ~symbols ~port () =
                        Connection_state.update_session state session
                      in
                      return (Ok participant))))
+        ; Rpc.Pipe_rpc.implement
+            Rpc_protocol.session_feed_rpc
+            (fun state () ->
+               match Connection_state.session state with
+               | None ->
+                 return
+                   (Error (Error.of_string "not logged in")
+                    : (Exchange_event.t Pipe.Reader.t, Error.t) result)
+               | Some session -> return (Ok (Session.reader session)))
         ]
       ~on_unknown_rpc:`Close_connection
       ~on_exception:Log_on_background_exn
