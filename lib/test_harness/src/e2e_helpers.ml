@@ -30,7 +30,7 @@ let connect_as ~port participant =
   don't_wait_for
     (Pipe.iter_without_pushback session_feed ~f:(fun event ->
        let e = Protocol.format_event event in
-       print_endline [%string "[%{(participant)#Participant}] %{e}"]));
+       print_endline [%string "[for %{(participant)#Participant}] %{e}"]));
   return { conn }
 ;;
 
