@@ -4,7 +4,18 @@ open Jsip_types
 open Jsip_order_book
 
 module Connection_state = struct
-  type t = { mutable session : Session.t option }
+  type t =
+    { mutable session : Session.t option
+    ; mutable client_order_id_lookup : Client_order_id.t Hash_set.t
+    }
+
+  let exists_client_order_id t check =
+    let result_option =
+      Hash_set.find t.client_order_id_lookup ~f:(fun client_order_id ->
+        Client_order_id.equal client_order_id check)
+    in
+    match result_option with None -> false | Some _ -> true
+  ;;
 
   let participant t = Option.map t.session ~f:Session.participant
   let session t = t.session
@@ -56,6 +67,8 @@ let start ~symbols ~port () =
                  (* TODO how to not use wildcard but otherwise i get unused
                     var warning *)
                | Some _ ->
+                 (* makes sure the participant is the one making the actual
+                    request *)
                  let valid_request =
                    { request with
                      participant =
@@ -64,13 +77,26 @@ let start ~symbols ~port () =
                          ~default:(Participant.of_string "anon")
                    }
                  in
-                 let%bind result =
-                   handle_submit ~request_writer valid_request
-                 in
-                 (match result with
-                  | Ok () -> return (Ok ())
-                  | Error _ ->
-                    return (Or_error.error_string "Submission error")))
+                 if Connection_state.exists_client_order_id
+                      state
+                      request.client_order_id
+                 then (
+                   Dispatcher.dispatch
+                     dispatcher
+                     [ Exchange_event.Order_reject
+                         { request = valid_request
+                         ; reason = "Duplicate client order ID"
+                         }
+                     ];
+                   return (Ok ()))
+                 else (
+                   let%bind result =
+                     handle_submit ~request_writer valid_request
+                   in
+                   match result with
+                   | Ok () -> return (Ok ())
+                   | Error _ ->
+                     return (Or_error.error_string "Submission error")))
         ; Rpc.Rpc.implement' Rpc_protocol.book_query_rpc (fun state symbol ->
             ignore state;
             Matching_engine.book engine symbol
@@ -138,7 +164,14 @@ let start ~symbols ~port () =
     Rpc.Connection.serve
       ~implementations
       ~initial_connection_state:(fun _addr _conn ->
-        let new_state : Connection_state.t = { session = None } in
+        let new_state : Connection_state.t =
+          { session = None
+          ; client_order_id_lookup =
+              Hash_set.create
+                ?growth_allowed:(Some true)
+                (module Client_order_id)
+          }
+        in
         let close_connection =
           let%bind () =
             match new_state.session with

@@ -1,10 +1,6 @@
 open! Core
 open Jsip_types
 
-(* Default participant when no "as <name>" is specified in the command.
-   [parse_command_with_default_participant] overrides this with the
-   caller-supplied default. *)
-
 let format_event ?(participant = None) event =
   match event with
   | Exchange_event.Order_accept { order_id; request } ->

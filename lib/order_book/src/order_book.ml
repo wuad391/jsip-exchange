@@ -1,4 +1,4 @@
-(* TODO: consider implementing a hash queue or other data structure with O(1)
+(* : consider implementing a hash queue or other data structure with O(1)
    remove *)
 
 open! Core
@@ -133,7 +133,7 @@ let best_level t side : Level.t option =
   | None -> None
   | Some price ->
     let side_list =
-      (* TODO Map.data exists!! *)
+      (* Map.data exists!! *)
       List.map (Map.to_alist (side_map t side)) ~f:(fun (_, order) -> order)
     in
     let total_size =

@@ -21,6 +21,7 @@ let default_symbols =
   ]
 ;;
 
+(* TODO might need to add session feed rpc stuff here *)
 let connect_as ~where_to_connect participant =
   let%bind conn = Rpc.Connection.client where_to_connect >>| Result.ok_exn in
   let%bind login_result =
