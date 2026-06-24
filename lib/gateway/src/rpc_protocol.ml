@@ -56,4 +56,5 @@ let session_feed_rpc =
     ~bin_query:Unit.bin_t
     ~bin_response:Exchange_event.bin_t
     ~bin_error:Error.bin_t
+    ()
 ;;

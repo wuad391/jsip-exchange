@@ -13,28 +13,24 @@ let with_server ~symbols f =
 
 type client = { conn : Rpc.Connection.t }
 
-let connect_as ~port _participant =
+let connect_as ~port participant =
   let where =
     Tcp.Where_to_connect.of_host_and_port { host = "localhost"; port }
   in
   let%bind conn = Rpc.Connection.client where >>| Result.ok_exn in
-  let%bind login_result =
+  let%bind (_ : Participant.t Or_error.t) =
     Rpc.Rpc.dispatch_exn
       Rpc_protocol.login_rpc
       conn
-      (Participant.to_string _participant)
+      (Participant.to_string participant)
   in
-  let () =
-    match login_result with
-    | Ok _ ->
-      print_endline
-        [%string
-          "%{(Participant.to_string _participant)#String} is logged in."]
-    | Error _ ->
-      print_endline
-        [%string
-          "Error logging %{(Participant.to_string _participant)#String} in."]
+  let%bind session_feed, _metadata =
+    Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc conn ()
   in
+  don't_wait_for
+    (Pipe.iter_without_pushback session_feed ~f:(fun event ->
+       let e = Protocol.format_event event in
+       print_endline [%string "[%{(participant)#Participant}] %{e}"]));
   return { conn }
 ;;
 

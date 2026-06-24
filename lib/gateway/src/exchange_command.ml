@@ -46,7 +46,15 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
         | _ -> raise_s [%message "This should also not be possible..."]
       in
       match rest with
-      | symbol_str :: size_str :: price_str :: rest ->
+      | client_id_str :: symbol_str :: size_str :: price_str :: rest ->
+        let%bind client_order_id =
+          try Ok (Client_order_id.of_string client_id_str) with
+          | exn ->
+            let exn_str = Exn.to_string exn in
+            Or_error.error_string
+              [%string
+                "invalid client_id: %{client_id_str}\nexception: %{exn_str}"]
+        in
         let%bind size =
           match Int.of_string_opt size_str with
           | Some n when n > 0 -> Ok n
@@ -104,6 +112,7 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
               ; price
               ; size = Size.of_int size
               ; time_in_force
+              ; client_order_id
               }
               : Order.Request.t))
       | _ ->

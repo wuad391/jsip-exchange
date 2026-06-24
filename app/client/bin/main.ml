@@ -11,13 +11,17 @@ open! Async
 open Jsip_types
 open Jsip_gateway
 
-let read_print_events (read_pipe : Exchange_event.t Pipe.Reader.t) =
+let read_print_events
+  (read_pipe : Exchange_event.t Pipe.Reader.t)
+  (participant : Participant.t Option.t)
+  =
   let%bind events = Pipe.read' read_pipe in
   match events with
   | `Eof -> return ()
   | `Ok event_queue ->
     return
-      (print_endline (Protocol.format_events (Queue.to_list event_queue)))
+      (print_endline
+         (Protocol.format_events ~participant (Queue.to_list event_queue)))
 ;;
 
 let run_client ~host ~port ~participant_name =
@@ -49,7 +53,7 @@ market-data feed.|}]);
     let%bind session_feed, _ =
       Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc conn ()
     in
-    let%bind () = read_print_events session_feed in
+    let%bind () = read_print_events session_feed (Some participant) in
     match%bind Reader.read_line (Lazy.force Reader.stdin) with
     | `Eof ->
       print_endline "\nDisconnected.";
