@@ -44,6 +44,12 @@ open Jsip_order_book
 let aapl = Symbol.of_string "AAPL"
 let alice = Participant.of_string "Alice"
 let bob = Participant.of_string "Bob"
+let client_order_id_test_ref = ref 1
+
+let new_client_order_id () =
+  client_order_id_test_ref := !client_order_id_test_ref + 1;
+  Client_order_id.of_int !client_order_id_test_ref
+;;
 
 (** Build a book with [n] resting sell orders at prices 1..n (in cents). This
     gives a realistic spread of prices for benchmarking find_match and
@@ -60,6 +66,7 @@ let book_with_n_asks ?(min_price = 10_000) n =
         ; price = Price.of_int_cents (min_price + i)
         ; size = Size.of_int 100
         ; time_in_force = Day
+        ; client_order_id = new_client_order_id ()
         }
         ~order_id:(Order_id.Generator.next gen)
     in
@@ -81,6 +88,7 @@ let engine_with_n_asks ?(min_price = 10_000) n =
          ; price = Price.of_int_cents (min_price + i)
          ; size = Size.of_int 100
          ; time_in_force = Day
+         ; client_order_id = new_client_order_id ()
          }
        : Exchange_event.t list)
   done;
@@ -103,6 +111,7 @@ let bench_find_match ~n =
       ; price = Price.of_int_cents (min_price + n)
       ; size = Size.of_int 100
       ; time_in_force = Ioc
+      ; client_order_id = new_client_order_id ()
       }
       ~order_id:(Order_id.Generator.next gen)
   in
@@ -122,6 +131,7 @@ let bench_find_match_no_cross ~n =
       ; price = Price.of_int_cents (min_price - 1)
       ; size = Size.of_int 100
       ; time_in_force = Ioc
+      ; client_order_id = new_client_order_id ()
       }
       ~order_id:(Order_id.Generator.next gen)
   in
@@ -147,6 +157,7 @@ let bench_add_remove ~n =
       ; price = Price.of_int_cents (min_price + 500)
       ; size = Size.of_int 100
       ; time_in_force = Day
+      ; client_order_id = new_client_order_id ()
       }
       ~order_id:(Order_id.Generator.next gen)
   in
@@ -180,6 +191,7 @@ let bench_submit_ioc_cross ~n =
            ; price = Price.of_int_cents max_price
            ; size = Size.of_int 100
            ; time_in_force = Ioc
+           ; client_order_id = new_client_order_id ()
            }
        in
        ignore (events : Exchange_event.t list);
@@ -193,6 +205,7 @@ let bench_submit_ioc_cross ~n =
             ; price = Price.of_int_cents !next_price
             ; size = Size.of_int 100
             ; time_in_force = Day
+            ; client_order_id = new_client_order_id ()
             }
           : Exchange_event.t list);
        next_price := !next_price + 1;
@@ -212,6 +225,7 @@ let bench_submit_ioc_no_match ~n =
          ; price = Price.of_int_cents (min_price - 1)
          ; size = Size.of_int 100
          ; time_in_force = Ioc
+         ; client_order_id = new_client_order_id ()
          }
        : Exchange_event.t list))
 ;;
@@ -231,6 +245,7 @@ let bench_submit_sweep ~n =
          ; price = Price.of_int_cents 99_999
          ; size = Size.of_int (n * 100)
          ; time_in_force = Ioc
+         ; client_order_id = new_client_order_id ()
          }
        : Exchange_event.t list);
     (* Re-seed entire book *)
@@ -252,6 +267,7 @@ let bench_find_match_alloc ~n =
       ; price = Price.of_int_cents (min_price + n)
       ; size = Size.of_int 100
       ; time_in_force = Ioc
+      ; client_order_id = new_client_order_id ()
       }
       ~order_id:(Order_id.Generator.next gen)
   in

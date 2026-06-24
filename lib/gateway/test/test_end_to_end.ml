@@ -24,11 +24,17 @@ let%expect_test "e2e: two clients trade with each other" =
     let%bind () =
       rpc_submit
         bob
-        (Harness.sell ~price_cents:15000 ~participant:Harness.bob ())
+        (Harness.sell
+           ~price_cents:15000
+           ~participant:Harness.bob
+           ~client_order_id:1
+           ())
     in
     [%expect {| [for Bob] ACCEPTED id=1 AAPL SELL 100@$150.00 DAY |}];
     (* Alice places a buy — should cross *)
-    let%bind () = rpc_submit alice (Harness.buy ~price_cents:15000 ()) in
+    let%bind () =
+      rpc_submit alice (Harness.buy ~price_cents:15000 ~client_order_id:1 ())
+    in
     [%expect
       {|
       [for Alice] ACCEPTED id=2 AAPL BUY 100@$150.00 DAY

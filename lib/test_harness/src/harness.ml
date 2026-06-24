@@ -22,6 +22,7 @@ let create ?(symbols = [ aapl; tsla; goog ]) () =
 ;;
 
 let engine t = t.engine
+let client_order_id_test_ref = ref 1
 
 (* --- Builders --- *)
 
@@ -32,6 +33,9 @@ let make_request
   ?(symbol = aapl)
   ?(participant = alice)
   ?(time_in_force = Time_in_force.Day)
+  ?(client_order_id =
+    client_order_id_test_ref := !client_order_id_test_ref + 1;
+    !client_order_id_test_ref)
   ()
   : Order.Request.t
   =
@@ -41,10 +45,19 @@ let make_request
   ; price = Price.of_int_cents price_cents
   ; size = Size.of_int size
   ; time_in_force
+  ; client_order_id = Client_order_id.of_int client_order_id
   }
 ;;
 
-let buy ~price_cents ?size ?symbol ?participant ?time_in_force () =
+let buy
+  ~price_cents
+  ?size
+  ?symbol
+  ?participant
+  ?time_in_force
+  ?client_order_id
+  ()
+  =
   make_request
     ~side:Buy
     ~price_cents
@@ -52,10 +65,19 @@ let buy ~price_cents ?size ?symbol ?participant ?time_in_force () =
     ?symbol
     ?participant
     ?time_in_force
+    ?client_order_id
     ()
 ;;
 
-let sell ~price_cents ?size ?symbol ?participant ?time_in_force () =
+let sell
+  ~price_cents
+  ?size
+  ?symbol
+  ?participant
+  ?time_in_force
+  ?client_order_id
+  ()
+  =
   make_request
     ~side:Sell
     ~price_cents
@@ -63,6 +85,7 @@ let sell ~price_cents ?size ?symbol ?participant ?time_in_force () =
     ?symbol
     ?participant
     ?time_in_force
+    ?client_order_id
     ()
 ;;
 
@@ -100,6 +123,7 @@ let sample_events : Exchange_event.t list =
     ; price = Price.of_int_cents 15000
     ; size = Size.of_int 100
     ; time_in_force = Day
+    ; client_order_id = Client_order_id.of_int 1
     }
   in
   [ Order_accept

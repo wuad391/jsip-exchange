@@ -84,10 +84,8 @@ let%expect_test "login RPC" =
       (Rpc.Rpc.shapes Rpc_protocol.login_rpc : Async_rpc_kernel.Rpc_shapes.t)];
   [%expect
     {|
-    (Streaming_rpc (query 86ba5df747eec837f0b391dd49f33f9e)
-     (initial_response 86ba5df747eec837f0b391dd49f33f9e)
-     (update_response 433bb29b66b02afe94a1cd264b00ab2b)
-     (error 52966f4a49a77bfdff668e9cc61511b3))
+    (Rpc (query 3e66c214b98aaf83fe68446b8c87512a)
+     (response 27f76252e5181aab209cd62aa6e42268))
     |}];
   return ()
 ;;

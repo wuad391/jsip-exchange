@@ -118,7 +118,7 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
       | _ ->
         Or_error.error_string
           [%string
-            "expected: BUY|SELL <symbol> <size> <price> \
+            "expected: BUY|SELL <client order id> <symbol> <size> <price> \
              [%{Time_in_force.all_str#String}] [as <name>]"]
     in
     match parts with
@@ -136,6 +136,6 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
     | _ ->
       Or_error.error_string
         [%string
-          "expected: BUY|SELL <symbol> <size> <price> \
+          "expected: BUY|SELL <client order id> <symbol> <size> <price> \
            [%{Time_in_force.all_str#String}] [as <name>]"])
 ;;

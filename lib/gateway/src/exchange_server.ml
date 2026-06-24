@@ -50,7 +50,6 @@ let start ~symbols ~port () =
         [ Rpc.Rpc.implement
             Rpc_protocol.submit_order_rpc
             (fun state request ->
-               let () = print_endline [%string "I am in submit_order_rpc"] in
                match Connection_state.session state with
                | None ->
                  return (Or_error.error_string "User is not logged in.")

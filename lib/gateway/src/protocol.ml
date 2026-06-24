@@ -4,7 +4,6 @@ open Jsip_types
 (* Default participant when no "as <name>" is specified in the command.
    [parse_command_with_default_participant] overrides this with the
    caller-supplied default. *)
-let default_participant = Participant.of_string "anonymous"
 
 let format_event ?(participant = None) event =
   match event with

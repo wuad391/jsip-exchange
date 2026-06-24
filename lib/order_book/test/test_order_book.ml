@@ -9,6 +9,7 @@ let make_order
   ~order_id
   ?(size = 100)
   ?(participant = Harness.alice)
+  ?(client_order_id = 1)
   ()
   =
   Order.create
@@ -18,6 +19,7 @@ let make_order
      ; price = Price.of_int_cents price_cents
      ; size = Size.of_int size
      ; time_in_force = Day
+     ; client_order_id = Client_order_id.of_int client_order_id
      }
      : Order.Request.t)
     ~order_id:(Order_id.For_testing.of_int order_id)
@@ -27,7 +29,9 @@ let make_order
 
 let%expect_test "add and find an order" =
   let book = Order_book.create Harness.aapl in
-  let order = make_order ~side:Buy ~price_cents:15000 ~order_id:1 () in
+  let order =
+    make_order ~side:Buy ~price_cents:15000 ~order_id:1 () ~client_order_id:1
+  in
   Order_book.add book order;
   [%test_result: Order.t option]
     (Order_book.find book (Order.order_id order))
@@ -43,7 +47,14 @@ let%expect_test "find returns None for unknown order" =
 
 let%expect_test "remove an order" =
   let book = Order_book.create Harness.aapl in
-  let order = make_order ~side:Sell ~price_cents:15100 ~order_id:1 () in
+  let order =
+    make_order
+      ~side:Sell
+      ~price_cents:15100
+      ~order_id:1
+      ~client_order_id:1
+      ()
+  in
   Order_book.add book order;
   [%test_result: int] (Order_book.count book Sell) ~expect:1;
   let removed = Order_book.For_testing.remove book (Order.order_id order) in
@@ -72,13 +83,28 @@ let%expect_test "count tracks orders on each side independently" =
   let book = Order_book.create Harness.aapl in
   Order_book.add
     book
-    (make_order ~side:Buy ~price_cents:15000 ~order_id:1 ());
+    (make_order
+       ~side:Buy
+       ~price_cents:15000
+       ~order_id:1
+       ~client_order_id:1
+       ());
   Order_book.add
     book
-    (make_order ~side:Buy ~price_cents:14900 ~order_id:2 ());
+    (make_order
+       ~side:Buy
+       ~price_cents:14900
+       ~order_id:2
+       ~client_order_id:2
+       ());
   Order_book.add
     book
-    (make_order ~side:Sell ~price_cents:15100 ~order_id:3 ());
+    (make_order
+       ~side:Sell
+       ~price_cents:15100
+       ~order_id:3
+       ~client_order_id:3
+       ());
   [%test_result: int] (Order_book.count book Buy) ~expect:2;
   [%test_result: int] (Order_book.count book Sell) ~expect:1;
   [%test_result: bool] (Order_book.is_empty book) ~expect:false
@@ -90,13 +116,28 @@ let%expect_test "orders_on_side returns all orders on a side" =
   let book = Order_book.create Harness.aapl in
   Order_book.add
     book
-    (make_order ~side:Buy ~price_cents:15000 ~order_id:1 ());
+    (make_order
+       ~side:Buy
+       ~price_cents:15000
+       ~order_id:1
+       ~client_order_id:1
+       ());
   Order_book.add
     book
-    (make_order ~side:Buy ~price_cents:14900 ~order_id:2 ());
+    (make_order
+       ~side:Buy
+       ~price_cents:14900
+       ~order_id:2
+       ~client_order_id:2
+       ());
   Order_book.add
     book
-    (make_order ~side:Sell ~price_cents:15100 ~order_id:3 ());
+    (make_order
+       ~side:Sell
+       ~price_cents:15100
+       ~order_id:3
+       ~client_order_id:3
+       ());
   let bid_ids =
     Order_book.orders_on_side book Buy
     |> List.map ~f:(fun o -> Order.order_id o)
@@ -133,15 +174,26 @@ let%expect_test "orders_on_side returns all orders on a side" =
 
 let%expect_test "find_match returns None for empty book" =
   let book = Order_book.create Harness.aapl in
-  let order = make_order ~side:Buy ~price_cents:15000 ~order_id:1 () in
+  let order =
+    make_order ~side:Buy ~price_cents:15000 ~order_id:1 ~client_order_id:1 ()
+  in
   [%test_result: _ option] (Order_book.find_match book order) ~expect:None
 ;;
 
 let%expect_test "find_match finds a tradable resting order" =
   let book = Order_book.create Harness.aapl in
-  let resting = make_order ~side:Sell ~price_cents:15000 ~order_id:1 () in
+  let resting =
+    make_order
+      ~side:Sell
+      ~price_cents:15000
+      ~order_id:1
+      ~client_order_id:1
+      ()
+  in
   Order_book.add book resting;
-  let incoming = make_order ~side:Buy ~price_cents:15000 ~order_id:2 () in
+  let incoming =
+    make_order ~side:Buy ~price_cents:15000 ~order_id:2 ~client_order_id:2 ()
+  in
   let matched = Order_book.find_match book incoming in
   [%test_result: Order_id.t]
     (Order.order_id (Option.value_exn matched))
@@ -159,8 +211,15 @@ let%expect_test "find_match returns None when prices don't cross" =
   let book = Order_book.create Harness.aapl in
   Order_book.add
     book
-    (make_order ~side:Sell ~price_cents:15100 ~order_id:1 ());
-  let incoming = make_order ~side:Buy ~price_cents:15000 ~order_id:2 () in
+    (make_order
+       ~side:Sell
+       ~price_cents:15100
+       ~order_id:1
+       ~client_order_id:1
+       ());
+  let incoming =
+    make_order ~side:Buy ~price_cents:15000 ~order_id:2 ~client_order_id:2 ()
+  in
   [%test_result: Order.t option]
     (Order_book.find_match book incoming)
     ~expect:None
@@ -170,10 +229,24 @@ let%expect_test "find_match: buy matches against asks, not bids" =
   let book = Order_book.create Harness.aapl in
   Order_book.add
     book
-    (make_order ~side:Buy ~price_cents:15000 ~order_id:1 ());
-  let ask = make_order ~side:Sell ~price_cents:15000 ~order_id:2 () in
+    (make_order
+       ~side:Buy
+       ~price_cents:15000
+       ~order_id:1
+       ~client_order_id:1
+       ());
+  let ask =
+    make_order
+      ~side:Sell
+      ~price_cents:15000
+      ~order_id:2
+      ~client_order_id:2
+      ()
+  in
   Order_book.add book ask;
-  let incoming = make_order ~side:Buy ~price_cents:15000 ~order_id:3 () in
+  let incoming =
+    make_order ~side:Buy ~price_cents:15000 ~order_id:3 ~client_order_id:3 ()
+  in
   let matched = Order_book.find_match book incoming in
   [%test_result: Order_id.t]
     (Order.order_id (Option.value_exn matched))
@@ -218,13 +291,31 @@ let%expect_test "best_bid_offer: aggregates size at best level" =
   let size2 = 75 in
   Order_book.add
     book
-    (make_order ~side:Sell ~price_cents:15000 ~order_id:1 ~size:size1 ());
+    (make_order
+       ~side:Sell
+       ~price_cents:15000
+       ~order_id:1
+       ~size:size1
+       ~client_order_id:1
+       ());
   Order_book.add
     book
-    (make_order ~side:Sell ~price_cents:15000 ~order_id:2 ~size:size2 ());
+    (make_order
+       ~side:Sell
+       ~price_cents:15000
+       ~order_id:2
+       ~size:size2
+       ~client_order_id:2
+       ());
   Order_book.add
     book
-    (make_order ~side:Sell ~price_cents:15100 ~order_id:3 ~size:200 ());
+    (make_order
+       ~side:Sell
+       ~price_cents:15100
+       ~order_id:3
+       ~size:200
+       ~client_order_id:3
+       ());
   let bbo = Order_book.best_bid_offer book in
   [%test_result: Level.t option]
     bbo.ask
@@ -246,7 +337,12 @@ let%expect_test "best_bid_offer: tracks changes as orders are added" =
   print_bbo ();
   Order_book.add
     book
-    (make_order ~side:Buy ~price_cents:buy_price ~order_id:1 ());
+    (make_order
+       ~side:Buy
+       ~price_cents:buy_price
+       ~order_id:1
+       ~client_order_id:1
+       ());
   print_bbo ();
   Order_book.add
     book
