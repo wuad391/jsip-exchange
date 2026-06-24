@@ -12,6 +12,7 @@ type t =
       ; symbol : Symbol.t
       ; remaining_size : Size.t
       ; reason : Cancel_reason.t
+      ; client_order_id : Client_order_id.t
       }
   | Order_reject of
       { request : Order.Request.t

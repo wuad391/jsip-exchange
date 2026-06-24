@@ -5,6 +5,7 @@ type t =
   { books : Order_book.t Symbol.Map.t
   ; order_id_gen : Order_id.Generator.t
   ; mutable next_fill_id : int
+  ; client_order_id_lookup : Client_order_id.t Hash_set.t Participant.Table.t
   }
 [@@deriving sexp_of]
 
@@ -13,7 +14,11 @@ let create symbols =
     List.map symbols ~f:(fun sym -> sym, Order_book.create sym)
     |> Symbol.Map.of_alist_exn
   in
-  { books; order_id_gen = Order_id.Generator.create (); next_fill_id = 1 }
+  { books
+  ; order_id_gen = Order_id.Generator.create ()
+  ; next_fill_id = 1
+  ; client_order_id_lookup = Hashtbl.create (module Participant)
+  }
 ;;
 
 let book t symbol = Map.find t.books symbol
@@ -61,11 +66,21 @@ let rec match_loop ~book ~order ~fill_id =
       fill_event :: trade_event :: remaining_events, next_fill_id)
 ;;
 
+let validate_client_id t (request) =
+  let client_order_id = request.client_order_id in 
+  let participant = request.participant in 
+  let client_order_id_set = Hashtbl.find_or_add t.client_order_id_lookup participant ~default:(fun () -> Hash_set.create (module Client_order_id)) in
+  let is_duplicate = match Hash_set.find client_order_id_set ~f:(fun x -> x) with None -> false | Some _ -> true in 
+  is_duplicate
+
+
+
 let submit t (request : Order.Request.t) =
   match Map.find t.books request.symbol with
   | None ->
     [ Exchange_event.Order_reject { request; reason = "unknown symbol" } ]
   | Some book ->
+    let validate_client_id = 
     let order_id = Order_id.Generator.next t.order_id_gen in
     let order = Order.create request ~order_id in
     let accepted = Exchange_event.Order_accept { order_id; request } in

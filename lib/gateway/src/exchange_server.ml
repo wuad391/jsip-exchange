@@ -5,9 +5,7 @@ open Jsip_order_book
 
 module Connection_state = struct
   type t =
-    { mutable session : Session.t option
-    ; mutable client_order_id_lookup : Client_order_id.t Hash_set.t
-    }
+    { mutable session : Session.t option }
 
   let exists_client_order_id t check =
     let result_option =
@@ -101,6 +99,10 @@ let start ~symbols ~port () =
             ignore state;
             Matching_engine.book engine symbol
             |> Option.map ~f:Order_book.snapshot)
+          ; Rpc.Rpc.implement' Rpc_protocol.cancel_order_rpc (fun state
+             client_order_id ->
+
+             )
         ; Rpc.Pipe_rpc.implement
             Rpc_protocol.market_data_rpc
             (fun state symbols ->
