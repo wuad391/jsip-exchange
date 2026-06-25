@@ -1,0 +1,5 @@
+1. 1a Session.close doesn't return a deferred so what is the writeup trying to convey?
+
+dune promote test_fill
+
+dune promote test_bot_runtime

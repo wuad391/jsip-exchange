@@ -46,7 +46,7 @@ let validate_client_id t (request : Order.Request.t) =
     | None -> false
     | Some _ -> true
   in
-  is_duplicate
+  not is_duplicate
 ;;
 
 let get_client_order_id order_id =

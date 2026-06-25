@@ -45,7 +45,7 @@ let%expect_test "testing to_participant" =
           "testing to_participant returned None when should have Some _"]
   in
   print_s [%message (test : string)];
-  [%expect {| (test "You bought 100 AAPL at $150.25.") |}]
+  [%expect {| (test "Order 1: You bought 100 AAPL at $150.25.") |}]
 ;;
 
 let%expect_test "testing to_participant" =
@@ -73,5 +73,5 @@ let%expect_test "testing to_participant" =
           "testing to_participant returned None when should have Some _"]
   in
   print_s [%message (test : string)];
-  [%expect {| (test "You sold 100 AAPL at $150.25.") |}]
+  [%expect {| (test "Order 1: You sold 100 AAPL at $150.25.") |}]
 ;;

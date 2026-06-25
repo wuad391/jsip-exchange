@@ -20,16 +20,9 @@ let format_event ?(participant = None) event =
         | None -> [%string "FILL %{fill#Fill}"]
         | Some new_fill_string -> [%string "FILL %{new_fill_string}"]))
   | Order_cancel
-      { order_id
-      ; participant = _
-      ; symbol
-      ; remaining_size
-      ; reason
-      ; client_order_id
-      } ->
+      { order_id; participant = _; symbol; remaining_size; reason; _ } ->
     sprintf
-      "CANCELLED order %d: id=%s %s remaining=%d reason=%s"
-      (Client_order_id.to_int client_order_id)
+      "CANCELLED id=%s %s remaining=%d reason=%s"
       (Order_id.to_string order_id)
       (Symbol.to_string symbol)
       (Size.to_int remaining_size)

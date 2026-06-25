@@ -1,1 +1,0 @@
-1. 1a Session.close doesn't return a deferred so what is the writeup trying to convey?

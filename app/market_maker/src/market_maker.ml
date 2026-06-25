@@ -17,6 +17,11 @@ end
 
 let client_order_id_test_ref = ref 1
 
+let new_client_order_id () =
+  client_order_id_test_ref := !client_order_id_test_ref + 1;
+  Client_order_id.of_int !client_order_id_test_ref
+;;
+
 let seed_book (config : Config.t) conn =
   let submit request =
     let%map result =
@@ -35,14 +40,6 @@ let seed_book (config : Config.t) conn =
     (List.init config.num_levels ~f:Fn.id)
     ~f:(fun level ->
       let offset = config.half_spread_cents + level in
-      let new_client_order_id_buy =
-        client_order_id_test_ref := !client_order_id_test_ref + 1;
-        Client_order_id.of_int !client_order_id_test_ref
-      in
-      let new_client_order_id_sell =
-        client_order_id_test_ref := !client_order_id_test_ref + 1;
-        Client_order_id.of_int !client_order_id_test_ref
-      in
       let%bind () =
         submit
           ({ symbol = config.symbol
@@ -51,7 +48,7 @@ let seed_book (config : Config.t) conn =
            ; price = Price.of_int_cents (config.fair_value_cents - offset)
            ; size = Size.of_int config.size_per_level
            ; time_in_force = Day
-           ; client_order_id = new_client_order_id_buy
+           ; client_order_id = new_client_order_id ()
            }
            : Order.Request.t)
       and () =
@@ -62,7 +59,7 @@ let seed_book (config : Config.t) conn =
            ; price = Price.of_int_cents (config.fair_value_cents + offset)
            ; size = Size.of_int config.size_per_level
            ; time_in_force = Day
-           ; client_order_id = new_client_order_id_sell
+           ; client_order_id = new_client_order_id ()
            }
            : Order.Request.t)
       in
