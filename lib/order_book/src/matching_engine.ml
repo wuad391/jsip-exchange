@@ -1,17 +1,16 @@
 open! Core
 open Jsip_types
 
-
-(* We store an additional client_order_id_lookup so the matching machine can easily create Fill events (which require client order ids) from orders (which do not have client order ids for anonymity) *)
+(* We store an additional client_order_id_lookup so the matching machine can
+   easily create Fill events (which require client order ids) from orders
+   (which do not have client order ids for anonymity) *)
 type t =
   { books : Order_book.t Symbol.Map.t
   ; order_id_gen : Order_id.Generator.t
   ; mutable next_fill_id : int
   ; client_order_id_sets : Client_order_id.t Hash_set.t Participant.Table.t
-  ; client_order_id_lookup : Client_order_id.t Order_id.Table.t
   }
 [@@deriving sexp_of]
-
 
 let create symbols =
   let books =
@@ -22,13 +21,14 @@ let create symbols =
   ; order_id_gen = Order_id.Generator.create ()
   ; next_fill_id = 1
   ; client_order_id_sets = Hashtbl.create (module Participant)
-  ; client_order_id_lookup = Hashtbl.create (module Order_id)
   }
 ;;
 
 let book t symbol = Map.find t.books symbol
 
-(* These are client_order_id functions to interact with the sets and lookup  *)
+(* These are client_order_id functions to interact with the sets and lookup *)
+let client_order_id_lookup = Hashtbl.create (module Order_id)
+
 let validate_client_id t (request : Order.Request.t) =
   let client_order_id = request.client_order_id in
   let participant = request.participant in
@@ -49,16 +49,24 @@ let validate_client_id t (request : Order.Request.t) =
   is_duplicate
 ;;
 
-let get_client_order_id t order_id = Hashtbl.find_exn t.client_order_id_lookup order_id
-   
+let get_client_order_id order_id =
+  Hashtbl.find_exn client_order_id_lookup order_id
+;;
 
-let add_client_order_id t client_order_id order = 
-  let order_id = Order.order_id order in 
-  let participant = Order.participant order in 
-  let client_set = Hashtbl.find_or_add t.client_order_id_sets participant ~default(fun () -> Hash_set.create (module Client_order_id)) in 
+let add_client_order_id t client_order_id order =
+  let order_id = Order.order_id order in
+  let participant = Order.participant order in
+  let client_set =
+    Hashtbl.find_or_add
+      t.client_order_id_sets
+      participant
+      ~default:(fun () -> Hash_set.create (module Client_order_id))
+  in
   Hash_set.add client_set client_order_id;
-  ignore(Hashtbl.add t.client_order_id_lookup ~key:order_id ~data:client_order_id);
+  ignore
+    (Hashtbl.add client_order_id_lookup ~key:order_id ~data:client_order_id);
   ()
+;;
 
 (** Run the matching loop: repeatedly find a compatible resting order and
     fill against it. Returns the list of Fill and Trade_report events
@@ -77,7 +85,10 @@ let rec match_loop ~book ~order ~fill_id =
       Order.fill resting ~by:fill_size;
       if Order.is_fully_filled resting
       then Order_book.remove book (Order.order_id resting);
-      let aggressor_client_order_id, resting_client_order_id = get_client_order_id 
+      let aggressor_client_order_id, resting_client_order_id =
+        ( get_client_order_id (Order.order_id order)
+        , get_client_order_id (Order.order_id resting) )
+      in
       let fill_event =
         Exchange_event.Fill
           { fill_id
@@ -106,8 +117,6 @@ let rec match_loop ~book ~order ~fill_id =
       fill_event :: trade_event :: remaining_events, next_fill_id)
 ;;
 
-
-
 let submit t (request : Order.Request.t) =
   match Map.find t.books request.symbol with
   | None ->
@@ -118,7 +127,7 @@ let submit t (request : Order.Request.t) =
     let accept_or_reject =
       if validate_client_id t request
       then (
-        let add_client_order_id = in 
+        add_client_order_id t request.client_order_id order;
         Exchange_event.Order_accept { order_id; request })
       else
         Exchange_event.Order_reject
@@ -128,7 +137,7 @@ let submit t (request : Order.Request.t) =
     let bbo_before = Order_book.best_bid_offer book in
     (* Match *)
     let fill_events, next_fill_id =
-      match_loop ~book ~order ~fill_id:t.next_fill_id ()
+      match_loop ~book ~order ~fill_id:t.next_fill_id
     in
     t.next_fill_id <- next_fill_id;
     (* Post-match: rest on book or cancel unfilled remainder. *)
@@ -146,6 +155,7 @@ let submit t (request : Order.Request.t) =
               ; symbol = Order.symbol order
               ; remaining_size = Order.remaining_size order
               ; reason = Ioc_remainder
+              ; client_order_id = get_client_order_id order_id
               }
           ])
       else []

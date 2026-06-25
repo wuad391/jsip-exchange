@@ -57,7 +57,7 @@ let to_participant_view t participant =
   | true, _ ->
     Some
       (sprintf
-         "Order %s:You %s %d %s at %s."
+         "Order %s: You %s %d %s at %s."
          (Client_order_id.to_string t.aggressor_client_order_id)
          (match t.aggressor_side with Buy -> "bought" | Sell -> "sold")
          (Size.to_int t.size)
@@ -66,7 +66,7 @@ let to_participant_view t participant =
   | _, true ->
     Some
       (sprintf
-         "Order %s:You %s %d %s at %s."
+         "Order %s: You %s %d %s at %s."
          (Client_order_id.to_string t.resting_client_order_id)
          (match Side.flip t.aggressor_side with
           | Buy -> "bought"

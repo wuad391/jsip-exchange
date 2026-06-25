@@ -24,6 +24,11 @@ let create ?(symbols = [ aapl; tsla; goog ]) () =
 let engine t = t.engine
 let client_order_id_test_ref = ref 1
 
+let new_client_order_id () =
+  client_order_id_test_ref := !client_order_id_test_ref + 1;
+  Client_order_id.of_int !client_order_id_test_ref
+;;
+
 (* --- Builders --- *)
 
 let make_request
@@ -134,9 +139,11 @@ let sample_events : Exchange_event.t list =
       ; price = Price.of_int_cents 15000
       ; size = Size.of_int 100
       ; aggressor_order_id = Order_id.For_testing.of_int 2
+      ; aggressor_client_order_id = new_client_order_id ()
       ; aggressor_participant = alice
       ; aggressor_side = Buy
       ; resting_order_id = Order_id.For_testing.of_int 1
+      ; resting_client_order_id = new_client_order_id ()
       ; resting_participant = bob
       }
   ; Order_cancel
@@ -145,6 +152,7 @@ let sample_events : Exchange_event.t list =
       ; symbol = aapl
       ; remaining_size = Size.of_int 50
       ; reason = Ioc_remainder
+      ; client_order_id = new_client_order_id ()
       }
   ; Order_reject { request = order_request; reason = "unknown symbol" }
   ; Best_bid_offer_update
