@@ -64,8 +64,9 @@ let add_client_order t client_order_id order =
     Hashtbl.find_or_add t.client_order_tables participant ~default:(fun () ->
       Hashtbl.create (module Client_order_id))
   in
-  Hashtbl.add_exn client_order_table ~key:client_order_id ~data:order;
-  Hashtbl.add_exn client_order_id_lookup ~key:order_id ~data:client_order_id;
+  ignore (Hashtbl.add client_order_table ~key:client_order_id ~data:order);
+  ignore
+    (Hashtbl.add client_order_id_lookup ~key:order_id ~data:client_order_id);
   ()
 ;;
 

@@ -339,6 +339,106 @@ let%expect_test "no market data events on rejection" =
 ;;
 
 (* ================================================================ *)
+(* Log-in scenarios *)
+(* ================================================================ *)
+let%expect_test "Log in required before any actions" =
+  let t = Harness.create () in
+  (* Alice posts bids, Bob posts asks *)
+  submit_ t (Harness.buy ~price_cents:14990 ~size:100 ());
+  submit_ t (Harness.buy ~price_cents:14980 ~size:200 ());
+  submit_
+    t
+    (Harness.sell ~price_cents:15010 ~size:100 ~participant:Harness.bob ());
+  submit_
+    t
+    (Harness.sell ~price_cents:15020 ~size:150 ~participant:Harness.bob ());
+  (* Charlie crosses the spread: buys at $150.10 *)
+  submit_
+    t
+    (Harness.buy ~price_cents:15010 ~size:50 ~participant:Harness.charlie ());
+  Harness.print_book t Harness.aapl;
+  Harness.print_bbo t Harness.aapl;
+  [%expect
+    {|
+    ACCEPTED id=1 AAPL BUY 100@$149.90 DAY
+    ACCEPTED id=2 AAPL BUY 200@$149.80 DAY
+    ACCEPTED id=3 AAPL SELL 100@$150.10 DAY
+    ACCEPTED id=4 AAPL SELL 150@$150.20 DAY
+    ACCEPTED id=5 AAPL BUY 50@$150.10 DAY
+    FILL fill_id=1 AAPL $150.10 x50 aggressor=5(Charlie w/ client order ID = 43) BUY resting=3(Bob w/ client order ID = 16)
+    === AAPL ===
+      BIDS:
+        $149.80 x200
+        $149.90 x100
+      ASKS:
+        $150.20 x150
+        $150.10 x50
+      BBO: $149.90 x100 / $150.10 x50
+    BBO AAPL: $149.90 x100 / $150.10 x50
+    |}]
+;;
+
+let%expect_test "scenario: aggressive IOC sweeps entire book" =
+  let t = Harness.create () in
+  submit_
+    t
+    (Harness.sell ~price_cents:15000 ~size:50 ~participant:Harness.bob ());
+  submit_
+    t
+    (Harness.sell
+       ~price_cents:15010
+       ~size:50
+       ~participant:Harness.charlie
+       ());
+  submit_
+    t
+    (Harness.sell ~price_cents:15020 ~size:50 ~participant:Harness.bob ());
+  (* IOC buy for 200 at $150.20 — sweeps all 150 shares, cancels 50 *)
+  submit_ t (Harness.buy ~price_cents:15020 ~size:200 ~time_in_force:Ioc ());
+  Harness.print_book t Harness.aapl;
+  [%expect
+    {|
+    ACCEPTED id=1 AAPL SELL 50@$150.00 DAY
+    ACCEPTED id=2 AAPL SELL 50@$150.10 DAY
+    ACCEPTED id=3 AAPL SELL 50@$150.20 DAY
+    ACCEPTED id=4 AAPL BUY 200@$150.20 IOC
+    FILL fill_id=1 AAPL $150.00 x50 aggressor=4(Alice w/ client order ID = 42) BUY resting=1(Bob w/ client order ID = 5)
+    FILL fill_id=2 AAPL $150.10 x50 aggressor=4(Alice w/ client order ID = 42) BUY resting=2(Charlie w/ client order ID = 7)
+    FILL fill_id=3 AAPL $150.20 x50 aggressor=4(Alice w/ client order ID = 42) BUY resting=3(Bob w/ client order ID = 16)
+    CANCELLED id=4 AAPL remaining=50 reason=IOC_REMAINDER
+    === AAPL ===
+      BIDS: (empty)
+      ASKS: (empty)
+      BBO: - / -
+    |}]
+;;
+
+let%expect_test "scenario: order IDs are globally sequential" =
+  let t = Harness.create () in
+  submit_ t (Harness.buy ~price_cents:15000 ~symbol:Harness.aapl ());
+  submit_
+    t
+    (Harness.sell
+       ~price_cents:20000
+       ~symbol:Harness.tsla
+       ~participant:Harness.bob
+       ());
+  submit_
+    t
+    (Harness.buy
+       ~price_cents:28000
+       ~symbol:Harness.goog
+       ~participant:Harness.charlie
+       ());
+  [%expect
+    {|
+    ACCEPTED id=1 AAPL BUY 100@$150.00 DAY
+    ACCEPTED id=2 TSLA SELL 100@$200.00 DAY
+    ACCEPTED id=3 GOOG BUY 100@$280.00 DAY
+    |}]
+;;
+
+(* ================================================================ *)
 (* End-to-end scenarios *)
 (* ================================================================ *)
 

@@ -42,6 +42,8 @@ let format_event ?(participant = None) event =
   | Trade_report { symbol; price; size } ->
     let size = Size.to_int size in
     [%string "TRADE %{symbol#Symbol} %{price#Price} x%{size#Int}"]
+  | Cancel_reject { participant = _; client_order_id = _; reason } ->
+    [%string "REJECTED CANCEL because %{reason}"]
 ;;
 
 let format_events ?(participant = None) events =
