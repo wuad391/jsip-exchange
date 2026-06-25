@@ -1,1 +1,1 @@
-1. In test_end_to_end.ml, the Audits used to come after the [for Participant] messages. Will this bite me later in terms of speed? Is this some sort of weird race condition or somethign?
+1. 1a Session.close doesn't return a deferred so what is the writeup trying to convey?

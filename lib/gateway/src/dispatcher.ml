@@ -20,7 +20,8 @@ let create () =
 (* TODO: is there more to be done here? *)
 let clean_up_session t session =
   let participant = Session.participant session in
-  return (Hashtbl.remove t.sessions participant)
+  Hashtbl.remove t.sessions participant;
+  return (Session.close session)
 ;;
 
 let print_sessions (t : t) =
