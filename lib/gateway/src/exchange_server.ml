@@ -11,10 +11,21 @@ module Connection_state = struct
   let update_session t session = t.session <- Some session
 end
 
+(* A message encapsulates all data that can be fed to the matching engine in
+   order. Currently, this includes requests (buy and sell) and cancels. By
+   keeping all of the time/order sensative data in one place, we avoid any
+   ordering issues due to server latency (like if we had a separate pipe for
+   cancel). *)
+module Message = struct
+  type t =
+    | Request of Order.Request.t
+    | Cancel of Order.Cancel.t
+end
+
 type t =
   { engine : Matching_engine.t
   ; dispatcher : Dispatcher.t
-  ; request_writer : Order.Request.t Pipe.Writer.t
+  ; message_writer : Message.t Pipe.Writer.t
   ; tcp_server : (Socket.Address.Inet.t, int) Tcp.Server.t
   ; port : int
   }
@@ -24,26 +35,31 @@ type t =
    deferred and the [submit_order_rpc] handler blocks until the engine has
    processed enough requests to free up space — clients get backpressure
    without the server's memory growing unboundedly. *)
-let request_queue_size_budget = 1024
+let message_queue_size_budget = 1024
 
-let handle_submit ~request_writer (request : Order.Request.t) =
-  let%map () = Pipe.write_if_open request_writer request in
+let handle_submit ~message_writer (message : Message.t) =
+  let%map () = Pipe.write_if_open message_writer message in
   Ok ()
 ;;
 
-let start_matching_loop ~engine ~dispatcher request_reader =
+let start_matching_loop ~engine ~dispatcher message_reader =
   don't_wait_for
-    (Pipe.iter_without_pushback request_reader ~f:(fun request ->
-       let events = Matching_engine.submit engine request in
-       Dispatcher.dispatch dispatcher events))
+    (Pipe.iter_without_pushback message_reader ~f:(fun message ->
+       match message with
+       | Message.Request request ->
+         let events = Matching_engine.submit engine request in
+         Dispatcher.dispatch dispatcher events
+       | Message.Cancel cancel ->
+         let events = Matching_engine.cancel engine cancel in
+         Dispatcher.dispatch dispatcher events))
 ;;
 
 let start ~symbols ~port () =
   let engine = Matching_engine.create symbols in
   let dispatcher = Dispatcher.create () in
-  let request_reader, request_writer = Pipe.create () in
-  Pipe.set_size_budget request_writer request_queue_size_budget;
-  start_matching_loop ~engine ~dispatcher request_reader;
+  let message_reader, message_writer = Pipe.create () in
+  Pipe.set_size_budget message_writer message_queue_size_budget;
+  start_matching_loop ~engine ~dispatcher message_reader;
   let implementations =
     Rpc.Implementations.create_exn
       ~implementations:
@@ -67,22 +83,32 @@ let start ~symbols ~port () =
                    }
                  in
                  let%bind result =
-                   handle_submit ~request_writer valid_request
+                   handle_submit ~message_writer (Request valid_request)
                  in
                  (match result with
                   | Ok () -> return (Ok ())
                   | Error _ ->
-                    return (Or_error.error_string "Submission error")))
+                    return (Or_error.error_string "Request submission error")))
         ; Rpc.Rpc.implement' Rpc_protocol.book_query_rpc (fun state symbol ->
             ignore state;
             Matching_engine.book engine symbol
             |> Option.map ~f:Order_book.snapshot)
-        ; Rpc.Rpc.implement'
+        ; Rpc.Rpc.implement
             Rpc_protocol.cancel_order_rpc
             (fun state client_order_id ->
-               ignore state;
-               ignore client_order_id;
-               Ok ())
+               match Connection_state.participant state with
+               | None ->
+                 return (Or_error.error_string "User is not logged in.")
+               | Some participant ->
+                 let%bind result =
+                   handle_submit
+                     ~message_writer
+                     (Cancel { participant; client_order_id })
+                 in
+                 (match result with
+                  | Ok () -> return (Ok ())
+                  | Error _ ->
+                    return (Or_error.error_string "Cancel submission error")))
         ; Rpc.Pipe_rpc.implement
             Rpc_protocol.market_data_rpc
             (fun state symbols ->
@@ -161,13 +187,13 @@ let start ~symbols ~port () =
       ()
   in
   let actual_port = Tcp.Server.listening_on tcp_server in
-  { engine; dispatcher; request_writer; tcp_server; port = actual_port }
+  { engine; dispatcher; message_writer; tcp_server; port = actual_port }
 ;;
 
 let port t = t.port
 
 let close t =
-  Pipe.close t.request_writer;
+  Pipe.close t.message_writer;
   Tcp.Server.close t.tcp_server
 ;;
 

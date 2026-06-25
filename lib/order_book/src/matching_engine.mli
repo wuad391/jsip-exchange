@@ -24,6 +24,11 @@ val create : Symbol.t list -> t
     rejection). *)
 val submit : t -> Order.Request.t -> Exchange_event.t list
 
+(** Cancels an existing order. Returns a list of exchange events: acceptance
+    or rejection of cancel (canceled for reasons like nonexistent order),
+    followed by any BBO updates *)
+val cancel : t -> Order.Cancel.t -> Exchange_event.t list
+
 (** {2 Queries} *)
 
 (** The order book for a given symbol, or [None] if the symbol is not traded

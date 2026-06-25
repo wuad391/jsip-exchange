@@ -31,6 +31,14 @@ module Request = struct
   ;;
 end
 
+module Cancel = struct
+  type t =
+    { participant : Participant.t
+    ; client_order_id : Client_order_id.t
+    }
+  [@@deriving sexp, bin_io]
+end
+
 type t =
   { order_id : Order_id.t
   ; symbol : Symbol.t

@@ -8,7 +8,7 @@ type t =
   { books : Order_book.t Symbol.Map.t
   ; order_id_gen : Order_id.Generator.t
   ; mutable next_fill_id : int
-  ; client_order_id_sets : Client_order_id.t Hash_set.t Participant.Table.t
+  ; client_order_tables : Order.t Client_order_id.Table.t Participant.Table.t
   }
 [@@deriving sexp_of]
 
@@ -20,7 +20,7 @@ let create symbols =
   { books
   ; order_id_gen = Order_id.Generator.create ()
   ; next_fill_id = 1
-  ; client_order_id_sets = Hashtbl.create (module Participant)
+  ; client_order_tables = Hashtbl.create (module Participant)
   }
 ;;
 
@@ -32,41 +32,44 @@ let client_order_id_lookup = Hashtbl.create (module Order_id)
 let validate_client_id t (request : Order.Request.t) =
   let client_order_id = request.client_order_id in
   let participant = request.participant in
-  let client_order_id_set =
-    Hashtbl.find_or_add
-      t.client_order_id_sets
-      participant
-      ~default:(fun () -> Hash_set.create (module Client_order_id))
+  let client_order_table =
+    Hashtbl.find_or_add t.client_order_tables participant ~default:(fun () ->
+      Hashtbl.create (module Client_order_id))
   in
   let is_duplicate =
-    match
-      Hash_set.find client_order_id_set ~f:(fun x ->
-        Client_order_id.equal x client_order_id)
-    with
+    match Hashtbl.find client_order_table client_order_id with
     | None -> false
     | Some _ -> true
   in
   not is_duplicate
 ;;
 
+let get_client_order t participant client_order_id =
+  let client_order_table_opt =
+    Hashtbl.find t.client_order_tables participant
+  in
+  match client_order_table_opt with
+  | None -> None
+  | Some table -> Hashtbl.find table client_order_id
+;;
+
 let get_client_order_id order_id =
   Hashtbl.find_exn client_order_id_lookup order_id
 ;;
 
-let add_client_order_id t client_order_id order =
+let add_client_order t client_order_id order =
   let order_id = Order.order_id order in
   let participant = Order.participant order in
-  let client_set =
-    Hashtbl.find_or_add
-      t.client_order_id_sets
-      participant
-      ~default:(fun () -> Hash_set.create (module Client_order_id))
+  let client_order_table =
+    Hashtbl.find_or_add t.client_order_tables participant ~default:(fun () ->
+      Hashtbl.create (module Client_order_id))
   in
-  Hash_set.add client_set client_order_id;
-  ignore
-    (Hashtbl.add client_order_id_lookup ~key:order_id ~data:client_order_id);
+  Hashtbl.add_exn client_order_table ~key:client_order_id ~data:order;
+  Hashtbl.add_exn client_order_id_lookup ~key:order_id ~data:client_order_id;
   ()
 ;;
+
+(* END client order id functions *)
 
 (** Run the matching loop: repeatedly find a compatible resting order and
     fill against it. Returns the list of Fill and Trade_report events
@@ -118,7 +121,7 @@ let rec match_loop ~book ~order ~fill_id =
 ;;
 
 let submit t (request : Order.Request.t) =
-  match Map.find t.books request.symbol with
+  match book t request.symbol with
   | None ->
     [ Exchange_event.Order_reject { request; reason = "unknown symbol" } ]
   | Some book ->
@@ -127,7 +130,7 @@ let submit t (request : Order.Request.t) =
     let accept_or_reject =
       if validate_client_id t request
       then (
-        add_client_order_id t request.client_order_id order;
+        add_client_order t request.client_order_id order;
         Exchange_event.Order_accept { order_id; request })
       else
         Exchange_event.Order_reject
@@ -172,4 +175,51 @@ let submit t (request : Order.Request.t) =
     in
     List.concat
       [ [ accept_or_reject ]; fill_events; post_events; bbo_events ]
+;;
+
+let cancel t (cancel : Order.Cancel.t) =
+  let participant, client_order_id =
+    cancel.participant, cancel.client_order_id
+  in
+  let client_order_opt = get_client_order t participant client_order_id in
+  match client_order_opt with
+  | None ->
+    [ Exchange_event.Cancel_reject
+        { participant
+        ; client_order_id
+        ; reason = "Cannot cancel non-existent order"
+        }
+    ]
+  | Some order ->
+    let order_id = Order.order_id order in
+    let symbol = Order.symbol order in
+    let book_opt = book t symbol in
+    (match book_opt with
+     | None ->
+       [ Exchange_event.Cancel_reject
+           { participant
+           ; client_order_id
+           ; reason = "Tried to cancel an order with an unknown symbol"
+           }
+       ]
+     | Some book ->
+       let bbo = Order_book.best_bid_offer book in
+       let () = Order_book.remove book order_id in
+       let new_bbo = Order_book.best_bid_offer book in
+       let cancel_event =
+         Exchange_event.Order_cancel
+           { order_id
+           ; participant
+           ; symbol
+           ; remaining_size = Order.remaining_size order
+           ; reason = Cancel_reason.Participant_requested
+           ; client_order_id
+           }
+       in
+       if Bbo.equal bbo new_bbo
+       then [ cancel_event ]
+       else
+         [ cancel_event
+         ; Exchange_event.Best_bid_offer_update { symbol; bbo = new_bbo }
+         ])
 ;;

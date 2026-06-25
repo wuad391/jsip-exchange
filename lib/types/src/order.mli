@@ -24,6 +24,14 @@ module Request : sig
   val to_string : t -> string
 end
 
+module Cancel : sig
+  type t =
+    { participant : Participant.t
+    ; client_order_id : Client_order_id.t
+    }
+  [@@deriving sexp, bin_io]
+end
+
 (** A live order on the exchange, with an ID assigned by the matching engine
     and mutable remaining size. *)
 type t [@@deriving sexp, equal, compare]
