@@ -50,10 +50,6 @@ by the server process; the SUBSCRIBE command attaches you to a per-symbol
 market-data feed.|}]);
   let rec loop () =
     print_string "> ";
-    let%bind session_feed, _ =
-      Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc conn ()
-    in
-    let%bind () = read_print_events session_feed (Some participant) in
     match%bind Reader.read_line (Lazy.force Reader.stdin) with
     | `Eof ->
       print_endline "\nDisconnected.";
@@ -107,25 +103,35 @@ market-data feed.|}]);
                      print_endline
                        [%string "[MD] %{Protocol.format_event event}"]));
                 loop ())
-           | _ ->
-             (match
-                Exchange_command.parse line ~default_participant:participant
-              with
-              | Error msg ->
-                print_s [%sexp (msg : Error.t)];
-                loop ()
-              | Ok (Submit request) ->
-                let%bind.Deferred.Or_error () =
-                  Rpc.Rpc.dispatch_exn
-                    Rpc_protocol.submit_order_rpc
-                    conn
-                    request
-                in
-                loop ()
-              | _ ->
-                print_endline
-                  [%string "i'm not actually sure what to do here."];
-                loop ())))
+           | Submit request ->
+             let%bind.Deferred.Or_error () =
+               Rpc.Rpc.dispatch_exn
+                 Rpc_protocol.submit_order_rpc
+                 conn
+                 request
+             in
+             loop ()
+           | Cancel cancel ->
+             let%bind.Deferred.Or_error () =
+               Rpc.Rpc.dispatch_exn
+                 Rpc_protocol.cancel_order_rpc
+                 conn
+                 cancel.client_order_id
+             in
+             loop ()))
+  in
+  let%bind session_feed, _ =
+    Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc conn ()
+  in
+  let () =
+    don't_wait_for
+      (Pipe.iter_without_pushback session_feed ~f:(fun event ->
+         let event_string =
+           Protocol.format_event
+             ~participant:(Some (Participant.of_string participant_name))
+             event
+         in
+         print_endline event_string))
   in
   loop ()
 ;;

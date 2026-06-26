@@ -13,6 +13,182 @@ open Jsip_test_harness
 open E2e_helpers
 
 (* ---------------------------------------------------------------- *)
+(* Log in tests *)
+(* ---------------------------------------------------------------- *)
+let%expect_test "Log in required before submit or cancel" =
+  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+    let%bind alice = connect_as ~port ~login:false Harness.alice in
+    let%bind bob = connect_as ~login:false ~port Harness.bob in
+    (* Bob places a sell *)
+    let%bind () =
+      rpc_submit
+        bob
+        (Harness.sell
+           ~price_cents:15000
+           ~participant:Harness.bob
+           ~client_order_id:1
+           ())
+    in
+    [%expect {| User is not logged in. |}];
+    (* Alice places a buy — should cross *)
+    let%bind () = rpc_cancel alice (Harness.cancel ~client_order_id:1) in
+    [%expect {| User is not logged in. |}];
+    return ())
+;;
+
+let%expect_test "Cannot log in two users under the same name" =
+  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+    let%bind _ = connect_as ~port Harness.alice in
+    let%bind _ = connect_as ~port Harness.alice in
+    [%expect {| User is not logged in. |}];
+    return ())
+;;
+
+let%expect_test "Log in and submit order guard against duplicate client \
+                 order IDs"
+  =
+  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+    let%bind bob = connect_as ~port Harness.bob in
+    (* Bob places a sell *)
+    let%bind () =
+      rpc_submit
+        bob
+        (Harness.sell
+           ~price_cents:15000
+           ~participant:Harness.bob
+           ~client_order_id:1
+           ())
+    in
+    let%bind () =
+      rpc_submit
+        bob
+        (Harness.sell
+           ~price_cents:15000
+           ~participant:Harness.bob
+           ~client_order_id:1
+           ())
+    in
+    [%expect {| User is not logged in. |}];
+    return ())
+;;
+
+(* ---------------------------------------------------------------- *)
+(* Cancellation tests *)
+(* ---------------------------------------------------------------- *)
+let%expect_test "Submit then cancel" =
+  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+    let%bind alice = connect_as ~port Harness.alice in
+    let%bind bob = connect_as ~port Harness.bob in
+    (* Bob places a sell *)
+    let%bind () =
+      rpc_submit
+        bob
+        (Harness.sell
+           ~price_cents:15000
+           ~participant:Harness.bob
+           ~client_order_id:1
+           ())
+    in
+    [%expect {| User is not logged in. |}];
+    ignore
+      (Or_error.try_with (fun () ->
+         rpc_submit
+           alice
+           (Harness.buy
+              ~price_cents:1
+              ~participant:Harness.alice
+              ~client_order_id:1
+              ())));
+    [%expect {| |}];
+    (* Alice places a buy — should cross *)
+    let%bind () = rpc_cancel alice (Harness.cancel ~client_order_id:1) in
+    [%expect {| User is not logged in. |}];
+    return ())
+;;
+
+let%expect_test "Canceling an already filled order" =
+  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+    let%bind alice = connect_as ~port Harness.alice in
+    let%bind bob = connect_as ~port Harness.bob in
+    (* Bob places a sell *)
+    let%bind () =
+      rpc_submit
+        bob
+        (Harness.sell
+           ~price_cents:1
+           ~participant:Harness.bob
+           ~client_order_id:1
+           ())
+    in
+    [%expect {| User is not logged in. |}];
+    let%bind () =
+      rpc_submit
+        alice
+        (Harness.buy
+           ~price_cents:1
+           ~participant:Harness.alice
+           ~client_order_id:1
+           ())
+    in
+    [%expect {| |}];
+    (* Alice places a buy — should cross *)
+    let%bind () = rpc_cancel bob (Harness.cancel ~client_order_id:1) in
+    [%expect {| User is not logged in. |}];
+    let%bind () = rpc_cancel alice (Harness.cancel ~client_order_id:1) in
+    [%expect {| User is not logged in. |}];
+    return ())
+;;
+
+let%expect_test "Canceling a non existent order" =
+  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+    let%bind alice = connect_as ~port Harness.alice in
+    let%bind () = rpc_cancel alice (Harness.cancel ~client_order_id:1) in
+    [%expect {| User is not logged in. |}];
+    return ())
+;;
+
+let%expect_test "BBO update after cancel" =
+  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+    let%bind alice = connect_as ~port Harness.alice in
+    let%bind bob = connect_as ~port Harness.bob in
+    (* Bob places a sell *)
+    let%bind () = rpc_subscribe alice [ Harness.aapl ] "Alice" in
+    let%bind () =
+      rpc_submit
+        bob
+        (Harness.sell
+           ~price_cents:1
+           ~participant:Harness.bob
+           ~client_order_id:1
+           ())
+    in
+    let%bind () =
+      rpc_submit
+        bob
+        (Harness.sell
+           ~price_cents:100
+           ~participant:Harness.bob
+           ~client_order_id:2
+           ())
+    in
+    [%expect {| User is not logged in. |}];
+    let%bind () =
+      rpc_submit
+        alice
+        (Harness.buy
+           ~price_cents:100
+           ~participant:Harness.alice
+           ~client_order_id:1
+           ())
+    in
+    [%expect {| |}];
+    (* Alice places a buy — should cross *)
+    let%bind () = rpc_cancel bob (Harness.cancel ~client_order_id:1) in
+    [%expect {| User is not logged in. |}];
+    return ())
+;;
+
+(* ---------------------------------------------------------------- *)
 (* Multiple client tests *)
 (* ---------------------------------------------------------------- *)
 

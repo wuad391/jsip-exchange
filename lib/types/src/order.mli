@@ -30,6 +30,8 @@ module Cancel : sig
     ; client_order_id : Client_order_id.t
     }
   [@@deriving sexp, bin_io]
+
+  val to_string : t -> string
 end
 
 (** A live order on the exchange, with an ID assigned by the matching engine

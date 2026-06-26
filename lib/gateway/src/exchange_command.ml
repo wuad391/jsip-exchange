@@ -7,6 +7,7 @@ module Verb = struct
     | Sell
     | Book
     | Subscribe
+    | Cancel
   [@@deriving string ~case_insensitive, enumerate]
 
   let all_str = String.concat (List.map all ~f:to_string) ~sep:", "
@@ -16,6 +17,7 @@ type t =
   | Submit of Order.Request.t
   | Book of Symbol.t
   | Subscribe of Symbol.t
+  | Cancel of Order.Cancel.t
 [@@deriving sexp]
 
 let to_string t =
@@ -23,6 +25,7 @@ let to_string t =
   | Submit request -> [%string "%{request#Order.Request}"]
   | Book symbol -> [%string "BOOK %{symbol#Symbol}"]
   | Subscribe symbol -> [%string "SUBSCRIBE %{symbol#Symbol}"]
+  | Cancel cancel -> [%string "%{(cancel)#Order.Cancel}"]
 ;;
 
 (* This function is a more robust parser than the old parser previously found
@@ -121,13 +124,32 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
             "expected: BUY|SELL <client order id> <symbol> <size> <price> \
              [%{Time_in_force.all_str#String}] [as <name>]"]
     in
+    let cancel_parse client_order_id rest =
+      let open Result.Let_syntax in
+      let%bind participant =
+        match rest with
+        | "as" :: name :: _ | "AS" :: name :: _ ->
+          Ok (Participant.of_string name)
+        | [] -> Ok default_participant
+        | _ ->
+          let trailing = String.concat ~sep:" " rest in
+          Or_error.error_string
+            [%string "unexpected trailing arguments: %{trailing}"]
+      in
+      Ok
+        (Cancel
+           { participant
+           ; client_order_id = Client_order_id.of_string client_order_id
+           })
+    in
     match parts with
-    | verb :: symbol :: rest ->
+    | verb :: second :: rest ->
       let verb_type = Or_error.try_with (fun _ -> Verb.of_string verb) in
       (match verb_type with
-       | Ok Verb.Buy | Ok Sell -> submit_parse verb_type (symbol :: rest)
-       | Ok Verb.Book -> Ok (Book (Symbol.of_string symbol))
-       | Ok Verb.Subscribe -> Ok (Subscribe (Symbol.of_string symbol))
+       | Ok Verb.Buy | Ok Sell -> submit_parse verb_type (second :: rest)
+       | Ok Verb.Book -> Ok (Book (Symbol.of_string second))
+       | Ok Verb.Subscribe -> Ok (Subscribe (Symbol.of_string second))
+       | Ok Verb.Cancel -> cancel_parse second rest
        | Error _ ->
          Or_error.error_string
            [%string

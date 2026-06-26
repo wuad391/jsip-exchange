@@ -38,9 +38,7 @@ let make_request
   ?(symbol = aapl)
   ?(participant = alice)
   ?(time_in_force = Time_in_force.Day)
-  ?(client_order_id =
-    client_order_id_test_ref := !client_order_id_test_ref + 1;
-    !client_order_id_test_ref)
+  ?(client_order_id = Client_order_id.to_int (new_client_order_id ()))
   ()
   : Order.Request.t
   =
@@ -93,6 +91,8 @@ let sell
     ?client_order_id
     ()
 ;;
+
+let cancel ~client_order_id = Client_order_id.of_int client_order_id
 
 (* --- Formatting --- *)
 

@@ -37,6 +37,12 @@ module Cancel = struct
     ; client_order_id : Client_order_id.t
     }
   [@@deriving sexp, bin_io]
+
+  let to_string { participant; client_order_id } =
+    [%string
+      "%{participant#Participant} cancels their order \
+       %{client_order_id#Client_order_id}"]
+  ;;
 end
 
 type t =

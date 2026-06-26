@@ -92,15 +92,21 @@ let%expect_test "aggressor sweeps multiple resting orders" =
   let t = Harness.create () in
   submit_
     t
-    (Harness.sell ~price_cents:15000 ~size:50 ~participant:Harness.bob ());
+    (Harness.sell
+       ~client_order_id:1
+       ~price_cents:15000
+       ~size:50
+       ~participant:Harness.bob
+       ());
   submit_
     t
     (Harness.sell
+       ~client_order_id:1
        ~price_cents:15000
        ~size:80
        ~participant:Harness.charlie
        ());
-  submit_ t (Harness.buy ~price_cents:15000 ~size:100 ());
+  submit_ t (Harness.buy ~client_order_id:1 ~price_cents:15000 ~size:100 ());
   [%expect
     {|
     ACCEPTED id=1 AAPL SELL 50@$150.00 DAY
@@ -338,46 +344,6 @@ let%expect_test "no market data events on rejection" =
   [%test_result: int] md_count ~expect:0
 ;;
 
-(* ================================================================ *)
-(* Log-in scenarios *)
-(* ================================================================ *)
-let%expect_test "Log in required before any actions" =
-  let t = Harness.create () in
-  (* Alice posts bids, Bob posts asks *)
-  submit_ t (Harness.buy ~price_cents:14990 ~size:100 ());
-  submit_ t (Harness.buy ~price_cents:14980 ~size:200 ());
-  submit_
-    t
-    (Harness.sell ~price_cents:15010 ~size:100 ~participant:Harness.bob ());
-  submit_
-    t
-    (Harness.sell ~price_cents:15020 ~size:150 ~participant:Harness.bob ());
-  (* Charlie crosses the spread: buys at $150.10 *)
-  submit_
-    t
-    (Harness.buy ~price_cents:15010 ~size:50 ~participant:Harness.charlie ());
-  Harness.print_book t Harness.aapl;
-  Harness.print_bbo t Harness.aapl;
-  [%expect
-    {|
-    ACCEPTED id=1 AAPL BUY 100@$149.90 DAY
-    ACCEPTED id=2 AAPL BUY 200@$149.80 DAY
-    ACCEPTED id=3 AAPL SELL 100@$150.10 DAY
-    ACCEPTED id=4 AAPL SELL 150@$150.20 DAY
-    ACCEPTED id=5 AAPL BUY 50@$150.10 DAY
-    FILL fill_id=1 AAPL $150.10 x50 aggressor=5(Charlie w/ client order ID = 43) BUY resting=3(Bob w/ client order ID = 16)
-    === AAPL ===
-      BIDS:
-        $149.80 x200
-        $149.90 x100
-      ASKS:
-        $150.20 x150
-        $150.10 x50
-      BBO: $149.90 x100 / $150.10 x50
-    BBO AAPL: $149.90 x100 / $150.10 x50
-    |}]
-;;
-
 let%expect_test "scenario: aggressive IOC sweeps entire book" =
   let t = Harness.create () in
   submit_
@@ -466,7 +432,7 @@ let%expect_test "scenario: two participants trade, book reflects state" =
     ACCEPTED id=3 AAPL SELL 100@$150.10 DAY
     ACCEPTED id=4 AAPL SELL 150@$150.20 DAY
     ACCEPTED id=5 AAPL BUY 50@$150.10 DAY
-    FILL fill_id=1 AAPL $150.10 x50 aggressor=5(Charlie w/ client order ID = 43) BUY resting=3(Bob w/ client order ID = 16)
+    FILL fill_id=1 AAPL $150.10 x50 aggressor=5(Charlie w/ client order ID = 50) BUY resting=3(Bob w/ client order ID = 16)
     === AAPL ===
       BIDS:
         $149.80 x200

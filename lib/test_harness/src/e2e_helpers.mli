@@ -20,7 +20,11 @@ type client
 
 (** Connect a client to [port]. The participant argument is used to print
     per-participant events when an expect test binds. *)
-val connect_as : port:int -> Participant.t -> client Deferred.t
+val connect_as
+  :  port:int
+  -> ?login:Bool.t
+  -> Participant.t
+  -> client Deferred.t
 
 (** The raw RPC connection, useful for tests that exercise unusual RPC paths
     (audit log subscriptions, second clients on the same connection, etc.). *)
@@ -34,3 +38,6 @@ val rpc_submit : client -> Order.Request.t -> unit Deferred.t
 
 (** Query the book via RPC. *)
 val rpc_book : client -> Symbol.t -> Book.t option Deferred.t
+
+val rpc_cancel : client -> Client_order_id.t -> unit Deferred.t
+val rpc_subscribe : client -> Symbol.t list -> string -> unit Deferred.t

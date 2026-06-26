@@ -71,6 +71,8 @@ val sell
   -> unit
   -> Order.Request.t
 
+val cancel : client_order_id:int -> Client_order_id.t
+
 (** {2 Actions}
 
     These submit orders and immediately print the resulting events, which is

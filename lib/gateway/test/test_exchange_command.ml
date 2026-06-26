@@ -91,7 +91,7 @@ let%expect_test "parse error: empty string" =
 let%expect_test "parse error: unknown command" =
   print_parse "HOLD\n   AAPL\n\n 100 150.00";
   [%expect
-    {| "unknown command HOLD (expected Buy, Sell, Book, Subscribe)" |}]
+    {| "unknown command HOLD (expected Buy, Sell, Book, Subscribe, Cancel)" |}]
 ;;
 
 (* I changed this because it does not make sense to allow orders that are
