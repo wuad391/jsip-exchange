@@ -5,8 +5,7 @@
     two prices, but take risk if the market moves against their inventory.
 
     This bot places a fixed set of resting orders on both sides of the book
-    around a configured "fair value" price. It does not dynamically adjust
-    its quotes in response to fills -- that is left as an extension. *)
+    around a configured "fair value" price. *)
 
 open! Core
 open! Async
@@ -30,6 +29,8 @@ module Config : sig
   [@@deriving sexp_of]
 end
 
+type t
+
 (** Submit the market maker's initial set of resting orders over the given
     open [Rpc.Connection.t]. The connection must already be logged in as
     [config.participant]. [submit_order_rpc] is one-way, so this function
@@ -38,4 +39,5 @@ end
     participant's session feed. *)
 val seed_book : Config.t -> Rpc.Connection.t -> unit Deferred.t
 
-(* val run : Config.t -> Rpc.Connection.t -> unit Deferred.t *)
+val run : Config.t -> Rpc.Connection.t -> unit Deferred.t
+val print_books : unit -> unit

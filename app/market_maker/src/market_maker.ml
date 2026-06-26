@@ -66,4 +66,91 @@ let seed_book (config : Config.t) conn =
       Deferred.unit)
 ;;
 
-(* let run (config : Config.t) conn = *)
+type t =
+  { inventory : Int.t Ref.t
+  ; mutable bids : Client_order_id.t Hash_set.t
+  ; mutable asks : Client_order_id.t Hash_set.t
+  }
+
+let books =
+  ref
+    { inventory = ref 0
+    ; bids = Hash_set.create (module Client_order_id)
+    ; asks = Hash_set.create (module Client_order_id)
+    }
+;;
+
+let print_books () =
+  let { inventory; bids; asks } = !books in
+  print_endline [%string "Inventory: %{!inventory#Int}\n"];
+  print_endline [%string "BIDS ==============="];
+  Hash_set.iter bids ~f:(fun client_order_id ->
+    print_string [%string "%{(Client_order_id.to_int client_order_id)#Int}"]);
+  print_endline [%string "ASKS ==============="];
+  Hash_set.iter asks ~f:(fun client_order_id ->
+    print_string [%string "%{(Client_order_id.to_int client_order_id)#Int}"])
+;;
+
+let run (config : Config.t) conn : unit Deferred.t =
+  let t =
+    { inventory = ref 0
+    ; bids = Hash_set.create (module Client_order_id)
+    ; asks = Hash_set.create (module Client_order_id)
+    }
+  in
+  books := t;
+  let get_side_client_order_id (fill : Fill.t) =
+    if Participant.equal fill.aggressor_participant config.participant
+    then fill.aggressor_side, fill.aggressor_client_order_id
+    else Side.flip fill.aggressor_side, fill.resting_client_order_id
+  in
+  let update_books side client_order_id =
+    Hash_set.remove t.bids client_order_id;
+    Hash_set.remove t.asks client_order_id;
+    t.inventory
+    := !(t.inventory) + match (side : Side.t) with Buy -> 1 | Sell -> -1
+  in
+  let cancel_all_orders side : unit =
+    let client_order_id_set =
+      match (side : Side.t) with Buy -> t.bids | Sell -> t.asks
+    in
+    (* TODO: This is a very janky way of iterating through a hash set but the
+       types don't work well in Hash_set.iter *)
+    ignore
+      (Hash_set.fold client_order_id_set ~init:(return ()) ~f:(fun _ id ->
+         let%bind _ =
+           Rpc.Rpc.dispatch_exn Rpc_protocol.cancel_order_rpc conn id
+         in
+         return ()));
+    match side with
+    | Buy -> t.bids <- Hash_set.create (module Client_order_id)
+    | Sell -> t.asks <- Hash_set.create (module Client_order_id)
+  in
+  (* This is the function that handles all events *)
+  let trading_function event =
+    match (event : Exchange_event.t) with
+    | Order_accept { order_id = _; request } ->
+      (match request.side with
+       | Buy -> Hash_set.add t.bids request.client_order_id
+       | Sell -> Hash_set.add t.asks request.client_order_id)
+    | Best_bid_offer_update _ ->
+      () (* TODO: maybe adjust some of the config stuff based on BBO *)
+    | Order_cancel cancel_info ->
+      Hash_set.remove t.bids cancel_info.client_order_id;
+      Hash_set.remove t.asks cancel_info.client_order_id
+    | Fill fill ->
+      let side, client_order_id = get_side_client_order_id fill in
+      update_books side client_order_id;
+      cancel_all_orders side
+      (* need to somehow reseed but deferred stuff is confusing *)
+    | Order_reject _ | Trade_report _ | Cancel_reject _ -> ()
+  in
+  let%bind session_feed, _metadata =
+    Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc conn ()
+  in
+  let%bind () = seed_book config conn in
+  (* initial ladder *)
+  don't_wait_for
+    (Pipe.iter_without_pushback session_feed ~f:trading_function);
+  Deferred.never ()
+;;
