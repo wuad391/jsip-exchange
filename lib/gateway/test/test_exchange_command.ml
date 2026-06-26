@@ -53,13 +53,13 @@ let%expect_test "parse: with explicit DAY" =
 ;;
 
 let%expect_test "parse: with participant" =
-  print_parse "BUY 1 AAPL 100\n\n\n   150.00 as Alice";
-  [%expect {| Order 1: BUY AAPL 100@$150.00 DAY as Alice |}]
+  print_parse "BUY 1 AAPL 100\n\n\n   150.00";
+  [%expect {| Order 1: BUY AAPL 100@$150.00 DAY as anonymous |}]
 ;;
 
 let%expect_test "parse: with TIF and participant" =
-  print_parse "SELL\n\n  1 GOOG\n 75 2800.50 IOC as Bob";
-  [%expect {| Order 1: SELL GOOG 75@$2800.50 IOC as Bob |}]
+  print_parse "SELL\n\n  1 GOOG\n 75 2800.50 IOC";
+  [%expect {| Order 1: SELL GOOG 75@$2800.50 IOC as anonymous |}]
 ;;
 
 let%expect_test "parse: symbol is uppercased" =
@@ -101,8 +101,8 @@ let%expect_test "parse error: missing fields" =
   print_parse "BUY";
   [%expect
     {|
-    "expected: BUY|SELL <client order id> <symbol> <size> <price> [DAY or IOC] [as <name>]"
-    "expected: BUY|SELL <client order id> <symbol> <size> <price> [DAY or IOC] [as <name>]"
+    "expected: BUY|SELL <client order id> <symbol> <size> <price> [DAY or IOC]"
+    "expected: BUY|SELL <client order id> <symbol> <size> <price> [DAY or IOC]"
     |}]
 ;;
 
@@ -133,7 +133,8 @@ let%expect_test "parse error: unknown time-in-force" =
 
 let%expect_test "parse error: invalid client_order_id" =
   print_parse "BUY\n\n hello AAPL 100 150.00 QQQ";
-  [%expect {|
+  [%expect
+    {|
      "invalid client_id: hello\
     \nexception: (Failure int_of_string)"
     |}]
@@ -153,12 +154,4 @@ let%expect_test "default participant: used when none specified" =
   let _ = print_parse_default "BUY 1 AAPL 100 150.00" "Default" in
   (* print_endline [%string "participant=%{req.participant#Participant}"]; *)
   [%expect {| Order 1: BUY AAPL 100@$150.00 DAY as Default |}]
-;;
-
-let%expect_test "default participant: overridden by explicit 'as'" =
-  let _ =
-    print_parse_default "BUY 1 AAPL 100 150.00 as\n\n Alice" "default"
-  in
-  (* print_endline [%string "participant=%{req.participant#Participant}"]; *)
-  [%expect {| Order 1: BUY AAPL 100@$150.00 DAY as Alice |}]
 ;;

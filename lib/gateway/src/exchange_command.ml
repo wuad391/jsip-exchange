@@ -80,37 +80,27 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
               [%string
                 "invalid symbol: %{symbol_str}\nexception: %{exn_str}"]
         in
-        let%bind time_in_force, rest =
+        let%bind time_in_force =
           match rest with
-          | tif_str :: rest' ->
-            if String.equal tif_str "as" || String.equal tif_str "AS"
-            then Ok (Time_in_force.Day, rest)
+          | tif_str :: _ ->
+            if String.is_empty tif_str
+            then Ok Time_in_force.Day
             else (
               match
                 Or_error.try_with (fun _ -> Time_in_force.of_string tif_str)
               with
-              | Ok tif -> Ok (tif, rest')
+              | Ok tif -> Ok tif
               | Error _ ->
                 Or_error.error_string
                   [%string
                     "unknown time-in-force: %{tif_str#String} (expected \
                      %{Time_in_force.all_str#String})"])
-          | [] -> Ok (Time_in_force.Day, [])
-        in
-        let%bind participant =
-          match rest with
-          | "as" :: name :: _ | "AS" :: name :: _ ->
-            Ok (Participant.of_string name)
-          | [] -> Ok default_participant
-          | _ ->
-            let trailing = String.concat ~sep:" " rest in
-            Or_error.error_string
-              [%string "unexpected trailing arguments: %{trailing}"]
+          | [] -> Ok Time_in_force.Day
         in
         Ok
           (Submit
              ({ symbol
-              ; participant
+              ; participant = default_participant
               ; side
               ; price
               ; size = Size.of_int size
@@ -122,23 +112,12 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
         Or_error.error_string
           [%string
             "expected: BUY|SELL <client order id> <symbol> <size> <price> \
-             [%{Time_in_force.all_str#String}] [as <name>]"]
+             [%{Time_in_force.all_str#String}]"]
     in
-    let cancel_parse client_order_id rest =
-      let open Result.Let_syntax in
-      let%bind participant =
-        match rest with
-        | "as" :: name :: _ | "AS" :: name :: _ ->
-          Ok (Participant.of_string name)
-        | [] -> Ok default_participant
-        | _ ->
-          let trailing = String.concat ~sep:" " rest in
-          Or_error.error_string
-            [%string "unexpected trailing arguments: %{trailing}"]
-      in
+    let cancel_parse client_order_id =
       Ok
         (Cancel
-           { participant
+           { participant = default_participant
            ; client_order_id = Client_order_id.of_string client_order_id
            })
     in
@@ -149,7 +128,7 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
        | Ok Verb.Buy | Ok Sell -> submit_parse verb_type (second :: rest)
        | Ok Verb.Book -> Ok (Book (Symbol.of_string second))
        | Ok Verb.Subscribe -> Ok (Subscribe (Symbol.of_string second))
-       | Ok Verb.Cancel -> cancel_parse second rest
+       | Ok Verb.Cancel -> cancel_parse second
        | Error _ ->
          Or_error.error_string
            [%string
@@ -159,5 +138,5 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
       Or_error.error_string
         [%string
           "expected: BUY|SELL <client order id> <symbol> <size> <price> \
-           [%{Time_in_force.all_str#String}] [as <name>]"])
+           [%{Time_in_force.all_str#String}]"])
 ;;

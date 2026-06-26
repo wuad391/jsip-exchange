@@ -17,17 +17,20 @@ let market_maker = Participant.of_string "MarketMaker"
 
 type t = { engine : Matching_engine.t }
 
-let create ?(symbols = [ aapl; tsla; goog ]) () =
-  { engine = Matching_engine.create symbols }
-;;
-
-let engine t = t.engine
 let client_order_id_test_ref = ref 1
+let reset_client_order_id_test_ref () = client_order_id_test_ref := 1
 
 let new_client_order_id () =
   client_order_id_test_ref := !client_order_id_test_ref + 1;
   Client_order_id.of_int !client_order_id_test_ref
 ;;
+
+let create ?(symbols = [ aapl; tsla; goog ]) () =
+  reset_client_order_id_test_ref ();
+  { engine = Matching_engine.create symbols }
+;;
+
+let engine t = t.engine
 
 (* --- Builders --- *)
 

@@ -65,3 +65,5 @@ let seed_book (config : Config.t) conn =
       in
       Deferred.unit)
 ;;
+
+(* let run (config : Config.t) conn = *)
