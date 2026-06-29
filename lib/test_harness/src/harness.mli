@@ -30,6 +30,7 @@ val alice : Participant.t
 val bob : Participant.t
 val charlie : Participant.t
 val market_maker : Participant.t
+val market_maker' : Participant.t
 
 (** {2 Harness} *)
 

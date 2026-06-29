@@ -1,5 +1,3 @@
-TODO: parse in main right now try...with but the catch output is not very informative
-
 # JSIP Exchange
 
 A simplified stock exchange built in OCaml. Over the course of this project
