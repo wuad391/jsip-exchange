@@ -32,12 +32,11 @@ let start_bot ~where_to_connect ~oracle (Bot_spec.T spec) =
   let submit request =
     Rpc.Rpc.dispatch_exn Rpc_protocol.submit_order_rpc connection request
   in
-  let cancel order_id =
-    return
-      (Or_error.error_s
-         [%message
-           "Scenario runner: cancel RPC not implemented yet"
-             (order_id : Order_id.t)])
+  let cancel client_order_id =
+    Rpc.Rpc.dispatch_exn
+      Rpc_protocol.cancel_order_rpc
+      connection
+      client_order_id
   in
   let bot =
     Bot_runtime.create
@@ -50,26 +49,17 @@ let start_bot ~where_to_connect ~oracle (Bot_spec.T spec) =
       ~cancel
       ~tick_interval:spec.tick_interval
   in
-  let%bind () =
-    match spec.is_marketdata_consumer with
-    | false -> return ()
-    | true ->
-      let%bind md_pipe, metadata =
-        Rpc.Pipe_rpc.dispatch_exn
-          Rpc_protocol.market_data_rpc
-          connection
-          spec.symbols
-      in
-      don't_wait_for
-        (let%bind () = Pipe.iter md_pipe ~f:(Bot_runtime.feed_event bot) in
-         match%map Rpc.Pipe_rpc.close_reason metadata with
-         | Rpc.Pipe_close_reason.Closed_locally
-         | Rpc.Pipe_close_reason.Closed_remotely ->
-           ()
-         | Rpc.Pipe_close_reason.Error err ->
-           [%log.error "marketdata pipe closed with error" (err : Error.t)]);
-      return ()
+  let%bind session_feed, _metadata =
+    Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc connection ()
   in
+  let%bind md_pipe, _metadata =
+    Rpc.Pipe_rpc.dispatch_exn
+      Rpc_protocol.market_data_rpc
+      connection
+      spec.symbols
+  in
+  let output = Pipe.interleave [ session_feed; md_pipe ] in
+  don't_wait_for (Pipe.iter output ~f:(Bot_runtime.feed_event bot));
   print_endline
     [%string "[scenario] starting bot %{spec.participant#Participant}"];
   don't_wait_for (Bot_runtime.start bot);

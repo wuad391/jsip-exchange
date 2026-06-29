@@ -11,6 +11,7 @@ module Config = struct
     ; half_spread_cents : int
     ; size_per_level : int
     ; num_levels : int
+    ; inventory_skew_cents_per_share : int
     }
   [@@deriving sexp_of]
 end
@@ -72,38 +73,23 @@ type t =
   ; mutable asks : Client_order_id.t Hash_set.t
   }
 
-let books =
-  ref
-    { inventory = ref 0
-    ; bids = Hash_set.create (module Client_order_id)
-    ; asks = Hash_set.create (module Client_order_id)
-    }
-;;
+(* let books = ref
+   [{ inventory = ref 0 ; bids = Hash_set.create (module Client_order_id) ; asks = Hash_set.create (module Client_order_id) }]
+   ;; *)
 
-let print_books () =
-  let { inventory; bids; asks } = !books in
-  print_endline [%string "Inventory: %{!inventory#Int}\n"];
-  print_endline [%string "BIDS ==============="];
-  Hash_set.iter bids ~f:(fun client_order_id ->
-    print_string [%string "%{(Client_order_id.to_int client_order_id)#Int}"]);
-  print_endline [%string "ASKS ==============="];
-  Hash_set.iter asks ~f:(fun client_order_id ->
-    print_string [%string "%{(Client_order_id.to_int client_order_id)#Int}"])
-;;
-
-let run (config : Config.t) conn : unit Deferred.t =
+let run ?(testing = false) (config : Config.t) conn =
   let t =
     { inventory = ref 0
     ; bids = Hash_set.create (module Client_order_id)
     ; asks = Hash_set.create (module Client_order_id)
     }
   in
-  books := t;
   let get_side_client_order_id (fill : Fill.t) =
     if Participant.equal fill.aggressor_participant config.participant
     then fill.aggressor_side, fill.aggressor_client_order_id
     else Side.flip fill.aggressor_side, fill.resting_client_order_id
   in
+  (* update_books is used when something gets filled *)
   let update_books side client_order_id =
     Hash_set.remove t.bids client_order_id;
     Hash_set.remove t.asks client_order_id;
@@ -126,31 +112,55 @@ let run (config : Config.t) conn : unit Deferred.t =
     | Buy -> t.bids <- Hash_set.create (module Client_order_id)
     | Sell -> t.asks <- Hash_set.create (module Client_order_id)
   in
+  let print_books () =
+    print_endline [%string "\nSTART ===================="];
+    print_endline [%string "Inventory: %{!(t.inventory)#Int}\n"];
+    print_string [%string "\nBIDS: "];
+    Hash_set.iter t.bids ~f:(fun client_order_id ->
+      print_string
+        [%string "%{(Client_order_id.to_int client_order_id)#Int}, "]);
+    print_string [%string "\nASKS: "];
+    Hash_set.iter t.asks ~f:(fun client_order_id ->
+      print_string
+        [%string "%{(Client_order_id.to_int client_order_id)#Int}, "]);
+    print_endline [%string "\nEND ===================="]
+  in
   (* This is the function that handles all events *)
   let trading_function event =
-    match (event : Exchange_event.t) with
-    | Order_accept { order_id = _; request } ->
-      (match request.side with
-       | Buy -> Hash_set.add t.bids request.client_order_id
-       | Sell -> Hash_set.add t.asks request.client_order_id)
-    | Best_bid_offer_update _ ->
-      () (* TODO: maybe adjust some of the config stuff based on BBO *)
-    | Order_cancel cancel_info ->
-      Hash_set.remove t.bids cancel_info.client_order_id;
-      Hash_set.remove t.asks cancel_info.client_order_id
-    | Fill fill ->
-      let side, client_order_id = get_side_client_order_id fill in
-      update_books side client_order_id;
-      cancel_all_orders side
-      (* need to somehow reseed but deferred stuff is confusing *)
-    | Order_reject _ | Trade_report _ | Cancel_reject _ -> ()
+    let%bind () =
+      match (event : Exchange_event.t) with
+      | Order_accept { order_id = _; request } ->
+        t.inventory := !(t.inventory) + 1;
+        (match request.side with
+         | Buy -> return (Hash_set.add t.bids request.client_order_id)
+         | Sell -> return (Hash_set.add t.asks request.client_order_id))
+      | Best_bid_offer_update _ ->
+        return
+          () (* TODO: maybe adjust some of the config stuff based on BBO *)
+      | Order_cancel cancel_info ->
+        Hash_set.remove t.bids cancel_info.client_order_id;
+        return (Hash_set.remove t.asks cancel_info.client_order_id)
+      | Fill fill ->
+        let side, client_order_id = get_side_client_order_id fill in
+        update_books side client_order_id;
+        cancel_all_orders side;
+        seed_book
+          { config with
+            fair_value_cents =
+              config.fair_value_cents
+              - (!(t.inventory) * config.inventory_skew_cents_per_share)
+          }
+          conn
+      | Order_reject _ | Trade_report _ | Cancel_reject _ -> return ()
+    in
+    let () = if testing then print_books () else () in
+    return ()
   in
   let%bind session_feed, _metadata =
     Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc conn ()
   in
   let%bind () = seed_book config conn in
   (* initial ladder *)
-  don't_wait_for
-    (Pipe.iter_without_pushback session_feed ~f:trading_function);
-  Deferred.never ()
+  don't_wait_for (Pipe.iter session_feed ~f:trading_function);
+  if testing then return () else Deferred.never ()
 ;;

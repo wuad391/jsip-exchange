@@ -25,6 +25,7 @@ module Config : sig
     ; num_levels : int
     (** Number of price levels on each side. The bot places orders at
         [fair_value +/- spread], [fair_value +/- (spread + tick)], etc. *)
+    ; inventory_skew_cents_per_share : int
     }
   [@@deriving sexp_of]
 end
@@ -39,5 +40,4 @@ type t
     participant's session feed. *)
 val seed_book : Config.t -> Rpc.Connection.t -> unit Deferred.t
 
-val run : Config.t -> Rpc.Connection.t -> unit Deferred.t
-val print_books : unit -> unit
+val run : ?testing:Bool.t -> Config.t -> Rpc.Connection.t -> unit Deferred.t
