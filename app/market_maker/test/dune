@@ -6,6 +6,7 @@
   jsip_gateway
   jsip_market_maker
   jsip_test_harness
+  jsip_bot_runtime
   async
   core)
  (inline_tests)

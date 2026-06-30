@@ -1,10 +1,7 @@
 open! Core
 open! Async
 open Jsip_types
-open Jsip_gateway
-module Fundamental_oracle = Jsip_fundamental.Fundamental_oracle
-module News_injector = Jsip_news_injector.News_injector
-module Bot_runtime = Jsip_bot_runtime.Bot_runtime
+open Jsip_bot_runtime
 
 type symbol_state =
   { mutable asks : Client_order_id.t Hash_set.t
@@ -30,7 +27,7 @@ end
 let state = Hashtbl.create (module Symbol)
 let name = "Market Maker"
 
-let new_client_order_id config =
+let new_client_order_id (config : Config.t) =
   config.client_order_id_ref := !(config.client_order_id_ref) + 1
 ;;
 
@@ -41,7 +38,7 @@ let seed_book (config : Config.t) =
     ~f:(fun level ->
       let offset = config.half_spread_cents + level in
       let%bind () =
-        Context.submit
+        Bot_runtime.Context.submit
           context
           ([ { symbol = config.symbol
              ; participant = Context.participant context
@@ -75,39 +72,47 @@ let on_start config _context = seed_book config
 (* I dont think this will actually do anything for MM bc we react to events *)
 let on_tick _ _ = return ()
 
-(* Internal helper functions start *)
-
-(* Precondition: only call if the state exists *)
-(* TODO there has got to be a better way to do this *)
-let get_symbol_state (config : Config.t) symbol =
-  Hashtbl.find_exn config.state symbol
+(* ...................Internal helper function start........................ *)
+let new_state (config : Config.t) =
+  { inventory = ref 0
+  ; asks = Hash_set.create (module Client_order_id) ~size:config.num_levels
+  ; bids = Hash_set.create (module Client_order_id) ~size:config.num_levels
+  }
 ;;
 
-(* Precondition: only call if the state exists *)
-(* TODO there has got to be a better way to do this *)
+let get_symbol_state (config : Config.t) symbol =
+  Hashtbl.find_or_add config.state symbol ~default:(fun () ->
+    new_state config)
+;;
+
 let get_symbol_inventory (config : Config.t) symbol =
-  let { asks = _; bids = _; inventory } =
-    Hashtbl.find_exn config.state symbol
-  in
+  let { asks = _; bids = _; inventory } = get_symbol_state config symbol in
   inventory
 ;;
 
-(* Precondition: only call if the state exists *)
-(* TODO there has got to be a better way to do this *)
 let get_symbol_asks (config : Config.t) symbol =
-  let { asks; bids = _; inventory = _ } =
-    Hashtbl.find_exn config.state symbol
-  in
+  let { asks; bids = _; inventory = _ } = get_symbol_state config symbol in
   asks
 ;;
 
-(* Precondition: only call if the state exists *)
-(* TODO there has got to be a better way to do this *)
 let get_symbol_bids (config : Config.t) symbol =
-  let { asks = _; bids; inventory = _ } =
-    Hashtbl.find_exn config.state symbol
-  in
+  let { asks = _; bids; inventory = _ } = get_symbol_state config symbol in
   bids
+;;
+
+let set_symbol_bids (config : Config.t) symbol new_bids =
+  let symbol_state = get_symbol_state config symbol in
+  symbol_state.bids <- new_bids
+;;
+
+let set_symbol_asks (config : Config.t) symbol new_asks =
+  let symbol_state = get_symbol_state config symbol in
+  symbol_state.asks <- new_asks
+;;
+
+let set_symbol_inventory (config : Config.t) symbol new_inventory =
+  let { asks = _; bids = _; inventory } = get_symbol_state config symbol in
+  inventory := new_inventory
 ;;
 
 let on_event config context event =
@@ -122,12 +127,11 @@ let on_event config context event =
     let { asks; bids; inventory } = get_symbol_state config symbol in
     Hash_set.remove bids client_order_id;
     Hash_set.remove asks client_order_id;
-    (* TODO i do not think this is going to work *)
     inventory
     := !inventory + match (side : Side.t) with Buy -> 1 | Sell -> -1
   in
   let cancel_all_orders side symbol =
-    let { asks; bids; inventory } = get_symbol_state config symbol in
+    let { asks; bids; inventory = _ } = get_symbol_state config symbol in
     let client_order_id_set =
       match (side : Side.t) with Buy -> bids | Sell -> asks
     in
@@ -138,8 +142,16 @@ let on_event config context event =
          let%bind _ = Context.cancel context id in
          return ()));
     match side with
-    | Buy -> bids <- Hash_set.create (module Client_order_id)
-    | Sell -> asks <- Hash_set.create (module Client_order_id)
+    | Buy ->
+      set_symbol_bids
+        config
+        symbol
+        (Hash_set.create (module Client_order_id) ~size:config.num_levels)
+    | Sell ->
+      set_symbol_asks
+        config
+        symbol
+        (Hash_set.create (module Client_order_id) ~size:config.num_levels)
   in
   let print_books () =
     Hashtbl.iter config.state ~f:(fun { asks; bids; inventory } ->
@@ -155,41 +167,40 @@ let on_event config context event =
           [%string "%{(Client_order_id.to_int client_order_id)#Int}, "]);
       print_endline [%string "\nEND ===================="])
   in
-  (* This is the function that handles all events *)
-  let trading_function event =
-    let%bind () =
-      match (event : Exchange_event.t) with
-      | Order_accept { order_id = _; request } ->
-        let { asks; bids; inventory } =
-          get_symbol_state config request.symbol
-        in
-        inventory := !inventory + 1;
-        (match request.side with
-         | Buy -> return (Hash_set.add bids request.client_order_id)
-         | Sell -> return (Hash_set.add asks request.client_order_id))
-      | Best_bid_offer_update _ ->
-        return ()
-        (* TODO: maybe adjust some of the config stuff based on BBO *)
-      | Order_cancel cancel_info ->
-        let { asks; bids; inventory = _ } =
-          get_symbol_state config cancel_info.symbol
-        in
-        Hash_set.remove bids cancel_info.client_order_id;
-        return (Hash_set.remove asks cancel_info.client_order_id)
-      | Fill fill ->
-        let inventory = get_symbol_inventory config fill.symbol in
-        let side, client_order_id = get_side_client_order_id fill in
-        update_books side fill.symbol client_order_id;
-        cancel_all_orders side fill.symbol;
-        seed_book
-          { config with
-            fair_value_cents =
-              config.fair_value_cents
-              - (!inventory * config.inventory_skew_cents_per_share)
-          }
-      | Order_reject _ | Trade_report _ | Cancel_reject _ -> return ()
-    in
-    return ()
+  (* This is where we actually match and handle all events *)
+  let%bind () =
+    match (event : Exchange_event.t) with
+    | Order_accept { order_id = _; request } ->
+      let { asks; bids; inventory } =
+        get_symbol_state config request.symbol
+      in
+      set_symbol_inventory config request.symbol (!inventory + 1);
+      (match request.side with
+       | Buy -> return (Hash_set.add bids request.client_order_id)
+       | Sell -> return (Hash_set.add asks request.client_order_id))
+    | Best_bid_offer_update _ ->
+      return ()
+      (* TODO: maybe adjust some of the config stuff based on BBO *)
+    | Order_cancel _ ->
+      return ()
+      (* we only ever initiate cancel when we cancel everything. When we
+         cancel everything, the internal books are already maintainted *)
+      (* let [{ asks; bids; inventory = _ }] = get_symbol_state config
+         cancel_info.symbol in Hash_set.remove bids
+         cancel_info.client_order_id; return (Hash_set.remove asks
+         cancel_info.client_order_id) *)
+    | Fill fill ->
+      let inventory = get_symbol_inventory config fill.symbol in
+      let side, client_order_id = get_side_client_order_id fill in
+      update_books side fill.symbol client_order_id;
+      cancel_all_orders side fill.symbol;
+      seed_book
+        { config with
+          fair_value_cents =
+            config.fair_value_cents
+            - (!inventory * config.inventory_skew_cents_per_share)
+        }
+    | Order_reject _ | Trade_report _ | Cancel_reject _ -> return ()
   in
-  trading_function
+  return ()
 ;;
