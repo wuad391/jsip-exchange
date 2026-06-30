@@ -3,6 +3,7 @@
  (public_name jsip-exchange.jsip_market_maker)
  (libraries
   jsip_types
+  jsip_gateway
   jsip_fundamental
   jsip_bot_runtime
   jsip_bots

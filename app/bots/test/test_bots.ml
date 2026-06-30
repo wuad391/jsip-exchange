@@ -5,6 +5,7 @@ open! Async
 open Jsip_types
 open Jsip_fundamental
 open Jsip_bot_runtime
+open Market_maker
 open! Jsip_bots
 
 let aapl = Symbol.of_string "AAPL"
@@ -19,6 +20,29 @@ let oracle_config ~initial_price_cents =
         ; tick_interval = Time_ns.Span.of_sec 1.0
         } )
     ]
+;;
+
+let default_config () =
+  { size_per_level = 100
+  ; num_levels = 3
+  ; inventory_skew_cents_per_share = 2
+  ; state = Hashtbl.create (module Symbol)
+  ; client_order_id = ref 0
+  }
+;;
+
+(* Make a market maker *)
+let make_market_maker_bot ~participant_name =
+  Bot_runtime.create
+    (module Market_maker)
+    (default_config ())
+    ~participant:(Participant.of_string participant_name)
+    ~oracle:
+      (Fundamental_oracle.create
+         (oracle_config ~initial_price_cents:15000)
+         ~seed:42)
+    ~rng:(Splittable_random.of_int 7)
+    ~tick_interval:(Time_ns.Span.of_sec 0.5)
 ;;
 
 (* Build a runtime around a bot module with a mock submit/cancel that records
@@ -111,3 +135,51 @@ let%expect_test "make_recording_bot wires up a runnable bot" =
 (* ---------------------------------------------------------------- *)
 (* Market Maker tests *)
 (* ---------------------------------------------------------------- *)
+let%expect_test "Basic test of Market Maker" =
+  let bot = make_market_maker_bot ~participant_name:"Market Maker" in
+  let%bind () = Bot_runtime.feed_event bot bbo_event in
+  let%bind () = Bot_runtime.feed_event bot fill_event in
+  let%bind () = Bot_runtime.feed_event bot accepted_event in
+  print_observed observed;
+  [%expect
+    {|
+    ((Best_bid_offer_update (symbol AAPL)
+      (bbo
+       ((bid (((price 14990) (size 100)))) (ask (((price 15010) (size 200)))))))
+     (Fill
+      ((fill_id 1) (symbol AAPL) (price 15000) (size 50) (aggressor_order_id 1)
+       (aggressor_client_order_id 1) (aggressor_participant Alice)
+       (aggressor_side Buy) (resting_order_id 2) (resting_client_order_id 1)
+       (resting_participant Bob)))
+     (Order_accept (order_id 1)
+      (request
+       ((symbol AAPL) (participant Alice) (side Buy) (price 15000) (size 10)
+        (time_in_force Day) (client_order_id 1)))))
+    |}];
+  return ()
+;;
+
+let%expect_test "make_recording_bot wires up a runnable bot" =
+  let bot, submitted, _cancelled =
+    make_recording_bot (module Inert_bot) () ()
+  in
+  let%bind () =
+    Bot_runtime.feed_event
+      bot
+      (Order_accept
+         { order_id = Order_id.For_testing.of_int 1
+         ; request =
+             { symbol = aapl
+             ; participant = alice
+             ; side = Buy
+             ; price = Price.of_int_cents 15000
+             ; size = Size.of_int 10
+             ; time_in_force = Day
+             ; client_order_id = Client_order_id.of_int 1
+             }
+         })
+  in
+  print_submitted submitted;
+  [%expect {| |}];
+  return ()
+;;

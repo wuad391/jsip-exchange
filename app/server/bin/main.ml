@@ -179,7 +179,7 @@ let () =
                 traffic for the monitor (mutually exclusive with \
                 -seed-market-maker)"
          ]
-     in
+     and () = Log.Global.set_level_via_param () in
      fun () -> start ~port ~market_maker_behavior)
   |> Command_unix.run
 ;;
