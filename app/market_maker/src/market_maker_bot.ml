@@ -249,6 +249,7 @@ let on_event config context event =
       symbol
       (!inventory + match (side : Side.t) with Buy -> 1 | Sell -> -1)
   in
+  (* TODO keep track of Cancel_reject. would mess up our books *)
   let cancel_all_orders side symbol =
     let { asks; bids; inventory = _; fair_value_cents = _; bbo = _ } =
       get_symbol_state config context symbol
@@ -257,7 +258,7 @@ let on_event config context event =
       match (side : Side.t) with Buy -> bids | Sell -> asks
     in
     (* TODO: This is a very janky way of iterating through a hash set but the
-       types don't work well in Hash_set.iter *)
+       types don't work well in Hash_set.iter. Deferred.Hash_set.iter *)
     let%bind () =
       Hash_set.fold client_order_id_set ~init:(return ()) ~f:(fun _ id ->
         print_endline [%string "HERE"];

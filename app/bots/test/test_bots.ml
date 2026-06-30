@@ -252,6 +252,7 @@ let%expect_test "make_recording_bot wires up a runnable bot" =
 (* ---------------------------------------------------------------- *)
 (* Market Maker tests *)
 (* ---------------------------------------------------------------- *)
+(* default bbo value is good ? *)
 let%expect_test "Basic test of Market Maker" =
   let bot, submit_list, cancel_list =
     make_market_maker_bot ~participant_name:"Market Maker"
