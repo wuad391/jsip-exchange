@@ -99,4 +99,6 @@ val start : t -> unit Deferred.t
 
 module For_testing : sig
   val context_of : t -> Context.t
+  val manual_tick : t -> unit Deferred.t
+  val manual_start : t -> unit Deferred.t
 end

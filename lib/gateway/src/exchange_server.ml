@@ -69,9 +69,7 @@ let start ~symbols ~port () =
                match Connection_state.session state with
                | None ->
                  return (Or_error.error_string "User is not logged in.")
-                 (* TODO how to not use wildcard but otherwise i get unused
-                    var warning *)
-               | Some _ ->
+               | Some _session ->
                  (* makes sure the participant is the one making the actual
                     request *)
                  let valid_request =

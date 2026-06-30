@@ -44,23 +44,6 @@ let connect_as ~where_to_connect participant =
   return conn
 ;;
 
-let seed_market_maker ~where_to_connect =
-  let aapl = Symbol.of_string "AAPL" in
-  let mm_participant = Participant.of_string "MarketMaker" in
-  let config : Market_maker.Config.t =
-    { participant = mm_participant
-    ; symbol = aapl
-    ; fair_value_cents = 15000
-    ; half_spread_cents = 10
-    ; size_per_level = 100
-    ; num_levels = 5
-    ; inventory_skew_cents_per_share = 2
-    }
-  in
-  let%bind conn = connect_as ~where_to_connect mm_participant in
-  Market_maker.seed_book config conn
-;;
-
 (* Two market makers per symbol with offset fair values: MM_High's bids cross
    MM_Low's asks every cycle, producing a steady stream of [Fill] /
    [Trade_report] events across multiple symbols for the monitor to render.
@@ -138,12 +121,6 @@ let start ~port ~market_maker_behavior =
         trade_back_and_forth ~where_to_connect
       in
       print_endline ""
-    | `Seed_market_maker ->
-      let%map () =
-        print_endline "=== Seeding book with market maker orders ===";
-        seed_market_maker ~where_to_connect
-      in
-      print_endline ""
     | `Do_nothing -> Deferred.unit
   in
   print_endline
@@ -166,12 +143,6 @@ let () =
        choose_one
          ~if_nothing_chosen:(Default_to `Do_nothing)
          [ flag
-             "-seed-market-maker"
-             (no_arg_some `Seed_market_maker)
-             ~doc:
-               " pre-seed the book with market maker orders (mutually \
-                exclusive with -trade-back-and-forth)"
-         ; flag
              "-trade-back-and-forth"
              (no_arg_some `Trade_back_and_forth)
              ~doc:

@@ -7,6 +7,7 @@ end
 include T
 include Comparable.Make (T)
 include Hashable.Make (T)
+include Comparator.Make (T)
 
 (* of_string automatically uppercases the symbol to avoid placing the burden
    of formatting on clients *)

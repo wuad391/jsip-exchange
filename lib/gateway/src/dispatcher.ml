@@ -16,8 +16,6 @@ let create () =
   }
 ;;
 
-(* Exercise 2.1a functions *)
-(* TODO: is there more to be done here? *)
 let clean_up_session t session =
   let participant = Session.participant session in
   Hashtbl.remove t.sessions participant;

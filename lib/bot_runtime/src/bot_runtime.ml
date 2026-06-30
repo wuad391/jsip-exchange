@@ -91,4 +91,14 @@ let start t =
 
 module For_testing = struct
   let context_of t = t.context
+
+  let manual_tick t =
+    let (Packed { bot = (module B); config }) = t.bot in
+    B.on_tick config t.context
+  ;;
+
+  let manual_start t =
+    let (Packed { bot = (module B); config }) = t.bot in
+    B.on_start config t.context
+  ;;
 end
