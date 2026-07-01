@@ -139,57 +139,69 @@ let seed_book
   (context : Bot_runtime.Context.t)
   (symbols : Symbol.t List.t)
   =
-  let _ : unit Deferred.t List.t =
+  (* CR claude for robyn: this binds the list of submit deferreds to [_] and
+     then returns [return ()], so [seed_book] does NOT await the submits —
+     [on_start] completes before any order is actually sent. Use
+     [Deferred.List.iter ~how:`Parallel symbols ~f:...] (or
+     [Deferred.all_unit (List.map ...)]) so the returned deferred reflects
+     the real work. *)
+  (* REVIEW *)
+  let%bind () =
     (* TODO: Think about making this a parallel map *)
-    List.map symbols ~f:(fun symbol ->
-      let { asks = _; bids = _; inventory; fair_value_cents; bbo } =
-        get_symbol_state config context symbol
-      in
-      Deferred.List.iter
-        ~how:`Parallel
-        (List.init config.num_levels ~f:Fn.id)
-        ~f:(fun level ->
-          let offset = half_spread_cents bbo + level in
-          let skewed_fair_value_cents =
-            skewed_fair_value config fair_value_cents inventory
-          in
-          let%bind buy_result =
-            Bot_runtime.Context.submit
-              context
-              ({ symbol
-               ; participant = Bot_runtime.Context.participant context
-               ; side = Buy
-               ; price = Price.of_int_cents (skewed_fair_value_cents - offset)
-               ; size = Size.of_int config.size_per_level
-               ; time_in_force = Day
-               ; client_order_id =
-                   new_client_order_id config |> Client_order_id.of_int
-               }
-               : Order.Request.t)
-          and sell_result =
-            Bot_runtime.Context.submit
-              context
-              ({ symbol
-               ; participant = Bot_runtime.Context.participant context
-               ; side = Sell
-               ; price = Price.of_int_cents (skewed_fair_value_cents + offset)
-               ; size = Size.of_int config.size_per_level
-               ; time_in_force = Day
-               ; client_order_id =
-                   new_client_order_id config |> Client_order_id.of_int
-               }
-               : Order.Request.t)
-          in
-          (match buy_result with
-           | Ok _ok -> ()
-           | Error err ->
-             [%log.error "Buy failed: " (err : Error.t)];
-             ());
-          match sell_result with
-          | Ok _ok -> return ()
-          | Error err ->
-            [%log.error "Sell failed: " (err : Error.t)];
-            return ()))
+    Deferred.List.iter
+      ~how:(`Max_concurrent_jobs 64)
+      symbols
+      ~f:(fun symbol ->
+        let { asks = _; bids = _; inventory; fair_value_cents; bbo } =
+          get_symbol_state config context symbol
+        in
+        Deferred.List.iter
+          ~how:`Parallel
+          (List.init config.num_levels ~f:Fn.id)
+          ~f:(fun level ->
+            let offset = half_spread_cents bbo + level in
+            let skewed_fair_value_cents =
+              skewed_fair_value config fair_value_cents inventory
+            in
+            let%bind buy_result =
+              Bot_runtime.Context.submit
+                context
+                ({ symbol
+                 ; participant = Bot_runtime.Context.participant context
+                 ; side = Buy
+                 ; price =
+                     Price.of_int_cents (skewed_fair_value_cents - offset)
+                 ; size = Size.of_int config.size_per_level
+                 ; time_in_force = Day
+                 ; client_order_id =
+                     new_client_order_id config |> Client_order_id.of_int
+                 }
+                 : Order.Request.t)
+            and sell_result =
+              Bot_runtime.Context.submit
+                context
+                ({ symbol
+                 ; participant = Bot_runtime.Context.participant context
+                 ; side = Sell
+                 ; price =
+                     Price.of_int_cents (skewed_fair_value_cents + offset)
+                 ; size = Size.of_int config.size_per_level
+                 ; time_in_force = Day
+                 ; client_order_id =
+                     new_client_order_id config |> Client_order_id.of_int
+                 }
+                 : Order.Request.t)
+            in
+            (match buy_result with
+             | Ok _ok -> ()
+             | Error err ->
+               [%log.error "Buy failed: " (err : Error.t)];
+               ());
+            match sell_result with
+            | Ok _ok -> return ()
+            | Error err ->
+              [%log.error "Sell failed: " (err : Error.t)];
+              return ()))
   in
   return ()
 ;;
@@ -237,7 +249,14 @@ let on_event config context event =
     else Side.flip fill.aggressor_side, fill.resting_client_order_id
   in
   (* update_books is used when something gets filled *)
-  let update_books side symbol client_order_id : unit =
+  (* CR claude for robyn: inventory moves by +/-1 per fill regardless of
+     [fill.size], but your skew is [inventory_skew_cents_per_share] — cents
+     per *share*. Accumulate signed size instead (thread [fill] in):
+     [!inventory + (match side with Buy -> Size.to_int fill.size | Sell -> - Size.to_int fill.size)].
+     As-is the skew multiplies an order-count, so the quote adjustment is
+     wrong. Same bug exists in market_maker.ml. *)
+  (* REVIEW *)
+  let update_books side symbol client_order_id size : unit =
     let { asks; bids; inventory; fair_value_cents = _; bbo = _ } =
       get_symbol_state config context symbol
     in
@@ -247,7 +266,7 @@ let on_event config context event =
       config
       context
       symbol
-      (!inventory + match (side : Side.t) with Buy -> 1 | Sell -> -1)
+      (!inventory + match (side : Side.t) with Buy -> size | Sell -> -size)
   in
   (* TODO keep track of Cancel_reject. would mess up our books *)
   let cancel_all_orders side symbol =
@@ -259,11 +278,18 @@ let on_event config context event =
     in
     (* TODO: This is a very janky way of iterating through a hash set but the
        types don't work well in Hash_set.iter. Deferred.Hash_set.iter *)
+    (* CR claude for robyn: two things here. (1) Remove the
+       [print_endline "HERE"] debug line — it fires on every cancel and got
+       promoted into test_bots' expect output. (2) This [Hash_set.fold]
+       discards its accumulator ([fun _ id -> ...]), so the per-id deferreds
+       aren't chained; the [let%bind] only awaits the *last* cancel. Use
+       [Deferred.List.iter (Hash_set.to_list client_order_id_set) ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))]. *)
+    (* REVIEW *)
     let%bind () =
-      Hash_set.fold client_order_id_set ~init:(return ()) ~f:(fun _ id ->
-        print_endline [%string "HERE"];
-        let%bind _ = Context.cancel context id in
-        return ())
+      Deferred.List.iter
+        ~how:`Sequential
+        (Hash_set.to_list client_order_id_set)
+        ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))
     in
     match side with
     | Buy ->
@@ -296,10 +322,18 @@ let on_event config context event =
       set_symbol_state config symbol { curr_symbol_state with bbo };
       return ()
       (* TODO: maybe adjust some of the config stuff based on BBO *)
-    | Order_cancel _ -> return ()
+    | Order_cancel _ ->
+      return ()
+      (* CR claude for robyn: on a fill you [cancel_all_orders side] (one
+         side) but [seed_book] re-places a *full two-sided* ladder — so the
+         un-cancelled side keeps its old resting orders AND gets a fresh set
+         stacked on top. Over repeated fills the opposite side accumulates
+         duplicate orders. Cancel both sides before re-seeding, or re-seed
+         only the cancelled side. *)
+      (* REVIEW *)
     | Fill fill ->
       let side, client_order_id = get_side_client_order_id fill in
-      update_books side fill.symbol client_order_id;
+      update_books side fill.symbol client_order_id (Size.to_int fill.size);
       let%bind () = cancel_all_orders side fill.symbol in
       seed_book config context [ fill.symbol ]
     | Order_reject _ | Trade_report _ | Cancel_reject _ -> return ()

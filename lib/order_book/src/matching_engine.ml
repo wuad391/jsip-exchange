@@ -113,12 +113,23 @@ let rec match_loop t ~book ~order ~fill_id =
         (* with | Some id1, Some id2 -> id1, id2 | _ -> raise (Exn.of_string
            "Client order ID missing") *)
       in
+      (* XCR claude for robyn: [remove_client_order] used to sit *outside* this
+         [if] (dangling [then]), so a partially-filled resting order got evicted
+         from the client tables while still resting on the book — the owner
+         could no longer cancel it, and a later fill against it crashed via
+         [get_client_order_id]'s [find_exn]. Both removals are now guarded by
+         [then], so they only fire on a full fill.
+
+         robyn: fixed. (Small style nit: the [else ()] below can be dropped —
+         house style is no [else ()] for a unit [then].) *)
       if Order.is_fully_filled resting
-      then Order_book.remove book (Order.order_id resting);
-      remove_client_order
-        t
-        (Order.participant resting)
-        resting_client_order_id;
+      then (
+        Order_book.remove book (Order.order_id resting);
+        remove_client_order
+          t
+          (Order.participant resting)
+          resting_client_order_id)
+      else ();
       let fill_event =
         Exchange_event.Fill
           { fill_id

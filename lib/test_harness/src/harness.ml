@@ -124,6 +124,12 @@ let submit t request =
 let submit_ t request = ignore (submit t request : Exchange_event.t list)
 let submit_quiet t request = Matching_engine.submit (engine t) request
 
+(* CR claude for robyn: this list is now missing the [Cancel_reject] variant
+   (added to [Exchange_event.t]), so it no longer contains "one of each" — and
+   harness.mli still claims exactly that. The compiler forces you to update
+   [match]es on the new variant, but not hand-built data like this, so it
+   silently drifted. Add a [Cancel_reject] sample and fix the .mli doc,
+   otherwise monitor/filter tests never exercise it. *)
 let sample_events : Exchange_event.t list =
   let order_request : Order.Request.t =
     { symbol = aapl

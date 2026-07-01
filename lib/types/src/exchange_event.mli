@@ -35,6 +35,12 @@ type t =
       ; price : Price.t
       ; size : Size.t
       }
+  (* CR-soon claude for robyn: inserting [Cancel_reject] here orphaned the
+     "public trade print" doc below onto it (odoc attaches a trailing
+     [(** *)] to the *preceding* constructor). Move that doc up under
+     [Trade_report], and give [Cancel_reject] its own doc. Also the
+     [remaining_size] field doc on [Order_cancel] was dropped in this diff —
+     restore it. *)
   | Cancel_reject of
       { participant : Participant.t
       ; client_order_id : Client_order_id.t

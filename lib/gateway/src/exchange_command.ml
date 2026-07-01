@@ -126,6 +126,13 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
       let verb_type = Or_error.try_with (fun _ -> Verb.of_string verb) in
       (match verb_type with
        | Ok Verb.Buy | Ok Sell -> submit_parse verb_type (second :: rest)
+       (* CR claude for robyn: [parse] returns [Or_error.t] but still *raises*
+          on these paths — [Symbol.of_string] (Book/Subscribe) and
+          [Client_order_id.of_string] ([cancel_parse]) are unwrapped, so
+          [BOOK @@@] or [CANCEL abc] throws instead of returning [Error]. That's
+          exactly why the client wraps this call in [try_with_join]. Wrap these
+          [of_string]s the way [submit_parse] already does so [parse] owns all
+          its errors. *)
        | Ok Verb.Book -> Ok (Book (Symbol.of_string second))
        | Ok Verb.Subscribe -> Ok (Subscribe (Symbol.of_string second))
        | Ok Verb.Cancel -> cancel_parse second

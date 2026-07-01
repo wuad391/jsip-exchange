@@ -318,12 +318,11 @@ let%expect_test "Basic test of Market Maker" =
     BIDS: 1,
     ASKS: 2,
     END ====================
-    HERE
 
     START for AAPL====================
     Fair value price: 15000
     BBO: $149.90 x100 / $150.10 x200
-    Inventory: 1
+    Inventory: 50
 
 
     BIDS:
@@ -335,12 +334,12 @@ let%expect_test "Basic test of Market Maker" =
     SELL AAPL 100@$150.51 DAY
     BUY AAPL 100@$149.48 DAY
     SELL AAPL 100@$150.52 DAY
-    BUY AAPL 100@$149.88 DAY
-    SELL AAPL 100@$150.08 DAY
-    BUY AAPL 100@$149.87 DAY
-    SELL AAPL 100@$150.09 DAY
-    BUY AAPL 100@$149.86 DAY
-    SELL AAPL 100@$150.10 DAY
+    BUY AAPL 100@$148.90 DAY
+    SELL AAPL 100@$149.10 DAY
+    BUY AAPL 100@$148.89 DAY
+    SELL AAPL 100@$149.11 DAY
+    BUY AAPL 100@$148.88 DAY
+    SELL AAPL 100@$149.12 DAY
     ..................................................
      3
     |}];

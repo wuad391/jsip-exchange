@@ -104,3 +104,16 @@ let%expect_test "session-feed RPC" =
     |}];
   return ()
 ;;
+
+let%expect_test "cancel RPC" =
+  print_s
+    [%sexp
+      (Rpc.Rpc.shapes Rpc_protocol.cancel_order_rpc
+       : Async_rpc_kernel.Rpc_shapes.t)];
+  [%expect
+    {|
+    (Rpc (query 698cfa4093fe5e51523842d37b92aeac)
+     (response 27f76252e5181aab209cd62aa6e42268))
+    |}];
+  return ()
+;;

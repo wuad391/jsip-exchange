@@ -1,3 +1,8 @@
+(* CR claude for robyn: this whole module (and its .mli) is committed as one big
+   commented-out WIP blob ("LEFT OFF HERE TODO"). A comment-only .ml compiles to
+   an empty module, so it just adds noise. Either finish it, make it a real stub
+   in the house style ([let on_tick _ _ = failwith "TODO: implement
+   Noise_trader.on_tick"]), or drop the files until you start Ex4. *)
 (* open! Core open! Async open Jsip_types open Jsip_gateway open
    Jsip_bot_runtime module Context = Bot_runtime.Context
 

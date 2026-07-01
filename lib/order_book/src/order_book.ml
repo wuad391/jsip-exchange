@@ -58,6 +58,13 @@ let side_map t side =
   match (side : Side.t) with Buy -> t.bids | Sell -> t.asks
 ;;
 
+(* CR claude for robyn: [add] uses [print_endline] and then silently drops the
+   order on a symbol mismatch or non-positive size — the caller thinks it
+   rested. These are internal precondition violations: [raise_s [%message "..."
+   (order : Order.t)]] instead (and include the offending value). It's also
+   inconsistent — [Hashtbl.add_exn] three lines down *raises* on a duplicate
+   order_id, so pick one failure mode. Minor: [Size.of_int 0] should be
+   [Size.zero], and [%string] with no interpolation is just a string literal. *)
 let add t order =
   if not (Symbol.equal (Order.symbol order) t.symbol)
   then
@@ -150,16 +157,18 @@ let best_bid_offer t : Bbo.t =
   { bid = best_level t Buy; ask = best_level t Sell }
 ;;
 
+(* XCR claude for robyn: both match arms were byte-identical and used
+   [`Decreasing], listing levels worst-first (best-first is [`Increasing],
+   since the key ranks best = smallest — that's what [Map.min_elt] relies on);
+   the [%expect] blocks had been auto-promoted against that wrong order. Now
+   [`Increasing] with the redundant match dropped, and both snapshots
+   re-promoted to match the "highest-first / lowest-first" comment.
+
+   robyn: fixed. *)
 let snapshot_side t (side : Side.t) =
-  match side with
-  | Buy ->
-    List.map
-      (Map.to_alist ~key_order:`Decreasing (side_map t side))
-      ~f:(fun (_, order) -> Level.of_order order)
-  | Sell ->
-    List.map
-      (Map.to_alist ~key_order:`Decreasing (side_map t side))
-      ~f:(fun (_, order) -> Level.of_order order)
+  List.map
+    (Map.to_alist ~key_order:`Increasing (side_map t side))
+    ~f:(fun (_, order) -> Level.of_order order)
 ;;
 
 let snapshot t =

@@ -20,6 +20,13 @@ let%expect_test "notional_cents: price * size" =
   [%test_result: int] (Fill.notional_cents fill) ~expect:1502500
 ;;
 
+(* CR claude for robyn: two issues across the next two tests. (1) Both are named
+   "testing to_participant" — give distinct names (aggressor view vs resting
+   view). (2) In every fill, [aggressor_client_order_id] and
+   [resting_client_order_id] are both [of_int 1]. [to_participant_view] prints
+   the *viewer's own* id, so with both = 1 these tests can't tell if the wrong
+   side's id were used — the field-selection logic is unverified. Use distinct
+   ids (e.g. 7 and 9). *)
 let%expect_test "testing to_participant" =
   let fill =
     ({ fill_id = 1

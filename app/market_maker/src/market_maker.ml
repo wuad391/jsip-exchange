@@ -67,6 +67,13 @@ let seed_book (config : Config.t) conn =
       Deferred.unit)
 ;;
 
+(* CR-someday claude for robyn: this [t]/[trading_function]/[run] block
+   duplicates market_maker_bot.ml (both track bids/asks hash sets + inventory and
+   re-seed on fill). Decide which is canonical and delete the other — this one
+   looks superseded by the [Bot_runtime.Bot] version. Also
+   [client_order_id_test_ref] is a module-global counter (named "_test_ref") used
+   in production; move it into [t]. And [trading_function] is exposed in the .mli
+   only for tests — put it in a [For_testing] submodule. *)
 type t =
   { inventory : Int.t Ref.t
   ; mutable half_spread_cents : Int.t

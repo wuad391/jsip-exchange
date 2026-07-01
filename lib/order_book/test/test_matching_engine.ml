@@ -435,14 +435,56 @@ let%expect_test "scenario: two participants trade, book reflects state" =
     FILL fill_id=1 AAPL $150.10 x50 aggressor=5(Charlie w/ client order ID = 6) BUY resting=3(Bob w/ client order ID = 4)
     === AAPL ===
       BIDS:
-        $149.80 x200
         $149.90 x100
+        $149.80 x200
       ASKS:
-        $150.20 x150
         $150.10 x50
+        $150.20 x150
       BBO: $149.90 x100 / $150.10 x50
     BBO AAPL: $149.90 x100 / $150.10 x50
     |}]
+;;
+
+(* Regression test for the fixed dangling-[then] in [match_loop]: a partially
+   filled resting order must stay on the book AND stay cancelable. Before the
+   fix, [remove_client_order] ran on every fill (not just full fills), evicting
+   the still-resting order from the client tables, so this cancel came back as a
+   [Cancel_reject]. *)
+let%expect_test "regression: partial fill keeps the resting order cancelable" =
+  let t = Harness.create () in
+  (* Bob rests a buy for 100; Alice sells 40 into it, leaving 60 resting. *)
+  submit_
+    t
+    (Harness.buy
+       ~participant:Harness.bob
+       ~client_order_id:1
+       ~price_cents:15000
+       ~size:100
+       ());
+  submit_
+    t
+    (Harness.sell
+       ~participant:Harness.alice
+       ~client_order_id:2
+       ~price_cents:15000
+       ~size:40
+       ());
+  [%expect
+    {|
+    ACCEPTED id=1 AAPL BUY 100@$150.00 DAY
+    ACCEPTED id=2 AAPL SELL 40@$150.00 DAY
+    FILL fill_id=1 AAPL $150.00 x40 aggressor=2(Alice w/ client order ID = 2) SELL resting=1(Bob w/ client order ID = 1)
+    |}];
+  (* Bob cancels his still-resting remainder: expect CANCELLED (remaining=60),
+     not a Cancel_reject. *)
+  let cancel_events =
+    Matching_engine.cancel
+      (Harness.engine t)
+      ({ participant = Harness.bob; client_order_id = Client_order_id.of_int 1 }
+       : Order.Cancel.t)
+  in
+  Harness.print_events ~show:Harness.Show.no_market_data cancel_events;
+  [%expect {| CANCELLED id=1 AAPL remaining=60 reason=PARTICIPANT_REQUESTED |}]
 ;;
 
 let%expect_test "scenario: aggressive IOC sweeps entire book" =
