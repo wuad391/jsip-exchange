@@ -41,3 +41,12 @@ type t
 val seed_book : Config.t -> Rpc.Connection.t -> unit Deferred.t
 
 val run : ?testing:Bool.t -> Config.t -> Rpc.Connection.t -> unit Deferred.t
+
+(* THIS IS FOR TESTING ONLY *)
+val trading_function
+  :  t
+  -> Config.t
+  -> Bool.t
+  -> Rpc.Connection.t
+  -> Exchange_event.t
+  -> unit Deferred.t

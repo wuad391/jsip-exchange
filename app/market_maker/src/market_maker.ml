@@ -78,14 +78,8 @@ type t =
    [{ inventory = ref 0 ; bids = Hash_set.create (module Client_order_id) ; asks = Hash_set.create (module Client_order_id) }]
    ;; *)
 
-let run ?(testing = false) (config : Config.t) conn =
-  let t =
-    { inventory = ref 0
-    ; half_spread_cents = config.half_spread_cents
-    ; bids = Hash_set.create (module Client_order_id)
-    ; asks = Hash_set.create (module Client_order_id)
-    }
-  in
+(* This is the function that handles all events *)
+let trading_function t (config : Config.t) testing conn event =
   let get_side_client_order_id (fill : Fill.t) =
     if Participant.equal fill.aggressor_participant config.participant
     then fill.aggressor_side, fill.aggressor_client_order_id
@@ -127,46 +121,54 @@ let run ?(testing = false) (config : Config.t) conn =
         [%string "%{(Client_order_id.to_int client_order_id)#Int}, "]);
     print_endline [%string "\nEND ===================="]
   in
-  (* This is the function that handles all events *)
-  let trading_function event =
-    let%bind () =
-      match (event : Exchange_event.t) with
-      | Order_accept { order_id = _; request } ->
-        (match request.side with
-         | Buy -> return (Hash_set.add t.bids request.client_order_id)
-         | Sell -> return (Hash_set.add t.asks request.client_order_id))
-      | Best_bid_offer_update { symbol; bbo } ->
-        if Symbol.( <> ) symbol config.symbol
-        then return ()
-        else (
-          match Bbo.spread bbo with
-          | Some spread ->
-            t.half_spread_cents <- Price.to_int_cents spread / 2;
-            return ()
-          | None -> return ())
-      | Order_cancel _ -> return ()
-      | Fill fill ->
-        let side, client_order_id = get_side_client_order_id fill in
-        update_books side client_order_id;
-        cancel_all_orders side;
-        seed_book
-          { config with
-            fair_value_cents =
-              config.fair_value_cents
-              - (!(t.inventory) * config.inventory_skew_cents_per_share)
-          ; half_spread_cents = t.half_spread_cents
-          }
-          conn
-      | Order_reject _ | Trade_report _ | Cancel_reject _ -> return ()
-    in
-    let () = if testing then print_books () else () in
-    return ()
+  let%bind () =
+    match (event : Exchange_event.t) with
+    | Order_accept { order_id = _; request } ->
+      (match request.side with
+       | Buy -> return (Hash_set.add t.bids request.client_order_id)
+       | Sell -> return (Hash_set.add t.asks request.client_order_id))
+    | Best_bid_offer_update { symbol; bbo } ->
+      if Symbol.( <> ) symbol config.symbol
+      then return ()
+      else (
+        match Bbo.spread bbo with
+        | Some spread ->
+          t.half_spread_cents <- Price.to_int_cents spread / 2;
+          return ()
+        | None -> return ())
+    | Order_cancel _ -> return ()
+    | Fill fill ->
+      let side, client_order_id = get_side_client_order_id fill in
+      update_books side client_order_id;
+      cancel_all_orders side;
+      seed_book
+        { config with
+          fair_value_cents =
+            config.fair_value_cents
+            - (!(t.inventory) * config.inventory_skew_cents_per_share)
+        ; half_spread_cents = t.half_spread_cents
+        }
+        conn
+    | Order_reject _ | Trade_report _ | Cancel_reject _ -> return ()
+  in
+  let () = if testing then print_books () else () in
+  return ()
+;;
+
+let run ?(testing = false) (config : Config.t) conn =
+  let t =
+    { inventory = ref 0
+    ; half_spread_cents = config.half_spread_cents
+    ; bids = Hash_set.create (module Client_order_id)
+    ; asks = Hash_set.create (module Client_order_id)
+    }
   in
   let%bind session_feed, _metadata =
     Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc conn ()
   in
   let%bind () = seed_book config conn in
   (* initial ladder *)
-  don't_wait_for (Pipe.iter session_feed ~f:trading_function);
+  don't_wait_for
+    (Pipe.iter session_feed ~f:(trading_function t config testing conn));
   if testing then return () else Deferred.never ()
 ;;
