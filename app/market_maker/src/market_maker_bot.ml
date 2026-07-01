@@ -296,14 +296,7 @@ let on_event config context event =
       set_symbol_state config symbol { curr_symbol_state with bbo };
       return ()
       (* TODO: maybe adjust some of the config stuff based on BBO *)
-    | Order_cancel _ ->
-      return ()
-      (* we only ever initiate cancel when we cancel everything. When we
-         cancel everything, the internal books are already maintainted *)
-      (* let [{ asks; bids; inventory = _ }] = get_symbol_state config
-         cancel_info.symbol in Hash_set.remove bids
-         cancel_info.client_order_id; return (Hash_set.remove asks
-         cancel_info.client_order_id) *)
+    | Order_cancel _ -> return ()
     | Fill fill ->
       let side, client_order_id = get_side_client_order_id fill in
       update_books side fill.symbol client_order_id;

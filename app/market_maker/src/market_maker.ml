@@ -69,6 +69,7 @@ let seed_book (config : Config.t) conn =
 
 type t =
   { inventory : Int.t Ref.t
+  ; mutable half_spread_cents : Int.t
   ; mutable bids : Client_order_id.t Hash_set.t
   ; mutable asks : Client_order_id.t Hash_set.t
   }
@@ -80,6 +81,7 @@ type t =
 let run ?(testing = false) (config : Config.t) conn =
   let t =
     { inventory = ref 0
+    ; half_spread_cents = config.half_spread_cents
     ; bids = Hash_set.create (module Client_order_id)
     ; asks = Hash_set.create (module Client_order_id)
     }
@@ -130,16 +132,19 @@ let run ?(testing = false) (config : Config.t) conn =
     let%bind () =
       match (event : Exchange_event.t) with
       | Order_accept { order_id = _; request } ->
-        t.inventory := !(t.inventory) + 1;
         (match request.side with
          | Buy -> return (Hash_set.add t.bids request.client_order_id)
          | Sell -> return (Hash_set.add t.asks request.client_order_id))
-      | Best_bid_offer_update _ ->
-        return
-          () (* TODO: maybe adjust some of the config stuff based on BBO *)
-      | Order_cancel cancel_info ->
-        Hash_set.remove t.bids cancel_info.client_order_id;
-        return (Hash_set.remove t.asks cancel_info.client_order_id)
+      | Best_bid_offer_update { symbol; bbo } ->
+        if Symbol.( <> ) symbol config.symbol
+        then return ()
+        else (
+          match Bbo.spread bbo with
+          | Some spread ->
+            t.half_spread_cents <- Price.to_int_cents spread / 2;
+            return ()
+          | None -> return ())
+      | Order_cancel _ -> return ()
       | Fill fill ->
         let side, client_order_id = get_side_client_order_id fill in
         update_books side client_order_id;
@@ -149,6 +154,7 @@ let run ?(testing = false) (config : Config.t) conn =
             fair_value_cents =
               config.fair_value_cents
               - (!(t.inventory) * config.inventory_skew_cents_per_share)
+          ; half_spread_cents = t.half_spread_cents
           }
           conn
       | Order_reject _ | Trade_report _ | Cancel_reject _ -> return ()
