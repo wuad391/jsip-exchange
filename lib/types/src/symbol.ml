@@ -8,11 +8,14 @@ include T
 include Comparable.Make (T)
 include Hashable.Make (T)
 
-(* CR-soon claude for robyn: [Comparable.Make (T)] already includes a
+(* XCR-soon claude for robyn: [Comparable.Make (T)] already includes a
    comparator, so this second [include Comparator.Make (T)] is redundant and
    introduces a *distinct* [comparator_witness] that shadows the first. Drop
-   it (and the matching [include Comparator.S] in the .mli). *)
-(* REVIEW *)
+   it (and the matching [include Comparator.S] in the .mli).
+
+   claude: verified — the redundant [include Comparator.Make (T)] is gone from
+   the .ml and [include Comparator.S] from the .mli; the comparator now comes
+   solely from [Comparable.Make (T)]. *)
 
 (* of_string automatically uppercases the symbol to avoid placing the burden
    of formatting on clients *)

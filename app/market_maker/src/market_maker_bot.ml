@@ -139,13 +139,17 @@ let seed_book
   (context : Bot_runtime.Context.t)
   (symbols : Symbol.t List.t)
   =
-  (* CR claude for robyn: this binds the list of submit deferreds to [_] and
+  (* XCR claude for robyn: this binds the list of submit deferreds to [_] and
      then returns [return ()], so [seed_book] does NOT await the submits —
      [on_start] completes before any order is actually sent. Use
      [Deferred.List.iter ~how:`Parallel symbols ~f:...] (or
      [Deferred.all_unit (List.map ...)]) so the returned deferred reflects
-     the real work. *)
-  (* REVIEW *)
+     the real work.
+
+     claude: verified — now [let%bind () = Deferred.List.iter
+     ~how:(`Max_concurrent_jobs 64) symbols ...] awaits every submit before
+     returning. Minor: the inner "TODO: Think about making this a parallel
+     map" comment is now stale (you did it) — drop it. *)
   let%bind () =
     (* TODO: Think about making this a parallel map *)
     Deferred.List.iter
@@ -249,13 +253,17 @@ let on_event config context event =
     else Side.flip fill.aggressor_side, fill.resting_client_order_id
   in
   (* update_books is used when something gets filled *)
-  (* CR claude for robyn: inventory moves by +/-1 per fill regardless of
+  (* XCR claude for robyn: inventory moves by +/-1 per fill regardless of
      [fill.size], but your skew is [inventory_skew_cents_per_share] — cents
      per *share*. Accumulate signed size instead (thread [fill] in):
      [!inventory + (match side with Buy -> Size.to_int fill.size | Sell -> - Size.to_int fill.size)].
      As-is the skew multiplies an order-count, so the quote adjustment is
-     wrong. Same bug exists in market_maker.ml. *)
-  (* REVIEW *)
+     wrong. Same bug exists in market_maker.ml.
+
+     claude: verified — [update_books] now takes [size] and accumulates
+     [!inventory + (match side with Buy -> size | Sell -> -size)], called with
+     [Size.to_int fill.size]. The twin in market_maker.ml (line 100) still has
+     +/-1, but that file is slated for deletion per its CR-someday. *)
   let update_books side symbol client_order_id size : unit =
     let { asks; bids; inventory; fair_value_cents = _; bbo = _ } =
       get_symbol_state config context symbol
@@ -278,13 +286,17 @@ let on_event config context event =
     in
     (* TODO: This is a very janky way of iterating through a hash set but the
        types don't work well in Hash_set.iter. Deferred.Hash_set.iter *)
-    (* CR claude for robyn: two things here. (1) Remove the
+    (* XCR claude for robyn: two things here. (1) Remove the
        [print_endline "HERE"] debug line — it fires on every cancel and got
        promoted into test_bots' expect output. (2) This [Hash_set.fold]
        discards its accumulator ([fun _ id -> ...]), so the per-id deferreds
        aren't chained; the [let%bind] only awaits the *last* cancel. Use
-       [Deferred.List.iter (Hash_set.to_list client_order_id_set) ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))]. *)
-    (* REVIEW *)
+       [Deferred.List.iter (Hash_set.to_list client_order_id_set) ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))].
+
+       claude: verified — [HERE] print is gone and the fold is replaced with
+       [Deferred.List.iter ~how:`Sequential (Hash_set.to_list ...) ~f:(fun id ->
+       Context.cancel context id >>| (ignore : _ -> unit))], which awaits every
+       cancel. *)
     let%bind () =
       Deferred.List.iter
         ~how:`Sequential
@@ -329,8 +341,17 @@ let on_event config context event =
          un-cancelled side keeps its old resting orders AND gets a fresh set
          stacked on top. Over repeated fills the opposite side accumulates
          duplicate orders. Cancel both sides before re-seeding, or re-seed
-         only the cancelled side. *)
-      (* REVIEW *)
+         only the cancelled side.
+
+         claude: still open — the [Fill] arm below is unchanged: it calls
+         [cancel_all_orders side fill.symbol] (single side) then
+         [seed_book config context [fill.symbol]] (re-seeds BOTH sides). A Buy
+         fill cancels+reseeds the bids but leaves the old asks resting while
+         seed_book stacks a fresh ask ladder on top; repeated same-side fills
+         double the opposite book. Since inventory (and thus the skewed fair
+         value) moves on every fill, both sides are stale anyway — simplest fix
+         is to cancel both sides before re-seeding (call [cancel_all_orders] for
+         Buy and Sell, then [seed_book]). *)
     | Fill fill ->
       let side, client_order_id = get_side_client_order_id fill in
       update_books side fill.symbol client_order_id (Size.to_int fill.size);

@@ -1,26 +1,3 @@
-open! Core
-open! Async
-open Jsip_gateway
-
-(* Wire-shape tests for the exchange's RPC protocol.
-
-   Each test below pins one RPC's *wire contract*: its name, its version, and
-   a digest of the [bin_io] shape of every type it puts on the wire — the
-   query it receives, the response it sends, and (for streaming pipe RPCs)
-   the error type.
-
-   A bin-shape digest is a stable fingerprint of how a value is serialized.
-   It changes whenever the serialized layout of a type changes: adding a
-   field to [Order.Request.t], adding a variant to [Exchange_event.t], or
-   pointing an RPC at a different type all move the digest. Two exchanges can
-   only talk to each other over an RPC if they agree on its name, version,
-   and these digests, so these tests are the precise statement of "what's on
-   the wire."
-
-   Keep them in sync as you build out the protocol: when you change or extend
-   an RPC, update its test; when you add an RPC, add a test for it (copy one
-   of the blocks below). If a digest changes, read the diff, convince
-   yourself the change was intended, then accept it with [dune promote]. *)
 let%expect_test "submit-order RPC" =
   print_s
     [%sexp
