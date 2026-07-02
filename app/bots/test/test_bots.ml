@@ -593,6 +593,102 @@ let%expect_test "tick_chance of 0.0 keeps the noise trader silent" =
   return ()
 ;;
 
+(* ---------------------------------------------------------------- *)
+(* Cancel storm tests *)
+(* ---------------------------------------------------------------- *)
+
+(* The storm's contract: every tick it fires [cycles_per_tick] submit->cancel
+   cycles, each under a *fresh* id, and cancels every id it submits. We
+   assert the counts (real pressure, not one order per tick), that all ids
+   are distinct (so duplicate-detection never blocks a submit), and that each
+   submitted id is cancelled -- all computable without rerunning the bot's
+   own logic. *)
+let%expect_test "cancel storm fires a burst of fresh-id submit/cancel cycles"
+  =
+  let cycles_per_tick = 4 in
+  let config =
+    Cancel_storm.create_config
+      ~symbols:[ aapl ]
+      ~cycles_per_tick
+      ~size:100
+      ~pct_marketable:0
+      ~price_offset_cents:100
+  in
+  let bot, submitted, cancelled =
+    make_recording_bot (module Cancel_storm) config ()
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  let%bind () = drive_ticks bot ~count:3 in
+  let submitted = List.rev !submitted in
+  let cancelled = List.rev !cancelled in
+  let submitted_ids =
+    List.map submitted ~f:(fun (r : Order.Request.t) -> r.client_order_id)
+  in
+  printf
+    "submits=%d cancels=%d\n"
+    (List.length submitted)
+    (List.length cancelled);
+  printf
+    "all ids distinct: %b\n"
+    (not (List.contains_dup submitted_ids ~compare:Client_order_id.compare));
+  printf
+    "every submitted id cancelled: %b\n"
+    (List.for_all submitted_ids ~f:(fun id ->
+       List.mem cancelled id ~equal:Client_order_id.equal));
+  [%expect
+    {|
+    submits=12 cancels=12
+    all ids distinct: true
+    every submitted id cancelled: true
+    |}];
+  return ()
+;;
+
+(* [pct_marketable] must actually steer pricing. With a flat $150.00
+   fundamental, a marketable buy prices above it (a sell below) and a resting
+   order the reverse, so we can classify each order and count: [0] should
+   yield no marketable orders, [100] all of them. *)
+let%expect_test "cancel storm pct_marketable steers whether orders cross" =
+  let fundamental_cents = 15000 in
+  let is_marketable (r : Order.Request.t) =
+    match r.side with
+    | Buy -> Price.to_int_cents r.price > fundamental_cents
+    | Sell -> Price.to_int_cents r.price < fundamental_cents
+  in
+  let run ~pct_marketable =
+    let config =
+      Cancel_storm.create_config
+        ~symbols:[ aapl ]
+        ~cycles_per_tick:10
+        ~size:100
+        ~pct_marketable
+        ~price_offset_cents:100
+    in
+    let bot, submitted, _cancelled =
+      make_recording_bot (module Cancel_storm) config ()
+    in
+    let%bind () = Bot_runtime.For_testing.manual_start bot in
+    let%bind () = drive_ticks bot ~count:5 in
+    return (List.rev !submitted)
+  in
+  let%bind resting = run ~pct_marketable:0 in
+  let%bind crossing = run ~pct_marketable:100 in
+  printf
+    "pct=0   marketable %d/%d\n"
+    (List.count resting ~f:is_marketable)
+    (List.length resting);
+  printf
+    "pct=100 marketable %d/%d\n"
+    (List.count crossing ~f:is_marketable)
+    (List.length crossing);
+  [%expect
+    {|
+    pct=0   marketable 0/50
+    pct=100 marketable 50/50
+    |}];
+  return ()
+;;
+
 let%expect_test "make_recording_bot wires up a runnable bot" =
   let bot, submitted, _cancelled =
     make_recording_bot (module Inert_bot) () ()
