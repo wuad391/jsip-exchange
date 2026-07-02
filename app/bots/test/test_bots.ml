@@ -41,66 +41,6 @@ let fill_event : Exchange_event.t =
     }
 ;;
 
-let accepted_event : Exchange_event.t =
-  Order_accept
-    { order_id = Order_id.For_testing.of_int 1
-    ; request =
-        { symbol = aapl
-        ; participant = alice
-        ; side = Buy
-        ; price = Price.of_int_cents 15000
-        ; size = Size.of_int 10
-        ; time_in_force = Day
-        ; client_order_id = Client_order_id.of_int 1
-        }
-    }
-;;
-
-let accepted_event_buy : Exchange_event.t =
-  Order_accept
-    { order_id = Order_id.For_testing.of_int 1
-    ; request =
-        { symbol = aapl
-        ; participant = market_maker
-        ; side = Buy
-        ; price = Price.of_int_cents 15000
-        ; size = Size.of_int 10
-        ; time_in_force = Day
-        ; client_order_id = Client_order_id.of_int 1
-        }
-    }
-;;
-
-let accepted_event_buy2 : Exchange_event.t =
-  Order_accept
-    { order_id = Order_id.For_testing.of_int 1
-    ; request =
-        { symbol = aapl
-        ; participant = market_maker
-        ; side = Buy
-        ; price = Price.of_int_cents 15000
-        ; size = Size.of_int 10
-        ; time_in_force = Day
-        ; client_order_id = Client_order_id.of_int 3
-        }
-    }
-;;
-
-let accepted_event_sell : Exchange_event.t =
-  Order_accept
-    { order_id = Order_id.For_testing.of_int 1
-    ; request =
-        { symbol = aapl
-        ; participant = market_maker
-        ; side = Sell
-        ; price = Price.of_int_cents 15000
-        ; size = Size.of_int 10
-        ; time_in_force = Day
-        ; client_order_id = Client_order_id.of_int 2
-        }
-    }
-;;
-
 (* ............................................................... *)
 
 let oracle_config ~initial_price_cents =
@@ -252,26 +192,21 @@ let%expect_test "make_recording_bot wires up a runnable bot" =
 (* ---------------------------------------------------------------- *)
 (* Market Maker tests *)
 (* ---------------------------------------------------------------- *)
-(* default bbo value is good ? *)
+(* End-to-end walk-through of one seed -> fill -> re-quote cycle, showing the
+   [on_tick] book print at two points. First snapshot: after seeding (no BBO
+   yet, so the ladder is the default 50c half-spread from [on_start]) with the
+   BBO now applied and inventory flat. Second snapshot: after a 50-lot buy
+   fill, inventory is +50 and the whole ladder has been cancelled and re-quoted
+   (new ids, skewed down). [submit_list] shows all 12 orders sent; the cancel
+   line shows the six original ids pulled. *)
 let%expect_test "Basic test of Market Maker" =
   let bot, submit_list, cancel_list =
     make_market_maker_bot ~participant_name:"Market Maker"
   in
   let%bind () = Bot_runtime.For_testing.manual_start bot in
   let%bind () = Bot_runtime.feed_event bot bbo_event in
-  (* set an initial bbo *)
   let%bind () = Bot_runtime.For_testing.manual_tick bot in
-  let%bind () = Bot_runtime.feed_event bot accepted_event_buy in
-  (* made a bid *)
-  let%bind () = Bot_runtime.For_testing.manual_tick bot in
-  let%bind () = Bot_runtime.feed_event bot accepted_event_sell in
-  (* made an ask *)
-  let%bind () = Bot_runtime.For_testing.manual_tick bot in
-  let%bind () = Bot_runtime.For_testing.manual_tick bot in
-  (* made anoter bid *)
-  let%bind () = Bot_runtime.feed_event bot accepted_event_buy2 in
   let%bind () = Bot_runtime.feed_event bot fill_event in
-  (* filled! against john yay *)
   let%bind () = Bot_runtime.For_testing.manual_tick bot in
   print_submitted submit_list;
   print_endline
@@ -285,38 +220,8 @@ let%expect_test "Basic test of Market Maker" =
     Inventory: 0
 
 
-    BIDS:
-    ASKS:
-    END ====================
-
-    START for AAPL====================
-    Fair value price: 15000
-    BBO: $149.90 x100 / $150.10 x200
-    Inventory: 0
-
-
-    BIDS: 1,
-    ASKS:
-    END ====================
-
-    START for AAPL====================
-    Fair value price: 15000
-    BBO: $149.90 x100 / $150.10 x200
-    Inventory: 0
-
-
-    BIDS: 1,
-    ASKS: 2,
-    END ====================
-
-    START for AAPL====================
-    Fair value price: 15000
-    BBO: $149.90 x100 / $150.10 x200
-    Inventory: 0
-
-
-    BIDS: 1,
-    ASKS: 2,
+    BIDS: 5, 3, 1,
+    ASKS: 2, 4, 6,
     END ====================
 
     START for AAPL====================
@@ -325,8 +230,8 @@ let%expect_test "Basic test of Market Maker" =
     Inventory: 50
 
 
-    BIDS:
-    ASKS: 2,
+    BIDS: 11, 7, 9,
+    ASKS: 12, 10, 8,
     END ====================
     BUY AAPL 100@$149.50 DAY
     SELL AAPL 100@$150.50 DAY
@@ -341,8 +246,237 @@ let%expect_test "Basic test of Market Maker" =
     BUY AAPL 100@$148.88 DAY
     SELL AAPL 100@$149.12 DAY
     ..................................................
-     3
+     1 3 5 6 4 2
     |}];
+  return ()
+;;
+
+(* [on_start] with no BBO yet seeds a symmetric ladder around the fundamental
+   ($150.00). With no BBO, [half_spread_cents] defaults to 50c, and each
+   level widens the offset by one more cent (50, 51, 52). Inventory is 0, so
+   there is no skew: bids and asks are mirror images around $150.00. *)
+let%expect_test "on_start seeds a symmetric default-spread ladder" =
+  let bot, submitted, _cancelled =
+    make_market_maker_bot ~participant_name:"Market Maker"
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  print_submitted submitted;
+  [%expect
+    {|
+    BUY AAPL 100@$149.50 DAY
+    SELL AAPL 100@$150.50 DAY
+    BUY AAPL 100@$149.49 DAY
+    SELL AAPL 100@$150.51 DAY
+    BUY AAPL 100@$149.48 DAY
+    SELL AAPL 100@$150.52 DAY
+    |}];
+  return ()
+;;
+
+(* After a *buy* fill the bot is long, so the skewed fair value drops by
+   [inventory * inventory_skew_cents_per_share] = 50 * 2 = 100c,
+   moving *both* the bid and the ask down. This also confirms the ladder
+   re-quotes at the BBO-derived half-spread (10c, from the $0.20 spread)
+   rather than the 50c default. [submitted] is reset after seeding so only
+   the re-quote shows. *)
+let%expect_test "buy fill skews both quotes down at the BBO half-spread" =
+  let bot, submitted, _cancelled =
+    make_market_maker_bot ~participant_name:"Market Maker"
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  let%bind () = Bot_runtime.feed_event bot bbo_event in
+  submitted := [];
+  let%bind () = Bot_runtime.feed_event bot fill_event in
+  print_submitted submitted;
+  [%expect
+    {|
+    BUY AAPL 100@$148.90 DAY
+    SELL AAPL 100@$149.10 DAY
+    BUY AAPL 100@$148.89 DAY
+    SELL AAPL 100@$149.11 DAY
+    BUY AAPL 100@$148.88 DAY
+    SELL AAPL 100@$149.12 DAY
+    |}];
+  return ()
+;;
+
+(* On a fill the bot cancels *every* resting order on *both* books before
+   re-quoting — including the just-(partially-)filled order, whose un-filled
+   remainder would otherwise be orphaned on the exchange. The seed places bids
+   {1, 3, 5} and asks {2, 4, 6}; the fill is on bid id 1, and all six are
+   cancelled. *)
+let%expect_test "a fill cancels both books, including the filled order" =
+  let bot, _submitted, cancelled =
+    make_market_maker_bot ~participant_name:"Market Maker"
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  let%bind () = Bot_runtime.feed_event bot bbo_event in
+  let%bind () = Bot_runtime.feed_event bot fill_event in
+  print_cancelled cancelled;
+  [%expect {| 1 3 5 6 4 2 |}];
+  return ()
+;;
+
+(* The resting-side fill: a market maker mostly *rests*, and someone else
+   crosses the spread to lift its quote. When the bot is the resting
+   participant, [side_of_fill] takes its [else] branch and our side is the
+   *flip* of the aggressor's; this is the only path the other fill tests never
+   hit. Here [alice] is the BUY aggressor lifting one of our resting asks, so
+   the bot's side resolves to Sell and inventory goes to -50. Short inventory
+   skews the fair value *up* (the mirror of the buy-fill test), so both bid and
+   ask re-quote above $150.00. *)
+let%expect_test "resting-side sell fill skews both quotes up" =
+  let bot, submitted, _cancelled =
+    make_market_maker_bot ~participant_name:"Market Maker"
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  let%bind () = Bot_runtime.feed_event bot bbo_event in
+  submitted := [];
+  let resting_sell_fill : Exchange_event.t =
+    Fill
+      { fill_id = 2
+      ; symbol = aapl
+      ; price = Price.of_int_cents 15000
+      ; size = Size.of_int 50
+      ; aggressor_order_id = Order_id.For_testing.of_int 3
+      ; aggressor_client_order_id = Client_order_id.of_int 99
+      ; aggressor_participant = alice
+      ; aggressor_side = Buy
+      ; resting_order_id = Order_id.For_testing.of_int 4
+      ; resting_client_order_id = Client_order_id.of_int 2
+      ; resting_participant = market_maker
+      }
+  in
+  let%bind () = Bot_runtime.feed_event bot resting_sell_fill in
+  print_submitted submitted;
+  [%expect
+    {|
+    BUY AAPL 100@$150.90 DAY
+    SELL AAPL 100@$151.10 DAY
+    BUY AAPL 100@$150.89 DAY
+    SELL AAPL 100@$151.11 DAY
+    BUY AAPL 100@$150.88 DAY
+    SELL AAPL 100@$151.12 DAY
+    |}];
+  return ()
+;;
+
+(* [Order_reject] must pull the order back out of the book we optimistically
+   tracked it in at submit time. The seed places bids {1, 3, 5}; we reject bid
+   id 1, then take a fill (which cancels the whole book). Id 1 must be absent
+   from the cancels — the reject removed it — while the other five are pulled. *)
+let%expect_test "order reject removes the order from the book" =
+  let bot, _submitted, cancelled =
+    make_market_maker_bot ~participant_name:"Market Maker"
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  let reject_bid_1 : Exchange_event.t =
+    Order_reject
+      { request =
+          { symbol = aapl
+          ; participant = market_maker
+          ; side = Buy
+          ; price = Price.of_int_cents 14950
+          ; size = Size.of_int 100
+          ; time_in_force = Day
+          ; client_order_id = Client_order_id.of_int 1
+          }
+      ; reason = "insufficient buying power"
+      }
+  in
+  let%bind () = Bot_runtime.feed_event bot reject_bid_1 in
+  let%bind () = Bot_runtime.feed_event bot fill_event in
+  print_cancelled cancelled;
+  [%expect {| 3 5 6 4 2 |}];
+  return ()
+;;
+
+(* A one-sided BBO (only a bid, no ask) has no spread, so [half_spread_cents]
+   falls back to its 50c default instead of deriving from the book. After a buy
+   fill (inventory +50, skewed fair 14900) the re-quote uses that 50c
+   half-spread — bids/asks sit 50/51/52c off the skewed fair, not 10c. *)
+let%expect_test "one-sided BBO falls back to the default half-spread" =
+  let one_sided_bbo : Exchange_event.t =
+    Best_bid_offer_update
+      { symbol = aapl
+      ; bbo =
+          { bid =
+              Some { price = Price.of_int_cents 14990; size = Size.of_int 100 }
+          ; ask = None
+          }
+      }
+  in
+  let bot, submitted, _cancelled =
+    make_market_maker_bot ~participant_name:"Market Maker"
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  let%bind () = Bot_runtime.feed_event bot one_sided_bbo in
+  submitted := [];
+  let%bind () = Bot_runtime.feed_event bot fill_event in
+  print_submitted submitted;
+  [%expect
+    {|
+    BUY AAPL 100@$148.50 DAY
+    SELL AAPL 100@$149.50 DAY
+    BUY AAPL 100@$148.49 DAY
+    SELL AAPL 100@$149.51 DAY
+    BUY AAPL 100@$148.48 DAY
+    SELL AAPL 100@$149.52 DAY
+    |}];
+  return ()
+;;
+
+(* Inventory is cumulative: two 50-lot buy fills leave the bot long 100, so the
+   skew deepens to 100 * 2 = 200c. The re-quote after the second fill sits a
+   full $2.00 below the $150.00 fair (skewed fair 14800) — twice the $1.00 skew
+   a single fill produces. *)
+let%expect_test "inventory accumulates across fills, deepening the skew" =
+  let bot, submitted, _cancelled =
+    make_market_maker_bot ~participant_name:"Market Maker"
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  let%bind () = Bot_runtime.feed_event bot bbo_event in
+  let%bind () = Bot_runtime.feed_event bot fill_event in
+  submitted := [];
+  let%bind () = Bot_runtime.feed_event bot fill_event in
+  print_submitted submitted;
+  [%expect
+    {|
+    BUY AAPL 100@$147.90 DAY
+    SELL AAPL 100@$148.10 DAY
+    BUY AAPL 100@$147.89 DAY
+    SELL AAPL 100@$148.11 DAY
+    BUY AAPL 100@$147.88 DAY
+    SELL AAPL 100@$148.12 DAY
+    |}];
+  return ()
+;;
+
+(* Market data for a symbol we don't quote must be ignored, not crash the bot.
+   The bot is configured for AAPL only; pricing MSFT would ask the oracle for a
+   fundamental it doesn't have and raise. Feeding an MSFT BBO should be a no-op:
+   nothing submitted, nothing cancelled, no exception. *)
+let%expect_test "BBO for an unconfigured symbol is ignored" =
+  let bot, submitted, cancelled =
+    make_market_maker_bot ~participant_name:"Market Maker"
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  submitted := [];
+  let msft_bbo : Exchange_event.t =
+    Best_bid_offer_update
+      { symbol = Symbol.of_string "MSFT"
+      ; bbo =
+          { bid =
+              Some { price = Price.of_int_cents 30000; size = Size.of_int 100 }
+          ; ask =
+              Some { price = Price.of_int_cents 30010; size = Size.of_int 100 }
+          }
+      }
+  in
+  let%bind () = Bot_runtime.feed_event bot msft_bbo in
+  print_submitted submitted;
+  print_cancelled cancelled;
+  [%expect {| |}];
   return ()
 ;;
 
