@@ -346,6 +346,119 @@ let%expect_test "Basic test of Market Maker" =
   return ()
 ;;
 
+(* ---------------------------------------------------------------- *)
+(* Noise trader tests *)
+(* ---------------------------------------------------------------- *)
+
+let noise_config ?(tick_chance = 1.0) () =
+  Noise_trader.create_config
+    ~symbols:[ aapl ]
+    ~avg_size:100
+    ~tick_chance
+    ~aggressiveness_pct:50
+    ~ioc_pct:50
+;;
+
+(* Run [count] ticks back-to-back off the bot's seeded RNG. *)
+let drive_ticks bot ~count =
+  Deferred.List.iter ~how:`Sequential (List.init count ~f:Fn.id) ~f:(fun _ ->
+    Bot_runtime.For_testing.manual_tick bot)
+;;
+
+(* With an empty book, prices hang off the oracle fundamental ($150.00 for
+   AAPL): a buy priced above it / a sell below it is marketable, the reverse
+   rests. The seed is pinned, so the buy/sell mix, the sizes (100 +/- 25%),
+   and the Day/Ioc mix are all reproducible. *)
+let%expect_test "noise trader prices off the fundamental when the book is \
+                 empty"
+  =
+  let bot, submitted, _cancelled =
+    make_recording_bot (module Noise_trader) (noise_config ()) ()
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  let%bind () = drive_ticks bot ~count:20 in
+  print_submitted submitted;
+  [%expect
+    {|
+    SELL AAPL 104@$150.05 DAY
+    BUY AAPL 113@$149.99 IOC
+    BUY AAPL 82@$149.96 IOC
+    BUY AAPL 79@$149.98 IOC
+    BUY AAPL 95@$149.96 IOC
+    SELL AAPL 96@$150.01 IOC
+    SELL AAPL 118@$149.99 IOC
+    BUY AAPL 86@$150.03 IOC
+    SELL AAPL 118@$150.01 IOC
+    BUY AAPL 89@$149.98 IOC
+    SELL AAPL 84@$149.95 DAY
+    SELL AAPL 92@$150.02 IOC
+    BUY AAPL 124@$150.01 IOC
+    SELL AAPL 92@$150.04 DAY
+    SELL AAPL 85@$150.02 IOC
+    BUY AAPL 91@$150.01 IOC
+    BUY AAPL 98@$149.97 IOC
+    SELL AAPL 101@$149.96 DAY
+    SELL AAPL 111@$150.04 IOC
+    BUY AAPL 78@$149.96 DAY
+    |}];
+  return ()
+;;
+
+(* After caching a BBO ($149.90 bid / $150.10 ask), marketable orders cross
+   it (buys at/above $150.10, sells at/below $149.90) and resting orders sit
+   outside the spread. *)
+let%expect_test "noise trader prices marketable and resting orders off the \
+                 cached BBO"
+  =
+  let bot, submitted, _cancelled =
+    make_recording_bot (module Noise_trader) (noise_config ()) ()
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  let%bind () = Bot_runtime.feed_event bot bbo_event in
+  let%bind () = drive_ticks bot ~count:20 in
+  print_submitted submitted;
+  [%expect
+    {|
+    SELL AAPL 104@$150.15 DAY
+    BUY AAPL 113@$149.89 IOC
+    BUY AAPL 82@$149.86 IOC
+    BUY AAPL 79@$149.88 IOC
+    BUY AAPL 95@$149.86 IOC
+    SELL AAPL 96@$150.11 IOC
+    SELL AAPL 118@$149.89 IOC
+    BUY AAPL 86@$150.13 IOC
+    SELL AAPL 118@$150.11 IOC
+    BUY AAPL 89@$149.88 IOC
+    SELL AAPL 84@$149.85 DAY
+    SELL AAPL 92@$150.12 IOC
+    BUY AAPL 124@$150.11 IOC
+    SELL AAPL 92@$150.14 DAY
+    SELL AAPL 85@$150.12 IOC
+    BUY AAPL 91@$150.11 IOC
+    BUY AAPL 98@$149.87 IOC
+    SELL AAPL 101@$149.86 DAY
+    SELL AAPL 111@$150.14 IOC
+    BUY AAPL 78@$149.86 DAY
+    |}];
+  return ()
+;;
+
+(* [tick_chance = 0.0] gates every tick, so a bot on a fast clock can still
+   trade sparsely -- here, not at all. *)
+let%expect_test "tick_chance of 0.0 keeps the noise trader silent" =
+  let bot, submitted, _cancelled =
+    make_recording_bot
+      (module Noise_trader)
+      (noise_config ~tick_chance:0.0 ())
+      ()
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  let%bind () = drive_ticks bot ~count:20 in
+  print_submitted submitted;
+  [%expect {| |}];
+  return ()
+;;
+
 let%expect_test "make_recording_bot wires up a runnable bot" =
   let bot, submitted, _cancelled =
     make_recording_bot (module Inert_bot) () ()
