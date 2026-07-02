@@ -146,10 +146,11 @@ let seed_book
      [Deferred.all_unit (List.map ...)]) so the returned deferred reflects
      the real work.
 
-     claude: verified — now [let%bind () = Deferred.List.iter
-     ~how:(`Max_concurrent_jobs 64) symbols ...] awaits every submit before
-     returning. Minor: the inner "TODO: Think about making this a parallel
-     map" comment is now stale (you did it) — drop it. *)
+     claude: verified — now
+     [let%bind () = Deferred.List.iter ~how:(`Max_concurrent_jobs 64) symbols ...]
+     awaits every submit before returning. Minor: the inner "TODO: Think
+     about making this a parallel map" comment is now stale (you did it) —
+     drop it. *)
   let%bind () =
     (* TODO: Think about making this a parallel map *)
     Deferred.List.iter
@@ -261,9 +262,9 @@ let on_event config context event =
      wrong. Same bug exists in market_maker.ml.
 
      claude: verified — [update_books] now takes [size] and accumulates
-     [!inventory + (match side with Buy -> size | Sell -> -size)], called with
-     [Size.to_int fill.size]. The twin in market_maker.ml (line 100) still has
-     +/-1, but that file is slated for deletion per its CR-someday. *)
+     [!inventory + (match side with Buy -> size | Sell -> -size)], called
+     with [Size.to_int fill.size]. The twin in market_maker.ml (line 100)
+     still has +/-1, but that file is slated for deletion per its CR-someday. *)
   let update_books side symbol client_order_id size : unit =
     let { asks; bids; inventory; fair_value_cents = _; bbo = _ } =
       get_symbol_state config context symbol
@@ -281,9 +282,6 @@ let on_event config context event =
     let { asks; bids; inventory = _; fair_value_cents = _; bbo = _ } =
       get_symbol_state config context symbol
     in
-    let client_order_id_set =
-      match (side : Side.t) with Buy -> bids | Sell -> asks
-    in
     (* TODO: This is a very janky way of iterating through a hash set but the
        types don't work well in Hash_set.iter. Deferred.Hash_set.iter *)
     (* XCR claude for robyn: two things here. (1) Remove the
@@ -294,30 +292,31 @@ let on_event config context event =
        [Deferred.List.iter (Hash_set.to_list client_order_id_set) ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))].
 
        claude: verified — [HERE] print is gone and the fold is replaced with
-       [Deferred.List.iter ~how:`Sequential (Hash_set.to_list ...) ~f:(fun id ->
-       Context.cancel context id >>| (ignore : _ -> unit))], which awaits every
-       cancel. *)
+       [Deferred.List.iter ~how:`Sequential (Hash_set.to_list ...) ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))],
+       which awaits every cancel. *)
     let%bind () =
       Deferred.List.iter
         ~how:`Sequential
-        (Hash_set.to_list client_order_id_set)
+        (Hash_set.to_list bids)
         ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))
     in
-    match side with
-    | Buy ->
-      set_symbol_bids
-        config
-        context
-        symbol
-        (Hash_set.create (module Client_order_id) ~size:config.num_levels);
-      return ()
-    | Sell ->
-      set_symbol_asks
-        config
-        context
-        symbol
-        (Hash_set.create (module Client_order_id) ~size:config.num_levels);
-      return ()
+    let%bind () =
+      Deferred.List.iter
+        ~how:`Sequential
+        (Hash_set.to_list asks)
+        ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))
+    in
+    set_symbol_bids
+      config
+      context
+      symbol
+      (Hash_set.create (module Client_order_id) ~size:config.num_levels);
+    set_symbol_asks
+      config
+      context
+      symbol
+      (Hash_set.create (module Client_order_id) ~size:config.num_levels);
+    return ()
   in
   (* This is where we actually match and handle all events *)
   let%bind () =
@@ -345,13 +344,15 @@ let on_event config context event =
 
          claude: still open — the [Fill] arm below is unchanged: it calls
          [cancel_all_orders side fill.symbol] (single side) then
-         [seed_book config context [fill.symbol]] (re-seeds BOTH sides). A Buy
-         fill cancels+reseeds the bids but leaves the old asks resting while
-         seed_book stacks a fresh ask ladder on top; repeated same-side fills
-         double the opposite book. Since inventory (and thus the skewed fair
-         value) moves on every fill, both sides are stale anyway — simplest fix
-         is to cancel both sides before re-seeding (call [cancel_all_orders] for
-         Buy and Sell, then [seed_book]). *)
+         [seed_book config context [fill.symbol]] (re-seeds BOTH sides). A
+         Buy fill cancels+reseeds the bids but leaves the old asks resting
+         while seed_book stacks a fresh ask ladder on top; repeated same-side
+         fills double the opposite book. Since inventory (and thus the skewed
+         fair value) moves on every fill, both sides are stale anyway —
+         simplest fix is to cancel both sides before re-seeding (call
+         [cancel_all_orders] for Buy and Sell, then [seed_book]). *)
+
+      (* REVIEW *)
     | Fill fill ->
       let side, client_order_id = get_side_client_order_id fill in
       update_books side fill.symbol client_order_id (Size.to_int fill.size);

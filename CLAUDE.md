@@ -365,3 +365,7 @@ based on the comment and surrounding code."
 This `CLAUDE.md` is part of the project. If you discover the conventions
 above are wrong, stale, or incomplete in a way that affects your
 suggestions, tell the student. They should update it.
+
+
+## Response Preferences
+Keep your responses to a reasonable length. Unless the student asks for a more detailed response, assume the default should be a short, concise explanation at the level of an intern or college student.

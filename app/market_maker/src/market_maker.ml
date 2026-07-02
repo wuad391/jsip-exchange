@@ -68,12 +68,12 @@ let seed_book (config : Config.t) conn =
 ;;
 
 (* CR-someday claude for robyn: this [t]/[trading_function]/[run] block
-   duplicates market_maker_bot.ml (both track bids/asks hash sets + inventory and
-   re-seed on fill). Decide which is canonical and delete the other — this one
-   looks superseded by the [Bot_runtime.Bot] version. Also
-   [client_order_id_test_ref] is a module-global counter (named "_test_ref") used
-   in production; move it into [t]. And [trading_function] is exposed in the .mli
-   only for tests — put it in a [For_testing] submodule. *)
+   duplicates market_maker_bot.ml (both track bids/asks hash sets + inventory
+   and re-seed on fill). Decide which is canonical and delete the other —
+   this one looks superseded by the [Bot_runtime.Bot] version. Also
+   [client_order_id_test_ref] is a module-global counter (named "_test_ref")
+   used in production; move it into [t]. And [trading_function] is exposed in
+   the .mli only for tests — put it in a [For_testing] submodule. *)
 type t =
   { inventory : Int.t Ref.t
   ; mutable half_spread_cents : Int.t
@@ -93,11 +93,12 @@ let trading_function t (config : Config.t) testing conn event =
     else Side.flip fill.aggressor_side, fill.resting_client_order_id
   in
   (* update_books is used when something gets filled *)
-  let update_books side client_order_id =
+  let update_books side client_order_id size =
     Hash_set.remove t.bids client_order_id;
     Hash_set.remove t.asks client_order_id;
     t.inventory
-    := !(t.inventory) + match (side : Side.t) with Buy -> 1 | Sell -> -1
+    := !(t.inventory)
+       + match (side : Side.t) with Buy -> size | Sell -> -size
   in
   let cancel_all_orders side : unit =
     let client_order_id_set =
@@ -146,7 +147,7 @@ let trading_function t (config : Config.t) testing conn event =
     | Order_cancel _ -> return ()
     | Fill fill ->
       let side, client_order_id = get_side_client_order_id fill in
-      update_books side client_order_id;
+      update_books side client_order_id (Size.to_int fill.size);
       cancel_all_orders side;
       seed_book
         { config with
