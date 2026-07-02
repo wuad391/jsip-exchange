@@ -157,7 +157,7 @@ let seed_book
       ~how:(`Max_concurrent_jobs 64)
       symbols
       ~f:(fun symbol ->
-        let { asks = _; bids = _; inventory; fair_value_cents; bbo } =
+        let { asks; bids; inventory; fair_value_cents; bbo } =
           get_symbol_state config context symbol
         in
         Deferred.List.iter
@@ -167,6 +167,12 @@ let seed_book
             let offset = half_spread_cents bbo + level in
             let skewed_fair_value_cents =
               skewed_fair_value config fair_value_cents inventory
+            in
+            let buy_client_order_id =
+              new_client_order_id config |> Client_order_id.of_int
+            in
+            let sell_client_order_id =
+              new_client_order_id config |> Client_order_id.of_int
             in
             let%bind buy_result =
               Bot_runtime.Context.submit
@@ -178,8 +184,7 @@ let seed_book
                      Price.of_int_cents (skewed_fair_value_cents - offset)
                  ; size = Size.of_int config.size_per_level
                  ; time_in_force = Day
-                 ; client_order_id =
-                     new_client_order_id config |> Client_order_id.of_int
+                 ; client_order_id = buy_client_order_id
                  }
                  : Order.Request.t)
             and sell_result =
@@ -192,18 +197,24 @@ let seed_book
                      Price.of_int_cents (skewed_fair_value_cents + offset)
                  ; size = Size.of_int config.size_per_level
                  ; time_in_force = Day
-                 ; client_order_id =
-                     new_client_order_id config |> Client_order_id.of_int
+                 ; client_order_id = sell_client_order_id
                  }
                  : Order.Request.t)
             in
+            (* Track resting orders at submit time — the moment they go onto
+               the wire — not at [Order_accept]. This keeps the local books
+               in sync with what the exchange holds, so [cancel_all_orders]
+               can always see (and cancel) a freshly-seeded ladder rather
+               than orphaning it while the accepts are still in flight. A
+               rejected order never rests, so it is pulled back out in the
+               [Order_reject] arm. *)
             (match buy_result with
-             | Ok _ok -> ()
-             | Error err ->
-               [%log.error "Buy failed: " (err : Error.t)];
-               ());
+             | Ok _ok -> Hash_set.add bids buy_client_order_id
+             | Error err -> [%log.error "Buy failed: " (err : Error.t)]);
             match sell_result with
-            | Ok _ok -> return ()
+            | Ok _ok ->
+              Hash_set.add asks sell_client_order_id;
+              return ()
             | Error err ->
               [%log.error "Sell failed: " (err : Error.t)];
               return ()))
@@ -248,29 +259,30 @@ let on_tick (config : Config.t) context =
 
 let on_event config context event =
   let participant = Context.participant context in
-  let get_side_client_order_id (fill : Fill.t) =
+  (* Our side of a fill: if we crossed the spread we were the aggressor and
+     keep the aggressor's side; otherwise we were resting and take the
+     opposite side. (The client-order-id no longer matters — a fill re-quotes
+     the whole book — so we only need the side.) *)
+  let side_of_fill (fill : Fill.t) =
     if Participant.equal fill.aggressor_participant participant
-    then fill.aggressor_side, fill.aggressor_client_order_id
-    else Side.flip fill.aggressor_side, fill.resting_client_order_id
+    then fill.aggressor_side
+    else Side.flip fill.aggressor_side
   in
-  (* update_books is used when something gets filled *)
-  (* XCR claude for robyn: inventory moves by +/-1 per fill regardless of
-     [fill.size], but your skew is [inventory_skew_cents_per_share] — cents
-     per *share*. Accumulate signed size instead (thread [fill] in):
-     [!inventory + (match side with Buy -> Size.to_int fill.size | Sell -> - Size.to_int fill.size)].
-     As-is the skew multiplies an order-count, so the quote adjustment is
-     wrong. Same bug exists in market_maker.ml.
+  (* On a fill we only move inventory here. We deliberately do NOT drop the
+     filled order id from the books: on a *partial* fill the un-filled
+     remainder is still resting on the exchange, so forgetting it here would
+     orphan it (never cancelled, never re-quoted). Instead
+     [cancel_all_orders] below sweeps *both entire books* and re-seeds, so
+     the just-filled order is cancelled there — a partial remainder gets
+     pulled, and a fully-filled order simply yields a [Cancel_reject], which
+     we already ignore.
 
-     claude: verified — [update_books] now takes [size] and accumulates
-     [!inventory + (match side with Buy -> size | Sell -> -size)], called
-     with [Size.to_int fill.size]. The twin in market_maker.ml (line 100)
-     still has +/-1, but that file is slated for deletion per its CR-someday. *)
-  let update_books side symbol client_order_id size : unit =
-    let { asks; bids; inventory; fair_value_cents = _; bbo = _ } =
+     Inventory accumulates signed [fill.size] (cents-per-*share* skew), not a
+     +/-1 order count. *)
+  let update_books side symbol size : unit =
+    let { asks = _; bids = _; inventory; fair_value_cents = _; bbo = _ } =
       get_symbol_state config context symbol
     in
-    Hash_set.remove bids client_order_id;
-    Hash_set.remove asks client_order_id;
     set_symbol_inventory
       config
       context
@@ -278,34 +290,23 @@ let on_event config context event =
       (!inventory + match (side : Side.t) with Buy -> size | Sell -> -size)
   in
   (* TODO keep track of Cancel_reject. would mess up our books *)
-  let cancel_all_orders side symbol =
+  (* Cancels every resting order on both sides for [symbol] and clears the
+     local books. We cancel both sides (not just the filled one) because a
+     fill moves inventory, which shifts the skewed fair value, so quotes
+     on *both* sides are stale and get re-seeded together — see the [Fill]
+     arm. *)
+  let cancel_all_orders symbol =
     let { asks; bids; inventory = _; fair_value_cents = _; bbo = _ } =
       get_symbol_state config context symbol
     in
-    (* TODO: This is a very janky way of iterating through a hash set but the
-       types don't work well in Hash_set.iter. Deferred.Hash_set.iter *)
-    (* XCR claude for robyn: two things here. (1) Remove the
-       [print_endline "HERE"] debug line — it fires on every cancel and got
-       promoted into test_bots' expect output. (2) This [Hash_set.fold]
-       discards its accumulator ([fun _ id -> ...]), so the per-id deferreds
-       aren't chained; the [let%bind] only awaits the *last* cancel. Use
-       [Deferred.List.iter (Hash_set.to_list client_order_id_set) ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))].
-
-       claude: verified — [HERE] print is gone and the fold is replaced with
-       [Deferred.List.iter ~how:`Sequential (Hash_set.to_list ...) ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))],
-       which awaits every cancel. *)
-    let%bind () =
+    let cancel_ids ids =
       Deferred.List.iter
         ~how:`Sequential
-        (Hash_set.to_list bids)
+        (Hash_set.to_list ids)
         ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))
     in
-    let%bind () =
-      Deferred.List.iter
-        ~how:`Sequential
-        (Hash_set.to_list asks)
-        ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))
-    in
+    let%bind () = cancel_ids bids in
+    let%bind () = cancel_ids asks in
     set_symbol_bids
       config
       context
@@ -321,44 +322,48 @@ let on_event config context event =
   (* This is where we actually match and handle all events *)
   let%bind () =
     match (event : Exchange_event.t) with
-    | Order_accept { order_id = _; request } ->
-      let { asks; bids; inventory = _; fair_value_cents = _; bbo = _ } =
-        get_symbol_state config context request.symbol
-      in
-      (match request.side with
-       | Buy -> return (Hash_set.add bids request.client_order_id)
-       | Sell -> return (Hash_set.add asks request.client_order_id))
+    | Order_accept _ ->
+      (* Resting orders are tracked at submit time in [seed_book], so the
+         acceptance confirmation needs no further bookkeeping. *)
+      return ()
     | Best_bid_offer_update { symbol; bbo } ->
-      let curr_symbol_state = get_symbol_state config context symbol in
-      set_symbol_state config symbol { curr_symbol_state with bbo };
+      (* Only track BBOs for symbols we actually quote. Market data is
+         broadcast for every subscribed symbol, but [get_symbol_state] would
+         [find_or_add] an unknown one and price it via the oracle — which
+         raises for a symbol outside our config. So look up the existing
+         state and ignore data for anything we don't trade. *)
+      (match Hashtbl.find config.state symbol with
+       | None -> ()
+       | Some curr_symbol_state ->
+         set_symbol_state config symbol { curr_symbol_state with bbo });
       return ()
       (* TODO: maybe adjust some of the config stuff based on BBO *)
     | Order_cancel _ ->
       return ()
-      (* CR claude for robyn: on a fill you [cancel_all_orders side] (one
+      (* XCR claude for robyn: on a fill you [cancel_all_orders side] (one
          side) but [seed_book] re-places a *full two-sided* ladder — so the
          un-cancelled side keeps its old resting orders AND gets a fresh set
-         stacked on top. Over repeated fills the opposite side accumulates
-         duplicate orders. Cancel both sides before re-seeding, or re-seed
-         only the cancelled side.
+         stacked on top, doubling the opposite book over repeated fills.
 
-         claude: still open — the [Fill] arm below is unchanged: it calls
-         [cancel_all_orders side fill.symbol] (single side) then
-         [seed_book config context [fill.symbol]] (re-seeds BOTH sides). A
-         Buy fill cancels+reseeds the bids but leaves the old asks resting
-         while seed_book stacks a fresh ask ladder on top; repeated same-side
-         fills double the opposite book. Since inventory (and thus the skewed
-         fair value) moves on every fill, both sides are stale anyway —
-         simplest fix is to cancel both sides before re-seeding (call
-         [cancel_all_orders] for Buy and Sell, then [seed_book]). *)
-
-      (* REVIEW *)
+         claude: verified — [cancel_all_orders] no longer takes a [side] and
+         now cancels *both* books before [seed_book] re-seeds them, so
+         nothing is left resting to stack on top of. *)
     | Fill fill ->
-      let side, client_order_id = get_side_client_order_id fill in
-      update_books side fill.symbol client_order_id (Size.to_int fill.size);
-      let%bind () = cancel_all_orders side fill.symbol in
+      let side = side_of_fill fill in
+      update_books side fill.symbol (Size.to_int fill.size);
+      let%bind () = cancel_all_orders fill.symbol in
       seed_book config context [ fill.symbol ]
-    | Order_reject _ | Trade_report _ | Cancel_reject _ -> return ()
+    | Order_reject { request; reason = _ } ->
+      (* A rejected order never rests, so drop it from the book we
+         optimistically added it to at submit time. *)
+      let { asks; bids; inventory = _; fair_value_cents = _; bbo = _ } =
+        get_symbol_state config context request.symbol
+      in
+      (match request.side with
+       | Buy -> Hash_set.remove bids request.client_order_id
+       | Sell -> Hash_set.remove asks request.client_order_id);
+      return ()
+    | Trade_report _ | Cancel_reject _ -> return ()
   in
   return ()
 ;;
