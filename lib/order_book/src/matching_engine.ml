@@ -29,9 +29,8 @@ let create symbols =
 let book t symbol = Map.find t.books symbol
 
 (* These are client_order_id functions to interact with the sets and lookup *)
-let validate_client_id t (request : Order.Request.t) =
+let validate_client_id t ~participant (request : Order.Request.t) =
   let client_order_id = request.client_order_id in
-  let participant = request.participant in
   let client_order_table =
     Hashtbl.find_or_add t.client_order_tables participant ~default:(fun () ->
       Hashtbl.create (module Client_order_id))
@@ -113,12 +112,12 @@ let rec match_loop t ~book ~order ~fill_id =
         (* with | Some id1, Some id2 -> id1, id2 | _ -> raise (Exn.of_string
            "Client order ID missing") *)
       in
-      (* XCR claude for robyn: [remove_client_order] used to sit *outside* this
-         [if] (dangling [then]), so a partially-filled resting order got evicted
-         from the client tables while still resting on the book — the owner
-         could no longer cancel it, and a later fill against it crashed via
-         [get_client_order_id]'s [find_exn]. Both removals are now guarded by
-         [then], so they only fire on a full fill.
+      (* XCR claude for robyn: [remove_client_order] used to sit *outside*
+         this [if] (dangling [then]), so a partially-filled resting order got
+         evicted from the client tables while still resting on the book — the
+         owner could no longer cancel it, and a later fill against it crashed
+         via [get_client_order_id]'s [find_exn]. Both removals are now
+         guarded by [then], so they only fire on a full fill.
 
          robyn: fixed. (Small style nit: the [else ()] below can be dropped —
          house style is no [else ()] for a unit [then].) *)
@@ -196,22 +195,29 @@ let cancel t ({ participant; client_order_id } : Order.Cancel.t) =
       ]
 ;;
 
-let submit t (request : Order.Request.t) =
+let submit t ~participant (request : Order.Request.t) =
+  (* Identity is server-authoritative: overwrite whatever participant the
+     client put in the request with the [~participant] established at login,
+     so an order is attributed to the authenticated session rather than a
+     client-supplied name. *)
+  let request = { request with participant } in
   match book t request.symbol with
   | None ->
-    [ Exchange_event.Order_reject { request; reason = "unknown symbol" } ]
+    [ Exchange_event.Order_reject
+        { participant; request; reason = "unknown symbol" }
+    ]
   | Some book ->
     let order_id = Order_id.Generator.next t.order_id_gen in
     let order = Order.create request ~order_id in
-    if not (validate_client_id t request)
+    if not (validate_client_id t ~participant request)
     then
       [ Exchange_event.Order_reject
-          { request; reason = "Duplicate client order ID" }
+          { participant; request; reason = "Duplicate client order ID" }
       ]
     else (
       add_client_order t request.client_order_id order;
       let accepted_event =
-        Exchange_event.Order_accept { order_id; request }
+        Exchange_event.Order_accept { order_id; participant; request }
       in
       (* Snapshot BBO before matching so we can detect changes. *)
       let bbo_before = Order_book.best_bid_offer book in
@@ -229,7 +235,7 @@ let submit t (request : Order.Request.t) =
             Order_book.add book order;
             []
           | Ioc ->
-            remove_client_order t request.participant request.client_order_id;
+            remove_client_order t participant request.client_order_id;
             [ Exchange_event.Order_cancel
                 { order_id
                 ; participant = Order.participant order
@@ -240,7 +246,7 @@ let submit t (request : Order.Request.t) =
                 }
             ])
         else (
-          remove_client_order t request.participant request.client_order_id;
+          remove_client_order t participant request.client_order_id;
           [])
       in
       (* Emit BBO update if the best bid or ask changed. *)

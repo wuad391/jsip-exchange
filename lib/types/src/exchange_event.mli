@@ -11,19 +11,27 @@
 type t =
   | Order_accept of
       { order_id : Order_id.t
+      ; participant : Participant.t
       ; request : Order.Request.t
       }
   | Fill of Fill.t
   | Order_cancel of
       { order_id : Order_id.t
+      ; client_order_id : Client_order_id.t
       ; participant : Participant.t
       ; symbol : Symbol.t
       ; remaining_size : Size.t
+      (** Size that was still unfilled when the order was cancelled. *)
       ; reason : Cancel_reason.t
-      ; client_order_id : Client_order_id.t
       }
   | Order_reject of
-      { request : Order.Request.t
+      { participant : Participant.t
+      ; request : Order.Request.t
+      ; reason : string
+      }
+  | Cancel_reject of
+      { participant : Participant.t
+      ; client_order_id : Client_order_id.t
       ; reason : string
       }
   | Best_bid_offer_update of
@@ -34,17 +42,6 @@ type t =
       { symbol : Symbol.t
       ; price : Price.t
       ; size : Size.t
-      }
-  (* CR-soon claude for robyn: inserting [Cancel_reject] here orphaned the
-     "public trade print" doc below onto it (odoc attaches a trailing
-     [(** *)] to the *preceding* constructor). Move that doc up under
-     [Trade_report], and give [Cancel_reject] its own doc. Also the
-     [remaining_size] field doc on [Order_cancel] was dropped in this diff —
-     restore it. *)
-  | Cancel_reject of
-      { participant : Participant.t
-      ; client_order_id : Client_order_id.t
-      ; reason : string
       }
   (** A public trade print. Unlike [Fill], this contains no information about
       the participants — it is what the broader market sees. *)

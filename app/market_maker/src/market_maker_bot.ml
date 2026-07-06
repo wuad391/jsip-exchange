@@ -353,7 +353,7 @@ let on_event config context event =
       update_books side fill.symbol (Size.to_int fill.size);
       let%bind () = cancel_all_orders fill.symbol in
       seed_book config context [ fill.symbol ]
-    | Order_reject { request; reason = _ } ->
+    | Order_reject { participant = _; request; reason = _ } ->
       (* A rejected order never rests, so drop it from the book we
          optimistically added it to at submit time. *)
       let { asks; bids; inventory = _; fair_value_cents = _; bbo = _ } =

@@ -131,7 +131,7 @@ let trading_function t (config : Config.t) testing conn event =
   in
   let%bind () =
     match (event : Exchange_event.t) with
-    | Order_accept { order_id = _; request } ->
+    | Order_accept { order_id = _; participant = _; request } ->
       (match request.side with
        | Buy -> return (Hash_set.add t.bids request.client_order_id)
        | Sell -> return (Hash_set.add t.asks request.client_order_id))

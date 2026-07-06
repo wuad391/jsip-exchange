@@ -82,6 +82,7 @@ let engine_with_n_asks ?(min_price = 10_000) n =
     ignore
       (Matching_engine.submit
          engine
+         ~participant:bob
          { symbol = aapl
          ; participant = bob
          ; side = Sell
@@ -185,6 +186,7 @@ let bench_submit_ioc_cross ~n =
        let events =
          Matching_engine.submit
            engine
+           ~participant:alice
            { symbol = aapl
            ; participant = alice
            ; side = Buy
@@ -199,6 +201,7 @@ let bench_submit_ioc_cross ~n =
        ignore
          (Matching_engine.submit
             engine
+            ~participant:bob
             { symbol = aapl
             ; participant = bob
             ; side = Sell
@@ -219,6 +222,7 @@ let bench_submit_ioc_no_match ~n =
     ignore
       (Matching_engine.submit
          engine
+         ~participant:alice
          { symbol = aapl
          ; participant = alice
          ; side = Buy
@@ -239,6 +243,7 @@ let bench_submit_sweep ~n =
     ignore
       (Matching_engine.submit
          !engine
+         ~participant:alice
          { symbol = aapl
          ; participant = alice
          ; side = Buy

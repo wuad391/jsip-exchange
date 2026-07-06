@@ -173,6 +173,7 @@ let%expect_test "make_recording_bot wires up a runnable bot" =
       bot
       (Order_accept
          { order_id = Order_id.For_testing.of_int 1
+         ; participant = alice
          ; request =
              { symbol = aapl
              ; participant = alice
@@ -194,11 +195,11 @@ let%expect_test "make_recording_bot wires up a runnable bot" =
 (* ---------------------------------------------------------------- *)
 (* End-to-end walk-through of one seed -> fill -> re-quote cycle, showing the
    [on_tick] book print at two points. First snapshot: after seeding (no BBO
-   yet, so the ladder is the default 50c half-spread from [on_start]) with the
-   BBO now applied and inventory flat. Second snapshot: after a 50-lot buy
-   fill, inventory is +50 and the whole ladder has been cancelled and re-quoted
-   (new ids, skewed down). [submit_list] shows all 12 orders sent; the cancel
-   line shows the six original ids pulled. *)
+   yet, so the ladder is the default 50c half-spread from [on_start]) with
+   the BBO now applied and inventory flat. Second snapshot: after a 50-lot
+   buy fill, inventory is +50 and the whole ladder has been cancelled and
+   re-quoted (new ids, skewed down). [submit_list] shows all 12 orders sent;
+   the cancel line shows the six original ids pulled. *)
 let%expect_test "Basic test of Market Maker" =
   let bot, submit_list, cancel_list =
     make_market_maker_bot ~participant_name:"Market Maker"
@@ -302,9 +303,12 @@ let%expect_test "buy fill skews both quotes down at the BBO half-spread" =
 
 (* On a fill the bot cancels *every* resting order on *both* books before
    re-quoting — including the just-(partially-)filled order, whose un-filled
-   remainder would otherwise be orphaned on the exchange. The seed places bids
-   {1, 3, 5} and asks {2, 4, 6}; the fill is on bid id 1, and all six are
-   cancelled. *)
+   remainder would otherwise be orphaned on the exchange. The seed places
+   bids
+   {1 , 3, 5}
+   and asks
+   {2 , 4, 6}
+   ; the fill is on bid id 1, and all six are cancelled. *)
 let%expect_test "a fill cancels both books, including the filled order" =
   let bot, _submitted, cancelled =
     make_market_maker_bot ~participant_name:"Market Maker"
@@ -319,12 +323,12 @@ let%expect_test "a fill cancels both books, including the filled order" =
 
 (* The resting-side fill: a market maker mostly *rests*, and someone else
    crosses the spread to lift its quote. When the bot is the resting
-   participant, [side_of_fill] takes its [else] branch and our side is the
-   *flip* of the aggressor's; this is the only path the other fill tests never
-   hit. Here [alice] is the BUY aggressor lifting one of our resting asks, so
-   the bot's side resolves to Sell and inventory goes to -50. Short inventory
-   skews the fair value *up* (the mirror of the buy-fill test), so both bid and
-   ask re-quote above $150.00. *)
+   participant, [side_of_fill] takes its [else] branch and our side is
+   the *flip* of the aggressor's; this is the only path the other fill tests
+   never hit. Here [alice] is the BUY aggressor lifting one of our resting
+   asks, so the bot's side resolves to Sell and inventory goes to -50. Short
+   inventory skews the fair value *up* (the mirror of the buy-fill test), so
+   both bid and ask re-quote above $150.00. *)
 let%expect_test "resting-side sell fill skews both quotes up" =
   let bot, submitted, _cancelled =
     make_market_maker_bot ~participant_name:"Market Maker"
@@ -362,9 +366,11 @@ let%expect_test "resting-side sell fill skews both quotes up" =
 ;;
 
 (* [Order_reject] must pull the order back out of the book we optimistically
-   tracked it in at submit time. The seed places bids {1, 3, 5}; we reject bid
-   id 1, then take a fill (which cancels the whole book). Id 1 must be absent
-   from the cancels — the reject removed it — while the other five are pulled. *)
+   tracked it in at submit time. The seed places bids
+   {1 , 3, 5}
+   ; we reject bid id 1, then take a fill (which cancels the whole book). Id
+   1 must be absent from the cancels — the reject removed it — while the
+   other five are pulled. *)
 let%expect_test "order reject removes the order from the book" =
   let bot, _submitted, cancelled =
     make_market_maker_bot ~participant_name:"Market Maker"
@@ -372,7 +378,8 @@ let%expect_test "order reject removes the order from the book" =
   let%bind () = Bot_runtime.For_testing.manual_start bot in
   let reject_bid_1 : Exchange_event.t =
     Order_reject
-      { request =
+      { participant = market_maker
+      ; request =
           { symbol = aapl
           ; participant = market_maker
           ; side = Buy
@@ -392,8 +399,8 @@ let%expect_test "order reject removes the order from the book" =
 ;;
 
 (* A one-sided BBO (only a bid, no ask) has no spread, so [half_spread_cents]
-   falls back to its 50c default instead of deriving from the book. After a buy
-   fill (inventory +50, skewed fair 14900) the re-quote uses that 50c
+   falls back to its 50c default instead of deriving from the book. After a
+   buy fill (inventory +50, skewed fair 14900) the re-quote uses that 50c
    half-spread — bids/asks sit 50/51/52c off the skewed fair, not 10c. *)
 let%expect_test "one-sided BBO falls back to the default half-spread" =
   let one_sided_bbo : Exchange_event.t =
@@ -401,7 +408,8 @@ let%expect_test "one-sided BBO falls back to the default half-spread" =
       { symbol = aapl
       ; bbo =
           { bid =
-              Some { price = Price.of_int_cents 14990; size = Size.of_int 100 }
+              Some
+                { price = Price.of_int_cents 14990; size = Size.of_int 100 }
           ; ask = None
           }
       }
@@ -426,10 +434,10 @@ let%expect_test "one-sided BBO falls back to the default half-spread" =
   return ()
 ;;
 
-(* Inventory is cumulative: two 50-lot buy fills leave the bot long 100, so the
-   skew deepens to 100 * 2 = 200c. The re-quote after the second fill sits a
-   full $2.00 below the $150.00 fair (skewed fair 14800) — twice the $1.00 skew
-   a single fill produces. *)
+(* Inventory is cumulative: two 50-lot buy fills leave the bot long 100, so
+   the skew deepens to 100 * 2 = 200c. The re-quote after the second fill
+   sits a full $2.00 below the $150.00 fair (skewed fair 14800) — twice the
+   $1.00 skew a single fill produces. *)
 let%expect_test "inventory accumulates across fills, deepening the skew" =
   let bot, submitted, _cancelled =
     make_market_maker_bot ~participant_name:"Market Maker"
@@ -452,10 +460,10 @@ let%expect_test "inventory accumulates across fills, deepening the skew" =
   return ()
 ;;
 
-(* Market data for a symbol we don't quote must be ignored, not crash the bot.
-   The bot is configured for AAPL only; pricing MSFT would ask the oracle for a
-   fundamental it doesn't have and raise. Feeding an MSFT BBO should be a no-op:
-   nothing submitted, nothing cancelled, no exception. *)
+(* Market data for a symbol we don't quote must be ignored, not crash the
+   bot. The bot is configured for AAPL only; pricing MSFT would ask the
+   oracle for a fundamental it doesn't have and raise. Feeding an MSFT BBO
+   should be a no-op: nothing submitted, nothing cancelled, no exception. *)
 let%expect_test "BBO for an unconfigured symbol is ignored" =
   let bot, submitted, cancelled =
     make_market_maker_bot ~participant_name:"Market Maker"
@@ -467,9 +475,11 @@ let%expect_test "BBO for an unconfigured symbol is ignored" =
       { symbol = Symbol.of_string "MSFT"
       ; bbo =
           { bid =
-              Some { price = Price.of_int_cents 30000; size = Size.of_int 100 }
+              Some
+                { price = Price.of_int_cents 30000; size = Size.of_int 100 }
           ; ask =
-              Some { price = Price.of_int_cents 30010; size = Size.of_int 100 }
+              Some
+                { price = Price.of_int_cents 30010; size = Size.of_int 100 }
           }
       }
   in
@@ -698,6 +708,7 @@ let%expect_test "make_recording_bot wires up a runnable bot" =
       bot
       (Order_accept
          { order_id = Order_id.For_testing.of_int 1
+         ; participant = alice
          ; request =
              { symbol = aapl
              ; participant = alice

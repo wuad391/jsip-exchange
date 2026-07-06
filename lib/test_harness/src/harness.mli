@@ -50,7 +50,13 @@ val engine : t -> Matching_engine.t
     - symbol: AAPL
     - participant: Alice
     - size: 100
-    - time_in_force: Day *)
+    - time_in_force: Day
+
+    The request carries a [participant], but it is server-authoritative: the
+    matching engine overwrites it with the [~participant] passed to [submit]
+    (default Alice), mirroring how the real gateway attaches the
+    authenticated session's participant. Set [?participant] on the builder
+    only when you want the raw request to carry a specific name. *)
 
 val buy
   :  price_cents:int
@@ -80,11 +86,17 @@ val cancel : client_order_id:int -> Client_order_id.t
     the common pattern in expect tests. *)
 
 (** Submit an order request through the matching engine and print all
-    resulting events. Returns the event list for further inspection. *)
-val submit : t -> Order.Request.t -> Exchange_event.t list
+    resulting events. Returns the event list for further inspection.
+
+    [?participant] defaults to [alice]; multi-participant tests override it. *)
+val submit
+  :  ?participant:Participant.t
+  -> t
+  -> Order.Request.t
+  -> Exchange_event.t list
 
 (** Submit and print, discarding the return value. *)
-val submit_ : t -> Order.Request.t -> unit
+val submit_ : ?participant:Participant.t -> t -> Order.Request.t -> unit
 
 (** {2 Sample events}
 
@@ -99,10 +111,18 @@ val submit_ : t -> Order.Request.t -> unit
 val sample_events : Exchange_event.t list
 
 (** As [submit], but events are not printed. *)
-val submit_quiet : t -> Order.Request.t -> Exchange_event.t list
+val submit_quiet
+  :  ?participant:Participant.t
+  -> t
+  -> Order.Request.t
+  -> Exchange_event.t list
 
 (** As [submit_quiet], but event are not printed. *)
-val submit_quiet_ : t -> Order.Request.t -> unit
+val submit_quiet_
+  :  ?participant:Participant.t
+  -> t
+  -> Order.Request.t
+  -> unit
 
 (** {2 Formatting}
 

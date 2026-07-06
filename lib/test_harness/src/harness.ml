@@ -46,13 +46,13 @@ let make_request
   ()
   : Order.Request.t
   =
-  { symbol
+  { client_order_id = Client_order_id.of_int client_order_id
+  ; symbol
   ; participant
   ; side
   ; price = Price.of_int_cents price_cents
   ; size = Size.of_int size
   ; time_in_force
-  ; client_order_id = Client_order_id.of_int client_order_id
   }
 ;;
 
@@ -115,34 +115,42 @@ let print_events ?(show = Show.all) events =
 
 let print_event event = print_endline (Protocol.format_event event)
 
-let submit t request =
-  let events = Matching_engine.submit t.engine request in
+let submit ?(participant = alice) t request =
+  let events = Matching_engine.submit t.engine ~participant request in
   print_events events;
   events
 ;;
 
-let submit_ t request = ignore (submit t request : Exchange_event.t list)
-let submit_quiet t request = Matching_engine.submit (engine t) request
+let submit_ ?participant t request =
+  ignore (submit ?participant t request : Exchange_event.t list)
+;;
+
+let submit_quiet ?(participant = alice) t request =
+  Matching_engine.submit (engine t) ~participant request
+;;
 
 (* CR claude for robyn: this list is now missing the [Cancel_reject] variant
-   (added to [Exchange_event.t]), so it no longer contains "one of each" — and
-   harness.mli still claims exactly that. The compiler forces you to update
-   [match]es on the new variant, but not hand-built data like this, so it
-   silently drifted. Add a [Cancel_reject] sample and fix the .mli doc,
+   (added to [Exchange_event.t]), so it no longer contains "one of each" —
+   and harness.mli still claims exactly that. The compiler forces you to
+   update [match]es on the new variant, but not hand-built data like this, so
+   it silently drifted. Add a [Cancel_reject] sample and fix the .mli doc,
    otherwise monitor/filter tests never exercise it. *)
 let sample_events : Exchange_event.t list =
   let order_request : Order.Request.t =
-    { symbol = aapl
+    { client_order_id = Client_order_id.of_int 1
+    ; symbol = aapl
     ; participant = alice
     ; side = Buy
     ; price = Price.of_int_cents 15000
     ; size = Size.of_int 100
     ; time_in_force = Day
-    ; client_order_id = Client_order_id.of_int 1
     }
   in
   [ Order_accept
-      { order_id = Order_id.For_testing.of_int 1; request = order_request }
+      { order_id = Order_id.For_testing.of_int 1
+      ; participant = alice
+      ; request = order_request
+      }
   ; Fill
       { fill_id = 1
       ; symbol = aapl
@@ -164,7 +172,11 @@ let sample_events : Exchange_event.t list =
       ; reason = Ioc_remainder
       ; client_order_id = new_client_order_id ()
       }
-  ; Order_reject { request = order_request; reason = "unknown symbol" }
+  ; Order_reject
+      { participant = alice
+      ; request = order_request
+      ; reason = "unknown symbol"
+      }
   ; Best_bid_offer_update
       { symbol = aapl
       ; bbo =
@@ -184,8 +196,8 @@ let sample_events : Exchange_event.t list =
   ]
 ;;
 
-let submit_quiet_ t request =
-  ignore (submit_quiet t request : Exchange_event.t list)
+let submit_quiet_ ?participant t request =
+  ignore (submit_quiet ?participant t request : Exchange_event.t list)
 ;;
 
 let print_book t symbol =

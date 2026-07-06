@@ -18,7 +18,10 @@ end
    cancel). *)
 module Message = struct
   type t =
-    | Request of Order.Request.t
+    | Request of
+        { participant : Participant.t
+        ; request : Order.Request.t
+        }
     | Cancel of Order.Cancel.t
 end
 
@@ -46,8 +49,8 @@ let start_matching_loop ~engine ~dispatcher message_reader =
   don't_wait_for
     (Pipe.iter_without_pushback message_reader ~f:(fun message ->
        match message with
-       | Message.Request request ->
-         let events = Matching_engine.submit engine request in
+       | Message.Request { participant; request } ->
+         let events = Matching_engine.submit engine ~participant request in
          Dispatcher.dispatch dispatcher events
        | Message.Cancel cancel ->
          let events = Matching_engine.cancel engine cancel in
@@ -70,18 +73,19 @@ let start ~symbols ~port () =
                | None ->
                  return (Or_error.error_string "User is not logged in.")
                | Some _session ->
-                 (* makes sure the participant is the one making the actual
-                    request *)
-                 let valid_request =
-                   { request with
-                     participant =
-                       Option.value
-                         (Connection_state.participant state)
-                         ~default:(Participant.of_string "anon")
-                   }
+                 (* The participant is established at login and attached
+                    server-side, so the client's request never carries it —
+                    this is what makes an order attributable to the
+                    authenticated session rather than a client-supplied name. *)
+                 let participant =
+                   Option.value
+                     (Connection_state.participant state)
+                     ~default:(Participant.of_string "anon")
                  in
                  let%bind result =
-                   handle_submit ~message_writer (Request valid_request)
+                   handle_submit
+                     ~message_writer
+                     (Request { participant; request })
                  in
                  (match result with
                   | Ok () -> return (Ok ())
@@ -171,12 +175,13 @@ let start ~symbols ~port () =
       ~implementations
       ~initial_connection_state:(fun _addr _conn ->
         let new_state : Connection_state.t = { session = None } in
-        (* XCR claude for robyn: this used to read [new_state.session] *before*
-           awaiting [close_finished]; at connect time the session is always
-           [None], so [clean_up_session] never ran and a disconnected
-           participant leaked in [Dispatcher.sessions] — [is_active] kept
-           returning true, permanently blocking re-login. Now it awaits close
-           first, then inspects the (by-then populated) session.
+        (* XCR claude for robyn: this used to read
+           [new_state.session] *before* awaiting [close_finished]; at connect
+           time the session is always [None], so [clean_up_session] never ran
+           and a disconnected participant leaked in [Dispatcher.sessions] —
+           [is_active] kept returning true, permanently blocking re-login.
+           Now it awaits close first, then inspects the (by-then populated)
+           session.
 
            robyn: fixed. *)
         let close_connection =

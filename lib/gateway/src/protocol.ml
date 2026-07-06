@@ -3,7 +3,7 @@ open Jsip_types
 
 let format_event ?(participant = None) event =
   match event with
-  | Exchange_event.Order_accept { order_id; request } ->
+  | Exchange_event.Order_accept { order_id; participant = _; request } ->
     sprintf
       "ACCEPTED id=%s %s %s %d@%s %s"
       (Order_id.to_string order_id)
@@ -27,7 +27,7 @@ let format_event ?(participant = None) event =
       (Symbol.to_string symbol)
       (Size.to_int remaining_size)
       (Cancel_reason.to_string reason)
-  | Order_reject { request; reason } ->
+  | Order_reject { participant = _; request; reason } ->
     sprintf
       "REJECTED %s %s %d@%s reason=%s"
       (Symbol.to_string request.symbol)

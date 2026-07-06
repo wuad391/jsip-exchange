@@ -22,7 +22,11 @@ val create : Symbol.t list -> t
 
     The event list is always non-empty (at minimum an acceptance or
     rejection). *)
-val submit : t -> Order.Request.t -> Exchange_event.t list
+val submit
+  :  t
+  -> participant:Participant.t
+  -> Order.Request.t
+  -> Exchange_event.t list
 
 (** Cancels an existing order. Returns a list of exchange events: acceptance
     or rejection of cancel (canceled for reasons like nonexistent order),

@@ -22,10 +22,10 @@ let clean_up_session t session =
   return (Session.close session)
 ;;
 
-(* CR claude for robyn: [print_sessions] is a debug dumper (note the "sesssions"
-   typo) that's also exported in the .mli — delete it and its export. If you
-   want session visibility, surface it through the monitor or a [For_testing]
-   module, not on the production [Dispatcher] API. *)
+(* CR claude for robyn: [print_sessions] is a debug dumper (note the
+   "sesssions" typo) that's also exported in the .mli — delete it and its
+   export. If you want session visibility, surface it through the monitor or
+   a [For_testing] module, not on the production [Dispatcher] API. *)
 let print_sessions (t : t) =
   print_endline [%string "Starting to print sesssions....\n"];
   Hashtbl.iter_keys t.sessions ~f:(fun key ->
@@ -114,9 +114,9 @@ let dispatch_event t (event : Exchange_event.t) =
     push_market_data t event symbol
   | Trade_report { symbol; price = _; size = _ } ->
     push_market_data t event symbol
-  | Order_accept { order_id = _; request }
-  | Order_reject { request; reason = _ } ->
-    push_to_session t request.participant event
+  | Order_accept { order_id = _; participant; request = _ }
+  | Order_reject { participant; request = _; reason = _ } ->
+    push_to_session t participant event
   | Order_cancel
       { order_id = _
       ; participant
