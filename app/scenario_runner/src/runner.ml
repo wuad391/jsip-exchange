@@ -61,8 +61,8 @@ let start_bot ~where_to_connect ~oracle (Bot_spec.T spec) =
   (* CR-soon claude for robyn: this subscribes *every* bot to market data
      unconditionally; the old code gated it on [spec.is_marketdata_consumer],
      which is now read nowhere (only its field definition remains). Bots that
-     opt out still receive and process MD via [on_event]. Honour the flag again
-     or remove it from [Bot_spec]. *)
+     opt out still receive and process MD via [on_event]. Honour the flag
+     again or remove it from [Bot_spec]. *)
   let output = Pipe.interleave [ session_feed; md_pipe ] in
   don't_wait_for (Pipe.iter output ~f:(Bot_runtime.feed_event bot));
   print_endline
