@@ -28,19 +28,22 @@ module Latency_summary = struct
       sorted.(Int.clamp_exn idx ~min:0 ~max:(n - 1)))
   ;;
 
-  (* [count] is passed separately from [Array.length samples] because the
-     caller reservoir-caps its sample buffer: [count] is the true number of
-     requests handled this window, while [samples] may be a bounded subset. *)
-  let of_samples samples ~count =
+  (* [count] and [max_us] are passed separately from [samples] because the
+     caller keeps only the first N samples of a window as the percentile
+     input (to bound memory): [count] is the true number of requests handled
+     and [max_us] the true window maximum, both tracked outside the capped
+     buffer. Percentiles come from [samples] and can under-represent a
+     late-window spike once the cap is hit — [max_us] never does. *)
+  let of_samples samples ~count ~max_us =
     if Array.is_empty samples
-    then { zero with count }
+    then { zero with count; max_us }
     else (
       let sorted = Array.copy samples in
       Array.sort sorted ~compare:Float.compare;
       { p50_us = percentile sorted 0.50
       ; p90_us = percentile sorted 0.90
       ; p99_us = percentile sorted 0.99
-      ; max_us = sorted.(Array.length sorted - 1)
+      ; max_us
       ; count
       })
   ;;

@@ -13,6 +13,7 @@
 open! Core
 open! Async
 open Jsip_types
+open Jsip_exchange_stats
 
 type t
 

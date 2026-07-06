@@ -16,8 +16,10 @@ open Jsip_types
 
 (** Latency of one RPC class over a one-second window, as percentiles. Under
     load the interesting signal is the tail: [p50] can look healthy while
-    [p99] and [max] blow up. [count] is the true throughput (requests/sec)
-    for the window, independent of any sampling cap on the percentile inputs. *)
+    [p99] and [max] blow up. [count] (throughput) and [max_us] (window
+    maximum) are tracked outside the capped percentile buffer, so they stay
+    exact even under a storm; the percentiles themselves can under-represent
+    a late-window spike once the cap is hit. *)
 module Latency_summary : sig
   type t =
     { p50_us : float
@@ -30,11 +32,11 @@ module Latency_summary : sig
 
   val zero : t
 
-  (** [of_samples samples ~count] sorts [samples] (microseconds) and reads
-      off the percentiles, tagging the result with the true [count].
-      [samples] may be a bounded subset of the [count] requests actually
-      seen. *)
-  val of_samples : float array -> count:int -> t
+  (** [of_samples samples ~count ~max_us] reads p50/p90/p99 off [samples]
+      (microseconds), and tags the result with the true window [count] and
+      [max_us]. The caller keeps only the first N samples per window to bound
+      memory, so [count] and [max_us] are tracked outside that capped buffer. *)
+  val of_samples : float array -> count:int -> max_us:float -> t
 end
 
 (** Aggregate occupancy of one category of subscriber pipes (audit,

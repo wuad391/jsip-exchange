@@ -152,17 +152,25 @@ let audit_queue_lengths t =
     Pipe.length writer :: acc)
 ;;
 
-(* A writer subscribed to several symbols appears in several bags, so its
-   depth is counted once per symbol here. That's fine for occupancy: the
-   [max_depth] the metrics report cares about is unaffected, and a fanned-out
-   subscriber genuinely holds that depth against each symbol's feed. *)
+(* A market-data subscriber to N symbols is registered as the *same* physical
+   writer in N per-symbol bags (see [subscribe_market_data]), but it is one
+   pipe with one buffer. Dedup by writer identity before measuring, so a
+   monitor listening to every symbol counts as one pipe at its true depth,
+   not N pipes at N times the depth. Physical equality is exactly right here:
+   it is the same writer value added to each bag. The dedup is O(pipes^2),
+   bounded by the handful of live market-data subscribers. *)
 let market_data_queue_lengths t =
-  Hashtbl.fold
-    t.market_data_subscribers_by_symbol
-    ~init:[]
-    ~f:(fun ~key:_ ~data:subscribers acc ->
-      Bag.fold subscribers ~init:acc ~f:(fun acc writer ->
-        Pipe.length writer :: acc))
+  let distinct_writers =
+    Hashtbl.fold
+      t.market_data_subscribers_by_symbol
+      ~init:[]
+      ~f:(fun ~key:_ ~data:subscribers acc ->
+        Bag.fold subscribers ~init:acc ~f:(fun acc writer ->
+          if List.mem acc writer ~equal:phys_equal
+          then acc
+          else writer :: acc))
+  in
+  List.map distinct_writers ~f:Pipe.length
 ;;
 
 let session_queue_lengths t =

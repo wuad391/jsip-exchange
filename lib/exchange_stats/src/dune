@@ -1,0 +1,6 @@
+(library
+ (name jsip_exchange_stats)
+ (public_name jsip-exchange.jsip_exchange_stats)
+ (libraries core jsip_types)
+ (preprocess
+  (pps ppx_jane)))
