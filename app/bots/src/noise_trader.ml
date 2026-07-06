@@ -41,20 +41,6 @@ let size_jitter_pct = 25
 
 (* ...................Internal helper functions start...................... *)
 
-(* Uniformly pick one element, or [None] if the list is empty. We roll our
-   own rather than use [List.random_element] so every draw comes from the
-   bot's seeded [Splittable_random.t] and scenarios stay reproducible. *)
-let random_element rng list =
-  match list with
-  | [] -> None
-  | _ ->
-    let index = Splittable_random.int rng ~lo:0 ~hi:(List.length list - 1) in
-    List.nth list index
-;;
-
-(* [true] with probability [pct]/100, for an integer [pct] in [0, 100]. *)
-let percent_hits rng ~pct = Splittable_random.int rng ~lo:1 ~hi:100 <= pct
-
 let next_client_order_id (config : Config.t) =
   incr config.client_order_id_ref;
   Client_order_id.of_int !(config.client_order_id_ref)
@@ -64,7 +50,7 @@ let random_size (config : Config.t) rng =
   let jitter = config.avg_size * size_jitter_pct / 100 in
   let lo = Int.max 1 (config.avg_size - jitter) in
   let hi = Int.max lo (config.avg_size + jitter) in
-  Splittable_random.int rng ~lo ~hi
+  Bot_random.int_inclusive rng ~lo ~hi
 ;;
 
 (* Choose a limit price for an order on [side] for [symbol].
@@ -88,7 +74,7 @@ let choose_price (config : Config.t) context rng ~symbol ~side ~is_marketable
     | None -> Price.to_int_cents (Context.fundamental context symbol)
   in
   let offset_cents =
-    Splittable_random.int rng ~lo:1 ~hi:max_price_offset_cents
+    Bot_random.int_inclusive rng ~lo:1 ~hi:max_price_offset_cents
   in
   let direction =
     if is_marketable then Side.sign side else -Side.sign side
@@ -105,29 +91,31 @@ let on_start (_config : Config.t) (_context : Context.t) = return ()
 let on_tick (config : Config.t) (context : Context.t) =
   let rng = Context.random context in
   let sends_order =
-    Float.( <= )
-      (Splittable_random.float rng ~lo:0.0 ~hi:1.0)
-      config.tick_chance
+    Bot_random.does_occur rng (Percent.of_mult config.tick_chance)
   in
   if not sends_order
   then return ()
   else (
-    match random_element rng (Hashtbl.keys config.symbol_state) with
-    | None -> return ()
-    | Some symbol ->
-      let side =
-        if Splittable_random.bool rng then Side.Buy else Side.Sell
-      in
+    match Hashtbl.keys config.symbol_state with
+    | [] -> return ()
+    | symbols ->
+      let symbol = Bot_random.uniform_exn rng symbols in
+      let side = Bot_random.uniform_exn rng Side.all in
       let size = random_size config rng in
-      let is_marketable = percent_hits rng ~pct:config.aggressiveness_pct in
+      let is_marketable =
+        Bot_random.does_occur
+          rng
+          (Percent.of_percentage (Int.to_float config.aggressiveness_pct))
+      in
       let price =
         choose_price config context rng ~symbol ~side ~is_marketable
       in
-      let time_in_force =
-        if percent_hits rng ~pct:config.ioc_pct
-        then Time_in_force.Ioc
-        else Day
+      let is_ioc =
+        Bot_random.does_occur
+          rng
+          (Percent.of_percentage (Int.to_float config.ioc_pct))
       in
+      let time_in_force = if is_ioc then Time_in_force.Ioc else Day in
       let request : Order.Request.t =
         { symbol
         ; participant = Context.participant context
