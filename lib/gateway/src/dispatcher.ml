@@ -147,6 +147,29 @@ let dispatch_event t (event : Exchange_event.t) =
 
 let dispatch t events = List.iter events ~f:(dispatch_event t)
 
+let audit_queue_lengths t =
+  Bag.fold t.audit_subscribers ~init:[] ~f:(fun acc writer ->
+    Pipe.length writer :: acc)
+;;
+
+(* A writer subscribed to several symbols appears in several bags, so its
+   depth is counted once per symbol here. That's fine for occupancy: the
+   [max_depth] the metrics report cares about is unaffected, and a fanned-out
+   subscriber genuinely holds that depth against each symbol's feed. *)
+let market_data_queue_lengths t =
+  Hashtbl.fold
+    t.market_data_subscribers_by_symbol
+    ~init:[]
+    ~f:(fun ~key:_ ~data:subscribers acc ->
+      Bag.fold subscribers ~init:acc ~f:(fun acc writer ->
+        Pipe.length writer :: acc))
+;;
+
+let session_queue_lengths t =
+  Hashtbl.fold t.sessions ~init:[] ~f:(fun ~key:_ ~data:session acc ->
+    Session.queue_length session :: acc)
+;;
+
 module For_testing = struct
   let audit_subscriber_count t = Bag.length t.audit_subscribers
 end

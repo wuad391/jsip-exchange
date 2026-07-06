@@ -548,3 +548,55 @@ let%expect_test "scenario: fill IDs are globally sequential" =
     FILL fill_id=2 TSLA $200.00 x100 aggressor=4(Alice w/ client order ID = 5) BUY resting=2(Charlie w/ client order ID = 3)
     |}]
 ;;
+
+(* ================================================================ *)
+(* resting_order_counts *)
+(* ================================================================ *)
+
+let%expect_test "resting_order_counts across symbols, a fill, and a cancel" =
+  let t = Harness.create () in
+  let engine = Harness.engine t in
+  let counts () =
+    print_s
+      [%sexp
+        (Map.to_alist (Matching_engine.resting_order_counts engine)
+         : (Participant.t * int) list)]
+  in
+  (* alice rests one order on AAPL and one on TSLA; bob rests one on AAPL. *)
+  Harness.submit_quiet_
+    ~participant:Harness.alice
+    t
+    (Harness.buy ~price_cents:15000 ~client_order_id:1 ());
+  Harness.submit_quiet_
+    ~participant:Harness.alice
+    t
+    (Harness.buy
+       ~symbol:Harness.tsla
+       ~price_cents:20000
+       ~client_order_id:2
+       ());
+  Harness.submit_quiet_
+    ~participant:Harness.bob
+    t
+    (Harness.buy ~price_cents:14900 ~client_order_id:3 ());
+  counts ();
+  [%expect {| ((Alice 2) (Bob 1)) |}];
+  (* bob crosses alice's AAPL bid: alice's AAPL order fully fills and leaves
+     the book, and bob's aggressor sell never rests. *)
+  Harness.submit_quiet_
+    ~participant:Harness.bob
+    t
+    (Harness.sell ~price_cents:15000 ~client_order_id:4 ());
+  counts ();
+  [%expect {| ((Alice 1) (Bob 1)) |}];
+  (* alice cancels her remaining (TSLA) order → she drops out of the map. *)
+  ignore
+    (Matching_engine.cancel
+       engine
+       { participant = Harness.alice
+       ; client_order_id = Harness.cancel ~client_order_id:2
+       }
+     : Exchange_event.t list);
+  counts ();
+  [%expect {| ((Bob 1)) |}]
+;;

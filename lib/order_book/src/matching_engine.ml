@@ -28,6 +28,16 @@ let create symbols =
 
 let book t symbol = Map.find t.books symbol
 
+let resting_order_counts t =
+  Hashtbl.fold
+    t.client_order_tables
+    ~init:Participant.Map.empty
+    ~f:(fun ~key:participant ~data:client_order_table acc ->
+      match Hashtbl.length client_order_table with
+      | 0 -> acc
+      | count -> Map.set acc ~key:participant ~data:count)
+;;
+
 (* These are client_order_id functions to interact with the sets and lookup *)
 let validate_client_id t ~participant (request : Order.Request.t) =
   let client_order_id = request.client_order_id in

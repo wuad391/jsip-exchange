@@ -25,10 +25,20 @@ module Message = struct
     | Cancel of Order.Cancel.t
 end
 
+(* Each queued message is stamped when it enters the queue so the matching
+   loop can measure enqueue-to-matched latency — which, under load, is
+   dominated by the time the message spends waiting in this queue. *)
+module Timed_message = struct
+  type t =
+    { message : Message.t
+    ; enqueued_at : Time_ns.t
+    }
+end
+
 type t =
   { engine : Matching_engine.t
   ; dispatcher : Dispatcher.t
-  ; message_writer : Message.t Pipe.Writer.t
+  ; message_writer : Timed_message.t Pipe.Writer.t
   ; tcp_server : (Socket.Address.Inet.t, int) Tcp.Server.t
   ; port : int
   }
@@ -40,21 +50,41 @@ type t =
    without the server's memory growing unboundedly. *)
 let message_queue_size_budget = 1024
 
-let handle_submit ~message_writer (message : Message.t) =
-  let%map () = Pipe.write_if_open message_writer message in
+let handle_submit ~message_writer ~metrics (message : Message.t) =
+  let enqueued_at = Time_ns.now () in
+  let participant =
+    match message with
+    | Message.Request { participant; _ } -> participant
+    | Message.Cancel { participant; _ } -> participant
+  in
+  Metrics.record_arrival metrics ~participant;
+  let%map () =
+    Pipe.write_if_open message_writer { Timed_message.message; enqueued_at }
+  in
   Ok ()
 ;;
 
-let start_matching_loop ~engine ~dispatcher message_reader =
+let start_matching_loop ~engine ~dispatcher ~metrics message_reader =
   don't_wait_for
-    (Pipe.iter_without_pushback message_reader ~f:(fun message ->
-       match message with
-       | Message.Request { participant; request } ->
-         let events = Matching_engine.submit engine ~participant request in
-         Dispatcher.dispatch dispatcher events
-       | Message.Cancel cancel ->
-         let events = Matching_engine.cancel engine cancel in
-         Dispatcher.dispatch dispatcher events))
+    (Pipe.iter_without_pushback
+       message_reader
+       ~f:(fun { Timed_message.message; enqueued_at } ->
+         let before = Time_ns.now () in
+         let events, kind =
+           match message with
+           | Message.Request { participant; request } ->
+             Matching_engine.submit engine ~participant request, `Submit
+           | Message.Cancel cancel ->
+             Matching_engine.cancel engine cancel, `Cancel
+         in
+         let matched_at = Time_ns.now () in
+         Dispatcher.dispatch dispatcher events;
+         let done_at = Time_ns.now () in
+         Metrics.record_processed
+           metrics
+           ~kind
+           ~latency:(Time_ns.diff matched_at enqueued_at)
+           ~busy:(Time_ns.diff done_at before)))
 ;;
 
 let start ~symbols ~port () =
@@ -62,7 +92,14 @@ let start ~symbols ~port () =
   let dispatcher = Dispatcher.create () in
   let message_reader, message_writer = Pipe.create () in
   Pipe.set_size_budget message_writer message_queue_size_budget;
-  start_matching_loop ~engine ~dispatcher message_reader;
+  let metrics =
+    Metrics.create
+      ~dispatcher
+      ~matching_engine:engine
+      ~request_queue_length:(fun () -> Pipe.length message_reader)
+  in
+  start_matching_loop ~engine ~dispatcher ~metrics message_reader;
+  Metrics.start metrics;
   let implementations =
     Rpc.Implementations.create_exn
       ~implementations:
@@ -85,6 +122,7 @@ let start ~symbols ~port () =
                  let%bind result =
                    handle_submit
                      ~message_writer
+                     ~metrics
                      (Request { participant; request })
                  in
                  (match result with
@@ -105,6 +143,7 @@ let start ~symbols ~port () =
                  let%bind result =
                    handle_submit
                      ~message_writer
+                     ~metrics
                      (Cancel { participant; client_order_id })
                  in
                  (match result with
@@ -166,6 +205,11 @@ let start ~symbols ~port () =
                    (Error (Error.of_string "not logged in")
                     : (Exchange_event.t Pipe.Reader.t, Error.t) result)
                | Some session -> return (Ok (Session.reader session)))
+        ; Rpc.Pipe_rpc.implement
+            Rpc_protocol.exchange_stats_rpc
+            (fun state () ->
+               ignore state;
+               return (Ok (Metrics.subscribe metrics)))
         ]
       ~on_unknown_rpc:`Close_connection
       ~on_exception:Log_on_background_exn

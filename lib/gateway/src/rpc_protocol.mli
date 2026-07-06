@@ -56,3 +56,15 @@ val login_rpc : (String.t, Participant.t Or_error.t) Rpc.Rpc.t
 
 val session_feed_rpc : (unit, Exchange_event.t, Error.t) Rpc.Pipe_rpc.t
 val cancel_order_rpc : (Client_order_id.t, unit Or_error.t) Rpc.Rpc.t
+
+(** Subscribe to the exchange's per-second health telemetry: memory, submit
+    and cancel latency percentiles, pipe occupancy, per-participant order
+    rates, and matching-engine load. One {!Exchange_stats.t} is pushed per
+    second.
+
+    This is operator-facing infrastructure monitoring, deliberately separate
+    from {!audit_log_rpc}: the audit log carries
+    {!Jsip_types.Exchange_event.t} (what the engine did), while this carries
+    resource metrics (how the process is coping). The [app/dashboard]
+    monitoring UI is the intended consumer. *)
+val exchange_stats_rpc : (unit, Exchange_stats.t, Error.t) Rpc.Pipe_rpc.t
