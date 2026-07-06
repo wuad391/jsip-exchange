@@ -52,18 +52,22 @@ let start_bot ~where_to_connect ~oracle (Bot_spec.T spec) =
   let%bind session_feed, _metadata =
     Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc connection ()
   in
-  let%bind md_pipe, _metadata =
-    Rpc.Pipe_rpc.dispatch_exn
-      Rpc_protocol.market_data_rpc
-      connection
-      spec.symbols
+  (* Only subscribe to market data if this bot actually consumes it. A bot
+     that opts out (e.g. a pure order/cancel spammer) then never receives MD,
+     saving the subscription and the per-event [feed_event] work. *)
+  let%bind market_data_feeds =
+    if spec.is_marketdata_consumer
+    then (
+      let%map md_pipe, _metadata =
+        Rpc.Pipe_rpc.dispatch_exn
+          Rpc_protocol.market_data_rpc
+          connection
+          spec.symbols
+      in
+      [ md_pipe ])
+    else return []
   in
-  (* CR-soon claude for robyn: this subscribes *every* bot to market data
-     unconditionally; the old code gated it on [spec.is_marketdata_consumer],
-     which is now read nowhere (only its field definition remains). Bots that
-     opt out still receive and process MD via [on_event]. Honour the flag again
-     or remove it from [Bot_spec]. *)
-  let output = Pipe.interleave [ session_feed; md_pipe ] in
+  let output = Pipe.interleave (session_feed :: market_data_feeds) in
   don't_wait_for (Pipe.iter output ~f:(Bot_runtime.feed_event bot));
   print_endline
     [%string "[scenario] starting bot %{spec.participant#Participant}"];

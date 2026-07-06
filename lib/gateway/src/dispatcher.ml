@@ -22,17 +22,6 @@ let clean_up_session t session =
   return (Session.close session)
 ;;
 
-(* CR claude for robyn: [print_sessions] is a debug dumper (note the
-   "sesssions" typo) that's also exported in the .mli — delete it and its
-   export. If you want session visibility, surface it through the monitor or
-   a [For_testing] module, not on the production [Dispatcher] API. *)
-let print_sessions (t : t) =
-  print_endline [%string "Starting to print sesssions....\n"];
-  Hashtbl.iter_keys t.sessions ~f:(fun key ->
-    print_s [%message (key : Participant.t)];
-    ())
-;;
-
 let set_up_session t participant =
   let has_active_session = Hashtbl.find t.sessions participant in
   let%bind () =

@@ -76,10 +76,20 @@ let remove_client_order t participant client_order_id =
        Hashtbl.remove t.client_order_id_lookup (Order.order_id client_order))
 ;;
 
-(* TODO: currently, there is a precondition that this order_id must exist in
-   the table. this is very bad *)
+(* Precondition: [order_id] is registered in [client_order_id_lookup]. This
+   holds for every order we look up here — [add_client_order] registers an
+   order the moment it can rest, and it stays registered until it is fully
+   filled or cancelled (see [remove_client_order]). Looking up an
+   unregistered id is an internal invariant violation, so we raise with the
+   offending id rather than returning an option a caller could quietly drop. *)
 let get_client_order_id t order_id =
-  Hashtbl.find_exn t.client_order_id_lookup order_id
+  match Hashtbl.find t.client_order_id_lookup order_id with
+  | Some client_order_id -> client_order_id
+  | None ->
+    raise_s
+      [%message
+        "Matching_engine.get_client_order_id: order_id not registered"
+          (order_id : Order_id.t)]
 ;;
 
 let add_client_order t client_order_id order =
@@ -122,23 +132,13 @@ let rec match_loop t ~book ~order ~fill_id =
         (* with | Some id1, Some id2 -> id1, id2 | _ -> raise (Exn.of_string
            "Client order ID missing") *)
       in
-      (* XCR claude for robyn: [remove_client_order] used to sit *outside*
-         this [if] (dangling [then]), so a partially-filled resting order got
-         evicted from the client tables while still resting on the book — the
-         owner could no longer cancel it, and a later fill against it crashed
-         via [get_client_order_id]'s [find_exn]. Both removals are now
-         guarded by [then], so they only fire on a full fill.
-
-         robyn: fixed. (Small style nit: the [else ()] below can be dropped —
-         house style is no [else ()] for a unit [then].) *)
       if Order.is_fully_filled resting
       then (
         Order_book.remove book (Order.order_id resting);
         remove_client_order
           t
           (Order.participant resting)
-          resting_client_order_id)
-      else ();
+          resting_client_order_id);
       let fill_event =
         Exchange_event.Fill
           { fill_id

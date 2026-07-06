@@ -46,34 +46,28 @@ let to_string
     (Client_order_id.to_string resting_client_order_id)
 ;;
 
-(* this function satisfies exercise 4 and is used to return a client view.
-   TODO: is there a more elegant way to not repeat the ugly sprintf. could
-   factor out but then have to case again for None *)
+(* Satisfies exercise 4: renders a fill from one participant's point of view,
+   or [None] if they were not a party to it. The two [Some] cases differ only
+   in whose [client_order_id] and which side to show, so the [sprintf] is
+   factored into [describe] and each branch just supplies those two values —
+   which keeps the [None] case in the match. *)
 let to_participant_view t participant =
+  let describe client_order_id (side : Side.t) =
+    sprintf
+      "Order %s: You %s %d %s at %s."
+      (Client_order_id.to_string client_order_id)
+      (match side with Buy -> "bought" | Sell -> "sold")
+      (Size.to_int t.size)
+      (Symbol.to_string t.symbol)
+      (Price.to_string_dollar t.price)
+  in
   match
     ( Participant.equal participant t.aggressor_participant
     , Participant.equal participant t.resting_participant )
   with
-  | true, _ ->
-    Some
-      (sprintf
-         "Order %s: You %s %d %s at %s."
-         (Client_order_id.to_string t.aggressor_client_order_id)
-         (match t.aggressor_side with Buy -> "bought" | Sell -> "sold")
-         (Size.to_int t.size)
-         (Symbol.to_string t.symbol)
-         (Price.to_string_dollar t.price))
+  | true, _ -> Some (describe t.aggressor_client_order_id t.aggressor_side)
   | _, true ->
-    Some
-      (sprintf
-         "Order %s: You %s %d %s at %s."
-         (Client_order_id.to_string t.resting_client_order_id)
-         (match Side.flip t.aggressor_side with
-          | Buy -> "bought"
-          | Sell -> "sold")
-         (Size.to_int t.size)
-         (Symbol.to_string t.symbol)
-         (Price.to_string_dollar t.price))
+    Some (describe t.resting_client_order_id (Side.flip t.aggressor_side))
   | _ -> None
 ;;
 

@@ -183,7 +183,6 @@ let start ~symbols ~port () =
                    let%bind () =
                      Dispatcher.set_up_session dispatcher participant
                    in
-                   (* let () = Dispatcher.print_sessions dispatcher in *)
                    let has_active_session =
                      Dispatcher.lookup_session dispatcher participant
                    in
@@ -219,15 +218,6 @@ let start ~symbols ~port () =
       ~implementations
       ~initial_connection_state:(fun _addr _conn ->
         let new_state : Connection_state.t = { session = None } in
-        (* XCR claude for robyn: this used to read
-           [new_state.session] *before* awaiting [close_finished]; at connect
-           time the session is always [None], so [clean_up_session] never ran
-           and a disconnected participant leaked in [Dispatcher.sessions] —
-           [is_active] kept returning true, permanently blocking re-login.
-           Now it awaits close first, then inspects the (by-then populated)
-           session.
-
-           robyn: fixed. *)
         let close_connection =
           let%bind () = Rpc.Connection.close_finished _conn in
           match new_state.session with
