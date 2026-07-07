@@ -25,7 +25,7 @@ jobs:
   run-bench:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/jane-street-immersion-program/jsip-exchange-ci:latest
+      image: ghcr.io/${{ github.repository_owner }}/jsip-exchange-ci:latest
     steps:
       - name: Check out the code
         uses: actions/checkout@v4
