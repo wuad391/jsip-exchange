@@ -1,16 +1,17 @@
 open! Core
-open Async_rpc_kernel
 open Jsip_exchange_stats
 
-(* The browser polls this plain RPC once per second (its [Rpc_effect] layer
-   has no Pipe_rpc support, so we poll rather than stream). The response is
-   the rolling window of per-second snapshots, oldest first — the same list
-   [Jsip_dashboard.Dashboard_state] accumulates on the server. *)
+(* The browser polls this [Polling_state_rpc] once a second. It carries the
+   rolling window of per-second snapshots, but between polls only the snapshots
+   the client is missing cross the wire (see [Jsip_dashboard.Window]), so the
+   transport scales to larger snapshots without re-sending the whole window
+   each time. Bonsai's [Rpc_effect] can poll this directly. *)
 let stats_rpc =
-  Rpc.Rpc.create
+  Polling_state_rpc.create
     ~name:"dashboard-stats"
     ~version:1
+    ~query_equal:[%equal: unit]
     ~bin_query:[%bin_type_class: unit]
-    ~bin_response:[%bin_type_class: Exchange_stats.t list]
-    ~include_in_error_count:Rpc.How_to_recognize_errors.Only_on_exn
+    (module Jsip_dashboard.Window : Polling_state_rpc.Response
+      with type t = Exchange_stats.t list)
 ;;

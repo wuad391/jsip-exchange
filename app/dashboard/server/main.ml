@@ -62,16 +62,25 @@ let serve ~http_port ~window =
   let implementations =
     Rpc.Implementations.create_exn
       ~implementations:
-        [ Rpc.Rpc.implement Jsip_dashboard_protocol.stats_rpc (fun () () ->
-            return (Dashboard_state.snapshots !window))
+        [ Polling_state_rpc.implement
+            ~on_client_and_server_out_of_sync:(fun details ->
+              Core.eprint_s
+                [%message
+                  "dashboard: client and server out of sync"
+                    (details : Sexp.t)])
+            Jsip_dashboard_protocol.stats_rpc
+            (fun (_ : unit) () -> return (Dashboard_state.snapshots !window))
         ]
       ~on_unknown_rpc:`Close_connection
       ~on_exception:Close_connection
   in
+  (* [Polling_state_rpc] tracks per-client diff state keyed by the connection,
+     so the implementation's connection state must carry the [Rpc.Connection.t]
+     alongside our own (empty) state. *)
   Rpc_websocket.Rpc.serve
     ~where_to_listen:(Tcp.Where_to_listen.of_port http_port)
     ~implementations
-    ~initial_connection_state:(fun () _ _ _ -> ())
+    ~initial_connection_state:(fun () _ _ connection -> (), connection)
     ~http_handler:(fun () -> static_handler)
     ()
 ;;

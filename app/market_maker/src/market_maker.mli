@@ -30,8 +30,6 @@ module Config : sig
   [@@deriving sexp_of]
 end
 
-type t
-
 (** Submit the market maker's initial set of resting orders over the given
     open [Rpc.Connection.t]. The connection must already be logged in as
     [config.participant]. [submit_order_rpc] is one-way, so this function
@@ -39,14 +37,3 @@ type t
     matching-engine response (acceptance, fills, rejection) arrives on the
     participant's session feed. *)
 val seed_book : Config.t -> Rpc.Connection.t -> unit Deferred.t
-
-val run : ?testing:Bool.t -> Config.t -> Rpc.Connection.t -> unit Deferred.t
-
-(* THIS IS FOR TESTING ONLY *)
-val trading_function
-  :  t
-  -> Config.t
-  -> Bool.t
-  -> Rpc.Connection.t
-  -> Exchange_event.t
-  -> unit Deferred.t
