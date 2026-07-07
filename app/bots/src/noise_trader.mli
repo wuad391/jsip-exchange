@@ -38,19 +38,15 @@ val on_tick : Config.t -> Context.t -> unit Deferred.t
     to fills. *)
 val on_event : Config.t -> Context.t -> Exchange_event.t -> unit Deferred.t
 
-(** [create_config ~symbols ~avg_size ~tick_chance ~aggressiveness_pct ~ioc_pct]
-    builds a config trading [symbols] (its BBO cache starts empty for each).
+(** Build a config trading [symbols] (its BBO cache starts empty).
 
-    - [avg_size]: mean order size; each order draws a size in a small band
-      around it.
-    - [tick_chance]: probability in [[0., 1.]] that a given [on_tick] sends
-      any order at all, so the bot can run on a fast clock yet trade
-      sparsely.
-    - [aggressiveness_pct]: percent chance (0-100) that an order is
-      marketable (crosses the spread and trades now) rather than resting in
-      the book.
-    - [ioc_pct]: percent chance (0-100) that an order is [Ioc] rather than
-      [Day]. *)
+    - [avg_size]: mean order size; each draws a size in a small band around
+      it.
+    - [tick_chance]: probability in [[0., 1.]] a given tick sends any order,
+      so a fast clock can still trade sparsely.
+    - [aggressiveness_pct]: percent (0-100) an order is marketable rather
+      than resting.
+    - [ioc_pct]: percent (0-100) an order is [Ioc] rather than [Day]. *)
 val create_config
   :  symbols:Symbol.t list
   -> avg_size:int
