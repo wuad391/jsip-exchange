@@ -4,3 +4,5 @@ module Session = Session
 module Dispatcher = Dispatcher
 module Exchange_server = Exchange_server
 module Exchange_command = Exchange_command
+module Exchange_stats = Jsip_exchange_stats.Exchange_stats
+module Metrics = Metrics

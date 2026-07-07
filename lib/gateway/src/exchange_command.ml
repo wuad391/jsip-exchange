@@ -114,27 +114,37 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
             "expected: BUY|SELL <client order id> <symbol> <size> <price> \
              [%{Time_in_force.all_str#String}]"]
     in
-    let cancel_parse client_order_id =
-      Ok
-        (Cancel
-           { participant = default_participant
-           ; client_order_id = Client_order_id.of_string client_order_id
-           })
+    let parse_symbol symbol_str =
+      try Ok (Symbol.of_string symbol_str) with
+      | exn ->
+        let exn_str = Exn.to_string exn in
+        Or_error.error_string
+          [%string "invalid symbol: %{symbol_str}\nexception: %{exn_str}"]
+    in
+    let parse_client_order_id client_order_id_str =
+      try Ok (Client_order_id.of_string client_order_id_str) with
+      | exn ->
+        let exn_str = Exn.to_string exn in
+        Or_error.error_string
+          [%string
+            "invalid client_id: %{client_order_id_str}\n\
+             exception: %{exn_str}"]
+    in
+    let cancel_parse client_order_id_str =
+      Result.map
+        (parse_client_order_id client_order_id_str)
+        ~f:(fun client_order_id ->
+          Cancel { participant = default_participant; client_order_id })
     in
     match parts with
     | verb :: second :: rest ->
       let verb_type = Or_error.try_with (fun _ -> Verb.of_string verb) in
       (match verb_type with
        | Ok Verb.Buy | Ok Sell -> submit_parse verb_type (second :: rest)
-       (* CR claude for robyn: [parse] returns [Or_error.t] but
-          still *raises* on these paths — [Symbol.of_string] (Book/Subscribe)
-          and [Client_order_id.of_string] ([cancel_parse]) are unwrapped, so
-          [BOOK @@@] or [CANCEL abc] throws instead of returning [Error].
-          That's exactly why the client wraps this call in [try_with_join].
-          Wrap these [of_string]s the way [submit_parse] already does so
-          [parse] owns all its errors. *)
-       | Ok Verb.Book -> Ok (Book (Symbol.of_string second))
-       | Ok Verb.Subscribe -> Ok (Subscribe (Symbol.of_string second))
+       | Ok Verb.Book ->
+         Result.map (parse_symbol second) ~f:(fun s -> Book s)
+       | Ok Verb.Subscribe ->
+         Result.map (parse_symbol second) ~f:(fun s -> Subscribe s)
        | Ok Verb.Cancel -> cancel_parse second
        | Error _ ->
          Or_error.error_string

@@ -21,7 +21,10 @@ let default_symbols =
   ]
 ;;
 
-(* TODO might need to add session feed rpc stuff here *)
+(* No session-feed subscription here: [connect_as] only drives the seed
+   market makers in [trade_back_and_forth], which submit static ladders via
+   [Market_maker.seed_book] and never react to fills, so they have no need to
+   consume their session feed. *)
 let connect_as ~where_to_connect participant =
   let%bind conn = Rpc.Connection.client where_to_connect >>| Result.ok_exn in
   let%bind login_result =

@@ -91,29 +91,30 @@ let run_client ~host ~port ~participant_name =
                        print_endline
                          [%string "[MD] %{Protocol.format_event event}"]));
                   loop ())
-             (* CR claude for robyn: unlike [Book]/[Subscribe] above (which
-                print the error and [loop ()]), [Submit] and [Cancel] use
-                [let%bind.Deferred.Or_error], so an [Error] response
-                short-circuits [loop]/[run_client] and *exits the whole CLI*.
-                Business rejections come back on the session feed as events
-                (the RPC returns [Ok]), so this mostly bites on "not logged
-                in" / transport errors — but handle the [Or_error] inline and
-                [loop ()] like the other arms. *)
              | Submit request ->
-               let%bind.Deferred.Or_error () =
-                 Rpc.Rpc.dispatch_exn
-                   Rpc_protocol.submit_order_rpc
-                   conn
-                   request
+               let%bind result =
+                 Rpc.Rpc.dispatch Rpc_protocol.submit_order_rpc conn request
                in
+               (match result with
+                | Error err | Ok (Error err) ->
+                  print_endline
+                    [%string
+                      "ERROR submitting order: %{Error.to_string_hum err}"]
+                | Ok (Ok ()) -> ());
                loop ()
              | Cancel cancel ->
-               let%bind.Deferred.Or_error () =
-                 Rpc.Rpc.dispatch_exn
+               let%bind result =
+                 Rpc.Rpc.dispatch
                    Rpc_protocol.cancel_order_rpc
                    conn
                    cancel.client_order_id
                in
+               (match result with
+                | Error err | Ok (Error err) ->
+                  print_endline
+                    [%string
+                      "ERROR cancelling order: %{Error.to_string_hum err}"]
+                | Ok (Ok ()) -> ());
                loop ()))
     in
     let%bind session_feed, _ =

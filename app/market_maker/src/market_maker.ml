@@ -16,11 +16,15 @@ module Config = struct
   [@@deriving sexp_of]
 end
 
-let client_order_id_test_ref = ref 1
+(* A single monotonic counter, shared across every [seed_book] call, so that
+   repeated seedings (e.g. the server's back-and-forth demo, which re-seeds
+   each cycle) never reuse a [client_order_id] and get rejected as
+   duplicates. *)
+let client_order_id_ref = ref 1
 
 let new_client_order_id () =
-  client_order_id_test_ref := !client_order_id_test_ref + 1;
-  Client_order_id.of_int !client_order_id_test_ref
+  client_order_id_ref := !client_order_id_ref + 1;
+  Client_order_id.of_int !client_order_id_ref
 ;;
 
 let seed_book (config : Config.t) conn =
@@ -65,118 +69,4 @@ let seed_book (config : Config.t) conn =
            : Order.Request.t)
       in
       Deferred.unit)
-;;
-
-(* CR-someday claude for robyn: this [t]/[trading_function]/[run] block
-   duplicates market_maker_bot.ml (both track bids/asks hash sets + inventory
-   and re-seed on fill). Decide which is canonical and delete the other —
-   this one looks superseded by the [Bot_runtime.Bot] version. Also
-   [client_order_id_test_ref] is a module-global counter (named "_test_ref")
-   used in production; move it into [t]. And [trading_function] is exposed in
-   the .mli only for tests — put it in a [For_testing] submodule. *)
-type t =
-  { inventory : Int.t Ref.t
-  ; mutable half_spread_cents : Int.t
-  ; mutable bids : Client_order_id.t Hash_set.t
-  ; mutable asks : Client_order_id.t Hash_set.t
-  }
-
-(* let books = ref
-   [{ inventory = ref 0 ; bids = Hash_set.create (module Client_order_id) ; asks = Hash_set.create (module Client_order_id) }]
-   ;; *)
-
-(* This is the function that handles all events *)
-let trading_function t (config : Config.t) testing conn event =
-  let get_side_client_order_id (fill : Fill.t) =
-    if Participant.equal fill.aggressor_participant config.participant
-    then fill.aggressor_side, fill.aggressor_client_order_id
-    else Side.flip fill.aggressor_side, fill.resting_client_order_id
-  in
-  (* update_books is used when something gets filled *)
-  let update_books side client_order_id size =
-    Hash_set.remove t.bids client_order_id;
-    Hash_set.remove t.asks client_order_id;
-    t.inventory
-    := !(t.inventory)
-       + match (side : Side.t) with Buy -> size | Sell -> -size
-  in
-  let cancel_all_orders side : unit =
-    let client_order_id_set =
-      match (side : Side.t) with Buy -> t.bids | Sell -> t.asks
-    in
-    (* TODO: This is a very janky way of iterating through a hash set but the
-       types don't work well in Hash_set.iter *)
-    ignore
-      (Hash_set.fold client_order_id_set ~init:(return ()) ~f:(fun _ id ->
-         let%bind _ =
-           Rpc.Rpc.dispatch_exn Rpc_protocol.cancel_order_rpc conn id
-         in
-         return ()));
-    match side with
-    | Buy -> t.bids <- Hash_set.create (module Client_order_id)
-    | Sell -> t.asks <- Hash_set.create (module Client_order_id)
-  in
-  let print_books () =
-    print_endline [%string "\nSTART ===================="];
-    print_endline [%string "Inventory: %{!(t.inventory)#Int}\n"];
-    print_string [%string "\nBIDS: "];
-    Hash_set.iter t.bids ~f:(fun client_order_id ->
-      print_string
-        [%string "%{(Client_order_id.to_int client_order_id)#Int}, "]);
-    print_string [%string "\nASKS: "];
-    Hash_set.iter t.asks ~f:(fun client_order_id ->
-      print_string
-        [%string "%{(Client_order_id.to_int client_order_id)#Int}, "]);
-    print_endline [%string "\nEND ===================="]
-  in
-  let%bind () =
-    match (event : Exchange_event.t) with
-    | Order_accept { order_id = _; participant = _; request } ->
-      (match request.side with
-       | Buy -> return (Hash_set.add t.bids request.client_order_id)
-       | Sell -> return (Hash_set.add t.asks request.client_order_id))
-    | Best_bid_offer_update { symbol; bbo } ->
-      if Symbol.( <> ) symbol config.symbol
-      then return ()
-      else (
-        match Bbo.spread bbo with
-        | Some spread ->
-          t.half_spread_cents <- Price.to_int_cents spread / 2;
-          return ()
-        | None -> return ())
-    | Order_cancel _ -> return ()
-    | Fill fill ->
-      let side, client_order_id = get_side_client_order_id fill in
-      update_books side client_order_id (Size.to_int fill.size);
-      cancel_all_orders side;
-      seed_book
-        { config with
-          fair_value_cents =
-            config.fair_value_cents
-            - (!(t.inventory) * config.inventory_skew_cents_per_share)
-        ; half_spread_cents = t.half_spread_cents
-        }
-        conn
-    | Order_reject _ | Trade_report _ | Cancel_reject _ -> return ()
-  in
-  let () = if testing then print_books () else () in
-  return ()
-;;
-
-let run ?(testing = false) (config : Config.t) conn =
-  let t =
-    { inventory = ref 0
-    ; half_spread_cents = config.half_spread_cents
-    ; bids = Hash_set.create (module Client_order_id)
-    ; asks = Hash_set.create (module Client_order_id)
-    }
-  in
-  let%bind session_feed, _metadata =
-    Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc conn ()
-  in
-  let%bind () = seed_book config conn in
-  (* initial ladder *)
-  don't_wait_for
-    (Pipe.iter session_feed ~f:(trading_function t config testing conn));
-  if testing then return () else Deferred.never ()
 ;;

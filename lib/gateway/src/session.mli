@@ -34,3 +34,8 @@ val close : t -> unit
 
 (** [true] iff [close] has been called. *)
 val is_closed : t -> bool
+
+(** Number of events currently buffered in the session's outbound pipe — i.e.
+    produced for this participant but not yet read by the client. A growing
+    value flags a slow or stuck session consumer. *)
+val queue_length : t -> int

@@ -59,8 +59,19 @@ val dispatch : t -> Exchange_event.t list -> unit
 val is_active : t -> Participant.t -> Bool.t
 val set_up_session : t -> Participant.t -> unit Deferred.t
 val lookup_session : t -> Participant.t -> Session.t Option.t
-val print_sessions : t -> unit
 val clean_up_session : t -> Session.t -> unit Deferred.t
+
+(** Current queue length of every audit-subscriber pipe. Used by {!Metrics}
+    to report audit-feed occupancy; a large value means an audit consumer
+    (e.g. the monitor) is falling behind. *)
+val audit_queue_lengths : t -> int list
+
+(** Current queue length of every per-symbol market-data pipe. A subscriber
+    listening to several symbols is counted once per symbol. *)
+val market_data_queue_lengths : t -> int list
+
+(** Current queue length of every logged-in participant's session pipe. *)
+val session_queue_lengths : t -> int list
 
 module For_testing : sig
   val audit_subscriber_count : t -> int

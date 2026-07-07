@@ -1,0 +1,24 @@
+(executable
+ (name main)
+ (libraries
+  core
+  async
+  core_unix.command_unix
+  async_rpc_websocket
+  cohttp_static_handler
+  polling_state_rpc
+  jsip_gateway
+  jsip_exchange_stats
+  jsip_dashboard
+  jsip_dashboard_protocol)
+ (preprocess
+  (pps ppx_jane)))
+
+; The browser half is a separate js_of_ocaml executable; copy its compiled
+; bundle next to this server exe so [static_handler] can serve it (it resolves
+; [main.bc.js] relative to the running exe).
+(rule
+ (target main.bc.js)
+ (deps ../client/main.bc.js)
+ (action
+  (copy ../client/main.bc.js main.bc.js)))

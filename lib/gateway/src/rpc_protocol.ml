@@ -1,6 +1,7 @@
 open! Core
 open! Async
 open Jsip_types
+open Jsip_exchange_stats
 
 let submit_order_rpc =
   Rpc.Rpc.create
@@ -66,4 +67,14 @@ let cancel_order_rpc =
     ~bin_query:Client_order_id.bin_t
     ~bin_response:[%bin_type_class: unit Or_error.t]
     ~include_in_error_count:Only_on_exn
+;;
+
+let exchange_stats_rpc =
+  Rpc.Pipe_rpc.create
+    ~name:"exchange-stats"
+    ~version:1
+    ~bin_query:Unit.bin_t
+    ~bin_response:Exchange_stats.bin_t
+    ~bin_error:Error.bin_t
+    ()
 ;;

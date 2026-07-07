@@ -138,18 +138,6 @@ let seed_book
   (context : Bot_runtime.Context.t)
   (symbols : Symbol.t List.t)
   =
-  (* XCR claude for robyn: this binds the list of submit deferreds to [_] and
-     then returns [return ()], so [seed_book] does NOT await the submits —
-     [on_start] completes before any order is actually sent. Use
-     [Deferred.List.iter ~how:`Parallel symbols ~f:...] (or
-     [Deferred.all_unit (List.map ...)]) so the returned deferred reflects
-     the real work.
-
-     claude: verified — now
-     [let%bind () = Deferred.List.iter ~how:(`Max_concurrent_jobs 64) symbols ...]
-     awaits every submit before returning. Minor: the inner "TODO: Think
-     about making this a parallel map" comment is now stale (you did it) —
-     drop it. *)
   let%bind () =
     Deferred.List.iter
       ~how:(`Max_concurrent_jobs 64)
@@ -337,16 +325,7 @@ let on_event config context event =
          set_symbol_state config symbol { curr_symbol_state with bbo });
       return ()
       (* TODO: maybe adjust some of the config stuff based on BBO *)
-    | Order_cancel _ ->
-      return ()
-      (* XCR claude for robyn: on a fill you [cancel_all_orders side] (one
-         side) but [seed_book] re-places a *full two-sided* ladder — so the
-         un-cancelled side keeps its old resting orders AND gets a fresh set
-         stacked on top, doubling the opposite book over repeated fills.
-
-         claude: verified — [cancel_all_orders] no longer takes a [side] and
-         now cancels *both* books before [seed_book] re-seeds them, so
-         nothing is left resting to stack on top of. *)
+    | Order_cancel _ -> return ()
     | Fill fill ->
       let side = side_of_fill fill in
       update_books side fill.symbol (Size.to_int fill.size);

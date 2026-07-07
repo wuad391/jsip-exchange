@@ -38,3 +38,10 @@ val cancel : t -> Order.Cancel.t -> Exchange_event.t list
 (** The order book for a given symbol, or [None] if the symbol is not traded
     on this engine. *)
 val book : t -> Symbol.t -> Order_book.t option
+
+(** The number of orders each participant currently has resting on the book,
+    summed across all symbols. Derived from the engine's live client-order
+    tables, so it counts exactly the orders {!submit} accepted that have not
+    since been fully filled or cancelled. Participants with no resting orders
+    are absent from the map. Used by the gateway's monitoring metrics. *)
+val resting_order_counts : t -> int Participant.Map.t
