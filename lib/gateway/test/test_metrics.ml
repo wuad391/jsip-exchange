@@ -58,8 +58,8 @@ let%expect_test "window folds counts / per-participant / busy, then resets" =
     (populated (submit_count 2) (submit_max_us 30) (cancel_count 1) (busy_us 8)
      (queue_depth 7)
      (per_participant
-      (((participant alice) (orders_per_sec 2) (resting_orders 0))
-       ((participant bob) (orders_per_sec 1) (resting_orders 0)))))
+      (((participant alice) (order_count 2) (resting_orders 0))
+       ((participant bob) (order_count 1) (resting_orders 0)))))
     |}];
   (* After reset the window is empty; [queue_depth] still reads live (7). *)
   Metrics.For_testing.reset metrics;

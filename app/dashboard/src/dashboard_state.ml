@@ -26,17 +26,35 @@ let add t snapshot =
 let snapshots t = List.rev t.newest_first
 let latest t = List.hd t.newest_first
 
-(* Cumulative counters differenced across the last second give a rate,
-   because snapshots arrive once per second. *)
+(* Cumulative counters differenced across consecutive snapshots give a rate;
+   dividing by the snapshot's [sample_period_sec] turns "collections per sample
+   window" into "per second", correct at any sample interval. *)
 let minor_collections (s : Exchange_stats.t) = s.gc.minor_collections
 let major_collections (s : Exchange_stats.t) = s.gc.major_collections
+
+(* The window length in seconds, taken from a snapshot (guarded against a bad
+   zero). Every per-window count is divided by it to read as a per-second rate,
+   so the rates track whatever sample interval the server is using. *)
+let period_of (s : Exchange_stats.t) =
+  if Float.(s.sample_period_sec > 0.) then s.sample_period_sec else 1.
+;;
+
+let per_second count ~period =
+  Float.iround_nearest_exn (Float.of_int count /. period)
+;;
 
 let gc_rate t =
   match t.newest_first with
   | current :: previous :: _ ->
+    let period = period_of current in
     { Gc_rate.minor_per_sec =
-        minor_collections current - minor_collections previous
-    ; major_per_sec = major_collections current - major_collections previous
+        per_second
+          (minor_collections current - minor_collections previous)
+          ~period
+    ; major_per_sec =
+        per_second
+          (major_collections current - major_collections previous)
+          ~period
     }
   | [] | [ _ ] -> Gc_rate.zero
 ;;
@@ -140,6 +158,7 @@ let latency_display window ~get : Display.latency =
   let series f = List.map vals ~f in
   let current = List.last vals in
   let cur f = Option.value_map current ~default:0. ~f in
+  let period = Option.value_map (List.last window) ~default:1. ~f:period_of in
   { Display.p50_series = series p50
   ; p90_series = series p90
   ; p99_series = series p99
@@ -148,7 +167,9 @@ let latency_display window ~get : Display.latency =
   ; p90_us = cur p90
   ; p99_us = cur p99
   ; max_us = cur latency_max
-  ; per_sec = Option.value_map current ~default:0 ~f:latency_count
+  ; per_sec =
+      Option.value_map current ~default:0 ~f:(fun l ->
+        per_second (latency_count l) ~period)
   }
 ;;
 
@@ -169,10 +190,11 @@ let participants_display window : Display.participant_row list =
   match List.last window with
   | None -> []
   | Some (current : Exchange_stats.t) ->
+    let period = period_of current in
     current.per_participant
     |> List.map ~f:(fun (p : Exchange_stats.Participant_stats.t) ->
       { Display.name = Jsip_types.Participant.to_string p.participant
-      ; orders_per_sec = p.orders_per_sec
+      ; orders_per_sec = per_second p.order_count ~period
       ; resting_orders = p.resting_orders
       })
     (* Busiest sender first (the flooding bot rises to the top); ties broken by

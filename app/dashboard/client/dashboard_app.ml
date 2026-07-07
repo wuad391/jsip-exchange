@@ -44,7 +44,10 @@ let text ?(color = fg) ?(size = "13px") ?(weight = "400") s =
     [ Vdom.Node.text s ]
 ;;
 
-let d1 x = Float.to_string_hum x ~decimals:1 ~strip_zero:false
+(* [Float.to_string_hum] groups digits with [_] by default (matching OCaml
+   numeric literals); for display we want the conventional comma, so a busy
+   second reads [1,802.1 ms], not [1_802.1 ms]. *)
+let d1 x = Float.to_string_hum x ~decimals:1 ~strip_zero:false ~delimiter:','
 let fmt_mb mb = [%string "%{d1 mb} MB"]
 
 let fmt_us us =
@@ -90,9 +93,14 @@ let tile ?(color = fg) ~label ~value () =
     ]
 ;;
 
+(* Stat readouts are centered in their pane so they stay balanced when the feed
+   is popped out and the grid columns narrow. *)
 let tiles cells =
   Vdom.Node.div
-    ~attrs:[ style "display:flex;gap:16px;flex-wrap:wrap" ]
+    ~attrs:
+      [ style
+          "display:flex;gap:16px;flex-wrap:wrap;justify-content:center"
+      ]
     cells
 ;;
 
@@ -318,7 +326,44 @@ let grid children =
     children
 ;;
 
-let view ~feed (display : Display.t option) =
+(* Collapsed state of the live-event feed: a slim rail on the right with an
+   expand button and a vertical label. While collapsed the client does not poll
+   the feed RPC (see [main.ml]) — trading the event stream for less browser and
+   websocket load during a busy period. *)
+let expand_rail ~on_toggle_feed =
+  Vdom.Node.div
+    ~attrs:
+      [ style
+          [%string
+            "flex:none;width:26px;display:flex;flex-direction:column;align-items:center;gap:10px;padding:6px 0;background:%{panel_bg};border:1px solid %{border};border-radius:8px"]
+      ]
+    [ Vdom.Node.create
+        "button"
+        ~attrs:
+          [ style
+              [%string
+                "cursor:pointer;width:20px;height:20px;flex:none;padding:0;display:flex;align-items:center;justify-content:center;background:transparent;color:%{muted};border:1px solid %{border};border-radius:5px;font-size:11px;font-family:inherit"]
+          ; Vdom.Attr.on_click (fun _ev -> on_toggle_feed)
+          ]
+        [ Vdom.Node.text "«" ]
+    ; Vdom.Node.create
+        "span"
+        ~attrs:
+          [ style
+              [%string
+                "writing-mode:vertical-rl;color:%{muted};font-size:11px;letter-spacing:2px;user-select:none;white-space:nowrap"]
+          ]
+        [ Vdom.Node.text "LIVE EVENTS" ]
+    ]
+;;
+
+let view
+  ~feed
+  ~feed_visible
+  ~on_toggle_feed
+  ~monitor_latency_ms
+  (display : Display.t option)
+  =
   let header =
     Vdom.Node.div
       ~attrs:[ style "display:flex;align-items:center;gap:8px" ]
@@ -330,10 +375,16 @@ let view ~feed (display : Display.t option) =
                   "width:10px;height:10px;border-radius:50%;background:%{c_memory}"]
             ]
           []
-      ; text ~size:"18px" ~weight:"800" "JSIP exchange — live monitor"
+      ; text ~size:"18px" ~weight:"800" "JSIP exchange"
+      ; (* The monitor's own refresh latency, in the pane's muted grey. *)
+        text
+          ~color:muted
+          ~size:"18px"
+          ~weight:"600"
+          [%string "%{monitor_latency_ms#Int} ms"]
       ]
   in
-  let body =
+  let panes =
     match display with
     | None -> [ text ~color:muted "Connecting to the dashboard server…" ]
     | Some d ->
@@ -347,20 +398,30 @@ let view ~feed (display : Display.t option) =
           ]
       ]
   in
-  (* Split the surface below the header ~80/20: the six-pane grid on top, the
-     live feed below. The [flex] weights (4 vs 1) size the two regions;
-     [min-height:0] lets each shrink so its own scrollbar engages. *)
-  let top =
+  (* The six-pane grid takes the width; the live feed is a full-height column on
+     the right (~10%), collapsible to a slim rail. [min-*:0] lets each region
+     shrink so its own scrollbar engages instead of overflowing the viewport. *)
+  let content =
     Vdom.Node.div
-      ~attrs:
-        [ style "flex:4;min-height:0;display:flex;flex-direction:column" ]
-      body
+      ~attrs:[ style "flex:1;min-width:0;display:flex;flex-direction:column" ]
+      panes
   in
-  let feed_region =
+  let sidebar =
+    if feed_visible
+    then
+      Vdom.Node.div
+        ~attrs:
+          [ style
+              "flex:0 0 20%;min-width:240px;min-height:0;display:flex;flex-direction:column"
+          ]
+        [ feed ]
+    else expand_rail ~on_toggle_feed
+  in
+  let main =
     Vdom.Node.div
       ~attrs:
-        [ style "flex:1;min-height:0;display:flex;flex-direction:column" ]
-      [ feed ]
+        [ style "flex:1;min-height:0;display:flex;flex-direction:row;gap:12px" ]
+      [ content; sidebar ]
   in
   Vdom.Node.div
     ~attrs:
@@ -368,5 +429,5 @@ let view ~feed (display : Display.t option) =
           [%string
             "background:%{bg};color:%{fg};height:100vh;box-sizing:border-box;padding:16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;display:flex;flex-direction:column;gap:12px"]
       ]
-    [ header; top; feed_region ]
+    [ header; main ]
 ;;

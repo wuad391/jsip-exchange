@@ -6,6 +6,7 @@ open Jsip_dashboard
    else is zeroed. *)
 let snap ~seq ~minor ~major : Exchange_stats.t =
   { seq
+  ; sample_period_sec = 1.0
   ; gc =
       { Exchange_stats.Gc_snapshot.live_words = seq * 1000
       ; heap_words = 0
@@ -63,6 +64,19 @@ let%expect_test "gc_rate is the per-second delta of the two latest snapshots"
   [%expect {| ((minor_per_sec 5) (major_per_sec 1)) |}]
 ;;
 
+let%expect_test "rates divide by the sample period (per-second, not per-window)" =
+  (* Two snapshots 0.5 s apart: 5 minor / 2 major collections in that window is
+     10 / 4 per second. *)
+  let t =
+    Dashboard_state.of_snapshots
+      [ { (snap ~seq:1 ~minor:10 ~major:2) with sample_period_sec = 0.5 }
+      ; { (snap ~seq:2 ~minor:15 ~major:4) with sample_period_sec = 0.5 }
+      ]
+  in
+  print_s [%sexp (Dashboard_state.gc_rate t : Dashboard_state.Gc_rate.t)];
+  [%expect {| ((minor_per_sec 10) (major_per_sec 4)) |}]
+;;
+
 (* The pane math the Bonsai layer relies on: words → megabytes, GC-rate delta,
    the current second's latency readouts, busiest-sender-first ranking, and
    per-category occupancy. [prev] carries only the GC counters the rate needs;
@@ -70,6 +84,7 @@ let%expect_test "gc_rate is the per-second delta of the two latest snapshots"
 let%expect_test "display projects the window into render-ready pane data" =
   let curr : Exchange_stats.t =
     { seq = 2
+    ; sample_period_sec = 1.0
     ; gc =
         { Exchange_stats.Gc_snapshot.live_words = 500_000
         ; heap_words = 1_000_000
@@ -94,12 +109,12 @@ let%expect_test "display projects the window into render-ready pane data" =
     ; per_participant =
         [ { Exchange_stats.Participant_stats.participant =
               Jsip_types.Participant.of_string "alice"
-          ; orders_per_sec = 3
+          ; order_count = 3
           ; resting_orders = 1
           }
         ; { Exchange_stats.Participant_stats.participant =
               Jsip_types.Participant.of_string "zoe"
-          ; orders_per_sec = 9
+          ; order_count = 9
           ; resting_orders = 0
           }
         ]

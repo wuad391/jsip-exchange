@@ -106,8 +106,10 @@ let event_list ~selected events =
   in
   Vdom.Node.div
     ~attrs:
-      [ style
-          "flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:1px"
+      [ (* [scrollbar-width:none] hides the scrollbar while keeping the pane
+           scrollable (supported by modern Chrome). *)
+        style
+          "flex:1;min-height:0;overflow:auto;scrollbar-width:none;display:flex;flex-direction:column;gap:1px"
       ]
     (match rows with
      | [] ->
@@ -118,9 +120,23 @@ let event_list ~selected events =
      | _ :: _ -> rows)
 ;;
 
+(* A small square button that collapses the feed to its rail; the [»] points
+   the way the panel goes — off toward the right edge. *)
+let collapse_button ~on_collapse =
+  Vdom.Node.create
+    "button"
+    ~attrs:
+      [ style
+          [%string
+            "margin-left:auto;cursor:pointer;width:20px;height:20px;flex:none;padding:0;display:flex;align-items:center;justify-content:center;background:transparent;color:%{muted};border:1px solid %{border};border-radius:5px;font-size:11px;font-family:inherit"]
+      ; Vdom.Attr.on_click (fun _ev -> on_collapse)
+      ]
+    [ Vdom.Node.text "»" ]
+;;
+
 (* [events] is the polled buffer (oldest first). [selected] is the active
-   tab; clicking a tab runs [on_select]. *)
-let view ~events ~selected ~on_select =
+   tab; clicking a tab runs [on_select]; [on_collapse] hides the pane. *)
+let view ~events ~selected ~on_select ~on_collapse =
   Vdom.Node.div
     ~attrs:
       [ style
@@ -140,6 +156,7 @@ let view ~events ~selected ~on_select =
               ]
             [ Vdom.Node.text "Live events" ]
         ; tab_row ~selected ~on_select events
+        ; collapse_button ~on_collapse
         ]
     ; event_list ~selected events
     ]

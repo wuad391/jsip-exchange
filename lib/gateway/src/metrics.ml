@@ -4,12 +4,12 @@ open Jsip_types
 open Jsip_order_book
 open Jsip_exchange_stats
 
-(* Cap on latency samples retained per one-second window. A burst of millions
-   of orders should not let a single snapshot allocate without bound; we keep
-   the first [max_latency_samples] as the percentile input, while the [count]
-   and [max] we report are tracked outside the cap and stay exact. *)
+(* Cap on latency samples retained per sample window. A burst of millions of
+   orders should not let a single snapshot allocate without bound; we keep the
+   first [max_latency_samples] as the percentile input, while the [count] and
+   [max] we report are tracked outside the cap and stay exact. *)
 let max_latency_samples = 100_000
-let sample_interval = Time_ns.Span.of_sec 1.
+let sample_interval = Time_ns.Span.of_sec 0.5
 
 type t =
   { dispatcher : Dispatcher.t
@@ -89,7 +89,8 @@ let per_participant t =
   Set.to_list participants
   |> List.map ~f:(fun participant ->
     { Exchange_stats.Participant_stats.participant
-    ; orders_per_sec =
+    ; (* Raw window count; the dashboard divides by [sample_period_sec]. *)
+      order_count =
         Hashtbl.find t.orders_per_sec participant |> Option.value ~default:0
     ; resting_orders =
         Map.find resting participant |> Option.value ~default:0
@@ -97,15 +98,16 @@ let per_participant t =
 ;;
 
 (* [Core.Gc.stat ()] walks the heap to compute [live_words], on the Async
-   thread, once per second. We accept the walk: [live_words] is the headline
-   memory number the dashboard needs, and only [Gc.quick_stat] avoids the
-   walk (but it omits [live_words]); at 1 Hz the pause is negligible for the
-   heaps this exchange runs. Revisit — sampling [live_words] on a slower
-   cadence than the cheap counters — if a large heap makes the walk show up
-   in the latency percentiles. *)
+   thread, once per [sample_interval]. We accept the walk: [live_words] is the
+   headline memory number the dashboard needs, and only [Gc.quick_stat] avoids
+   the walk (but it omits [live_words]); at these sampling rates the pause is
+   negligible for the heaps this exchange runs. Revisit — sampling [live_words]
+   on a slower cadence than the cheap counters — if a large heap makes the walk
+   show up in the latency percentiles. *)
 let snapshot t : Exchange_stats.t =
   t.seq <- t.seq + 1;
   { seq = t.seq
+  ; sample_period_sec = Time_ns.Span.to_sec sample_interval
   ; gc = Exchange_stats.Gc_snapshot.of_stat (Core.Gc.stat ())
   ; submit_latency =
       Exchange_stats.Latency_summary.of_samples
