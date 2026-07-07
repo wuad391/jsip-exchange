@@ -13,9 +13,9 @@ include Hashable.Make (T)
    introduces a *distinct* [comparator_witness] that shadows the first. Drop
    it (and the matching [include Comparator.S] in the .mli).
 
-   claude: verified — the redundant [include Comparator.Make (T)] is gone from
-   the .ml and [include Comparator.S] from the .mli; the comparator now comes
-   solely from [Comparable.Make (T)]. *)
+   claude: verified — the redundant [include Comparator.Make (T)] is gone
+   from the .ml and [include Comparator.S] from the .mli; the comparator now
+   comes solely from [Comparable.Make (T)]. *)
 
 (* of_string automatically uppercases the symbol to avoid placing the burden
    of formatting on clients *)
