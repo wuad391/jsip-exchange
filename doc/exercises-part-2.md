@@ -1213,9 +1213,15 @@ options, in roughly increasing order of fidelity:
   `tls-async` or `mirage-crypto`, for instance).
 - **TLS client certificates**: terminate the RPC over TLS and pull
   the participant identity out of the cert. Most production
-  exchanges use something in this family. Async RPC supports TLS
-  connections — see `Async_extra.Tls_async` or
-  `Rpc.Connection.client` with a TLS-wrapped reader/writer.
+  exchanges use something in this family. `Async_extra.Tls_async`
+  (previously referenced here) doesn't exist in this project's opam
+  switch — the real library is `async_ssl` (`Async_ssl.Tls`,
+  `Async_ssl.Ssl`); wire a TLS-terminated reader/writer pair into
+  `Rpc.Connection.create` (not `Rpc.Connection.serve`, whose
+  `~make_transport` hook is synchronous and can't run an async
+  handshake). Implemented in this repo: see `certs/`,
+  `lib/gateway/src/tls_config.ml`, and the `-cert`/`-key`/`-ca-file`
+  flags on `app/server`/`app/client`.
 
 Whatever you pick, the principle is the same: identity is
 established by something the client _has_ (a key, a certificate)

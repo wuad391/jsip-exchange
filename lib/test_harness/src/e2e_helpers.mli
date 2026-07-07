@@ -6,9 +6,12 @@ open! Async
 open Jsip_types
 open Jsip_gateway
 
-(** Start a server on an OS-assigned port, run [f], then shut down. *)
+(** Start a server on an OS-assigned port, run [f], then shut down. Defaults
+    to [Exchange_server.Plaintext]; pass [~transport:(Tls ...)] for tests
+    that need a TLS-terminated server. *)
 val with_server
-  :  symbols:Symbol.t list
+  :  ?transport:Exchange_server.transport
+  -> symbols:Symbol.t list
   -> (server:Exchange_server.t -> port:int -> 'a Deferred.t)
   -> 'a Deferred.t
 
@@ -23,6 +26,22 @@ type client
 val connect_as
   :  port:int
   -> ?login:Bool.t
+  -> Participant.t
+  -> client Deferred.t
+
+(** Connect to [port] over mutual TLS using the given cert/key/CA files,
+    presenting [crt_file]/[key_file] as this client's identity. There is no
+    [login_rpc] call: the server establishes the session directly from the
+    cert. [participant] is only used to label printed session events; it is
+    not sent to the server, so a mismatch between it and the cert's actual CN
+    doesn't affect the connection, only test output labeling. Raises if the
+    handshake or connection setup fails -- callers testing a rejection path
+    should wrap the call in [Monitor.try_with_or_error]. *)
+val connect_as_tls
+  :  port:int
+  -> crt_file:string
+  -> key_file:string
+  -> ca_file:string
   -> Participant.t
   -> client Deferred.t
 
