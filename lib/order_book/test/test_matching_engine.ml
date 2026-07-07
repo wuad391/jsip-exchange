@@ -186,6 +186,12 @@ let%expect_test "rejected: unknown symbol" =
   [%expect {| REJECTED NOPE BUY 100@$150.00 reason=unknown symbol |}]
 ;;
 
+let%expect_test "rejected: negative price" =
+  let t = Harness.create () in
+  submit_ t (Harness.buy ~price_cents:(-100) ());
+  [%expect {| REJECTED AAPL BUY 100@-$1.00 reason=negative price |}]
+;;
+
 (* ================================================================ *)
 (* Multi-symbol support *)
 (* ================================================================ *)
