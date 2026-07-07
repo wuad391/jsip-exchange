@@ -193,13 +193,16 @@ let%expect_test "make_recording_bot wires up a runnable bot" =
 (* ---------------------------------------------------------------- *)
 (* Market Maker tests *)
 (* ---------------------------------------------------------------- *)
-(* End-to-end walk-through of one seed -> fill -> re-quote cycle, showing the
-   [on_tick] book print at two points. First snapshot: after seeding (no BBO
-   yet, so the ladder is the default 50c half-spread from [on_start]) with
-   the BBO now applied and inventory flat. Second snapshot: after a 50-lot
-   buy fill, inventory is +50 and the whole ladder has been cancelled and
-   re-quoted (new ids, skewed down). [submit_list] shows all 12 orders sent;
-   the cancel line shows the six original ids pulled. *)
+(* End-to-end walk-through of one seed -> BBO -> fill -> re-quote cycle,
+   showing the [on_tick] book print at two points. [on_start] seeds at the
+   default 50c half-spread (ids 1-6); [bbo_event] then narrows the target to
+   the BBO-derived 10c half-spread, which differs from what's quoted, so it
+   cancels 1-6 and re-quotes (ids 7-12) -- shown in the first book snapshot.
+   The 50-lot buy fill moves inventory to +50, which again changes the target
+   (skewed down), so it cancels 7-12 and re-quotes once more (ids 13-18) --
+   the second snapshot. [submit_list] shows all 18 orders sent across the
+   three seedings; the cancel line shows both rounds of pulled ids (1-6, then
+   7-12). *)
 let%expect_test "Basic test of Market Maker" =
   let bot, submit_list, cancel_list =
     make_market_maker_bot ~participant_name:"Market Maker"
@@ -221,8 +224,8 @@ let%expect_test "Basic test of Market Maker" =
     Inventory: 0
 
 
-    BIDS: 5, 3, 1,
-    ASKS: 2, 4, 6,
+    BIDS: 11, 7, 9,
+    ASKS: 12, 10, 8,
     END ====================
 
     START for AAPL====================
@@ -231,8 +234,8 @@ let%expect_test "Basic test of Market Maker" =
     Inventory: 50
 
 
-    BIDS: 11, 7, 9,
-    ASKS: 12, 10, 8,
+    BIDS: 17, 13, 15,
+    ASKS: 16, 18, 14,
     END ====================
     BUY AAPL 100@$149.50 DAY
     SELL AAPL 100@$150.50 DAY
@@ -240,6 +243,12 @@ let%expect_test "Basic test of Market Maker" =
     SELL AAPL 100@$150.51 DAY
     BUY AAPL 100@$149.48 DAY
     SELL AAPL 100@$150.52 DAY
+    BUY AAPL 100@$149.90 DAY
+    SELL AAPL 100@$150.10 DAY
+    BUY AAPL 100@$149.89 DAY
+    SELL AAPL 100@$150.11 DAY
+    BUY AAPL 100@$149.88 DAY
+    SELL AAPL 100@$150.12 DAY
     BUY AAPL 100@$148.90 DAY
     SELL AAPL 100@$149.10 DAY
     BUY AAPL 100@$148.89 DAY
@@ -247,7 +256,7 @@ let%expect_test "Basic test of Market Maker" =
     BUY AAPL 100@$148.88 DAY
     SELL AAPL 100@$149.12 DAY
     ..................................................
-     1 3 5 6 4 2
+     1 3 5 6 4 2 9 7 11 8 10 12
     |}];
   return ()
 ;;
@@ -303,12 +312,15 @@ let%expect_test "buy fill skews both quotes down at the BBO half-spread" =
 
 (* On a fill the bot cancels *every* resting order on *both* books before
    re-quoting — including the just-(partially-)filled order, whose un-filled
-   remainder would otherwise be orphaned on the exchange. The seed places
+   remainder would otherwise be orphaned on the exchange. [on_start] seeds
    bids
    {1 , 3, 5}
    and asks
    {2 , 4, 6}
-   ; the fill is on bid id 1, and all six are cancelled. *)
+   at the default 50c half-spread; [bbo_event] narrows the target to the
+   BBO-derived 10c half-spread, which differs from what's quoted, so it
+   cancels all six and re-quotes (ids 7-12) before the fill even arrives. The
+   fill (on what is now bid id 9) then cancels that second round too. *)
 let%expect_test "a fill cancels both books, including the filled order" =
   let bot, _submitted, cancelled =
     make_market_maker_bot ~participant_name:"Market Maker"
@@ -317,7 +329,7 @@ let%expect_test "a fill cancels both books, including the filled order" =
   let%bind () = Bot_runtime.feed_event bot bbo_event in
   let%bind () = Bot_runtime.feed_event bot fill_event in
   print_cancelled cancelled;
-  [%expect {| 1 3 5 6 4 2 |}];
+  [%expect {| 1 3 5 6 4 2 9 7 11 8 10 12 |}];
   return ()
 ;;
 
