@@ -209,6 +209,26 @@ let books_display window : Display.book_row list =
       })
 ;;
 
+(* The request queue is the one server-side pipe with genuine backpressure: the
+   matching loop drains it and [exchange_server] bounds it at a fixed budget, so
+   its depth is the real "is the engine keeping up?" signal. The three subscriber
+   feeds sit near zero even for a slow consumer — Async's [Pipe_rpc] keeps the
+   exchange-side pipe drained into the client, so the backlog lands on the client,
+   not here — but this queue actually climbs under a submit/cancel storm. Modeled
+   as a single-pipe occupancy row so it shares the pane. *)
+let request_queue_display window : Display.occupancy_row =
+  let depths =
+    List.map window ~f:(fun (s : Exchange_stats.t) -> s.request_queue_depth)
+  in
+  let current = Option.value (List.last depths) ~default:0 in
+  { Display.label = "request queue"
+  ; max_depth = current
+  ; total_depth = current
+  ; num_pipes = 1
+  ; max_depth_series = List.map depths ~f:Float.of_int
+  }
+;;
+
 let display t : Display.t =
   let window = snapshots t in
   let current = latest t in
@@ -231,6 +251,7 @@ let display t : Display.t =
       [ occupancy_display window ~label:"audit" ~get:audit_pipe
       ; occupancy_display window ~label:"market data" ~get:market_data_pipe
       ; occupancy_display window ~label:"session" ~get:session_pipe
+      ; request_queue_display window
       ]
   ; loop_busy_series = List.map window ~f:loop_busy_us
   ; loop_busy_us = Option.value_map current ~default:0. ~f:loop_busy_us
