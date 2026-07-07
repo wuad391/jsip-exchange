@@ -16,6 +16,27 @@ type symbol_state =
   ; inventory : Int.t Ref.t
   ; mutable fair_value_cents : int
   ; bbo : Bbo.t
+  ; mutable quoted : (int * int) option
+      (* The [(skewed_fair, half_spread)] our currently-resting ladder was
+         placed at, or [None] if we haven't quoted yet. Lets
+         [Best_bid_offer_update] decide whether a BBO move actually changes
+         where we'd quote, instead of re-seeding on every tick of the market
+         -- re-seeding unconditionally would itself move the BBO and trigger
+         another re-seed, forever. *)
+  ; mutable reseeding : bool
+  (* Set for the duration of a cancel-then-reseed cycle for this symbol. A
+     fill and a [Best_bid_offer_update] can each trigger a reseed, and both
+     involve real RPC round-trips (real [Async] yields), so without this
+     guard two reseeds for the same symbol can overlap: the second one's
+     [cancel_all_orders] reads [bids]/[asks] before the first one's
+     [seed_book] has finished repopulating them, orphaning orders that never
+     get cancelled and never get tracked. Left resting, those orphans quote
+     at a stale (and, after enough churn, wildly skewed) price and sit
+     alongside the fresh ladder, so the book alternates between two unrelated
+     price levels. Skipping a reseed while one is already in flight is safe:
+     the in-flight one will pick up the current inventory and BBO when it
+     re-derives its target from scratch, and further events keep arriving to
+     trigger a fresh check afterward. *)
   }
 [@@deriving sexp_of]
 
@@ -46,6 +67,8 @@ let blank_symbol_state () =
   ; bids = Hash_set.create (module Client_order_id)
   ; fair_value_cents = 0
   ; bbo = Bbo.empty
+  ; quoted = None
+  ; reseeding = false
   }
 ;;
 
@@ -84,7 +107,15 @@ let set_symbol_asks (config : Config.t) context symbol new_asks =
 ;;
 
 let set_symbol_inventory (config : Config.t) context symbol new_inventory =
-  let { asks = _; bids = _; inventory; fair_value_cents = _; bbo = _ } =
+  let { asks = _
+      ; bids = _
+      ; inventory
+      ; fair_value_cents = _
+      ; bbo = _
+      ; quoted = _
+      ; reseeding = _
+      }
+    =
     get_symbol_state config context symbol
   in
   inventory := new_inventory
@@ -143,17 +174,27 @@ let seed_book
       ~how:(`Max_concurrent_jobs 64)
       symbols
       ~f:(fun symbol ->
-        let { asks; bids; inventory; fair_value_cents; bbo } =
+        let ({ asks
+             ; bids
+             ; inventory
+             ; fair_value_cents
+             ; bbo
+             ; quoted = _
+             ; reseeding = _
+             } as symbol_state)
+          =
           get_symbol_state config context symbol
         in
+        let half_spread = half_spread_cents bbo in
+        let skewed_fair_value_cents =
+          skewed_fair_value config fair_value_cents inventory
+        in
+        symbol_state.quoted <- Some (skewed_fair_value_cents, half_spread);
         Deferred.List.iter
           ~how:`Parallel
           (List.init config.num_levels ~f:Fn.id)
           ~f:(fun level ->
-            let offset = half_spread_cents bbo + level in
-            let skewed_fair_value_cents =
-              skewed_fair_value config fair_value_cents inventory
-            in
+            let offset = half_spread + level in
             let buy_client_order_id =
               new_client_order_id config |> Client_order_id.of_int
             in
@@ -208,9 +249,64 @@ let seed_book
   return ()
 ;;
 
+(* Cancels every resting order on both sides for [symbol] and clears the
+   local books. We cancel both sides (not just a just-filled one) because a
+   fill or a BBO move shifts the skewed fair value, so quotes on *both* sides
+   are stale and get re-seeded together — see [reseed]. *)
+let cancel_all_orders (config : Config.t) context symbol =
+  let { asks
+      ; bids
+      ; inventory = _
+      ; fair_value_cents = _
+      ; bbo = _
+      ; quoted = _
+      ; reseeding = _
+      }
+    =
+    get_symbol_state config context symbol
+  in
+  let cancel_ids ids =
+    Deferred.List.iter ~how:`Sequential (Hash_set.to_list ids) ~f:(fun id ->
+      Context.cancel context id >>| (ignore : _ -> unit))
+  in
+  let%bind () = cancel_ids bids in
+  let%bind () = cancel_ids asks in
+  set_symbol_bids
+    config
+    context
+    symbol
+    (Hash_set.create (module Client_order_id) ~size:config.num_levels);
+  set_symbol_asks
+    config
+    context
+    symbol
+    (Hash_set.create (module Client_order_id) ~size:config.num_levels);
+  return ()
+;;
+
+(* Cancel-then-reseed [symbol], guarded so two triggers (the initial seed, a
+   fill, a BBO move) can't run this concurrently for the same symbol — see
+   [symbol_state.reseeding]. This is the *only* place that seeds or re-seeds
+   a book; [on_start] goes through it too, so a [Best_bid_offer_update]
+   arriving while the initial seed is still in flight can't race it. *)
+let reseed (config : Config.t) context symbol =
+  let symbol_state = get_symbol_state config context symbol in
+  if symbol_state.reseeding
+  then return ()
+  else (
+    symbol_state.reseeding <- true;
+    let%bind () = cancel_all_orders config context symbol in
+    let%bind () = seed_book config context [ symbol ] in
+    symbol_state.reseeding <- false;
+    return ())
+;;
+
 let on_start config context =
   update_all_fair_prices config context;
-  seed_book config context (Hashtbl.keys config.state)
+  Deferred.List.iter
+    ~how:(`Max_concurrent_jobs 64)
+    (Hashtbl.keys config.state)
+    ~f:(reseed config context)
 ;;
 
 (* No tick-driven quoting — the market maker reacts to events. A tick only
@@ -222,7 +318,15 @@ let on_tick (config : Config.t) context =
       ~f:
         (fun
           ~key:symbol
-          ~data:{ asks; bids; inventory; fair_value_cents; bbo }
+          ~data:
+            { asks
+            ; bids
+            ; inventory
+            ; fair_value_cents
+            ; bbo
+            ; quoted = _
+            ; reseeding = _
+            }
         ->
         print_endline
           [%string "\nSTART for %{symbol#Symbol}===================="];
@@ -267,7 +371,15 @@ let on_event config context event =
      Inventory accumulates signed [fill.size] (cents-per-*share* skew), not a
      +/-1 order count. *)
   let update_books side symbol size : unit =
-    let { asks = _; bids = _; inventory; fair_value_cents = _; bbo = _ } =
+    let { asks = _
+        ; bids = _
+        ; inventory
+        ; fair_value_cents = _
+        ; bbo = _
+        ; quoted = _
+        ; reseeding = _
+        }
+      =
       get_symbol_state config context symbol
     in
     set_symbol_inventory
@@ -277,35 +389,6 @@ let on_event config context event =
       (!inventory + match (side : Side.t) with Buy -> size | Sell -> -size)
   in
   (* TODO keep track of Cancel_reject. would mess up our books *)
-  (* Cancels every resting order on both sides for [symbol] and clears the
-     local books. We cancel both sides (not just the filled one) because a
-     fill moves inventory, which shifts the skewed fair value, so quotes
-     on *both* sides are stale and get re-seeded together — see the [Fill]
-     arm. *)
-  let cancel_all_orders symbol =
-    let { asks; bids; inventory = _; fair_value_cents = _; bbo = _ } =
-      get_symbol_state config context symbol
-    in
-    let cancel_ids ids =
-      Deferred.List.iter
-        ~how:`Sequential
-        (Hash_set.to_list ids)
-        ~f:(fun id -> Context.cancel context id >>| (ignore : _ -> unit))
-    in
-    let%bind () = cancel_ids bids in
-    let%bind () = cancel_ids asks in
-    set_symbol_bids
-      config
-      context
-      symbol
-      (Hash_set.create (module Client_order_id) ~size:config.num_levels);
-    set_symbol_asks
-      config
-      context
-      symbol
-      (Hash_set.create (module Client_order_id) ~size:config.num_levels);
-    return ()
-  in
   (* This is where we actually match and handle all events *)
   let%bind () =
     match (event : Exchange_event.t) with
@@ -320,21 +403,43 @@ let on_event config context event =
          raises for a symbol outside our config. So look up the existing
          state and ignore data for anything we don't trade. *)
       (match Hashtbl.find config.state symbol with
-       | None -> ()
+       | None -> return ()
        | Some curr_symbol_state ->
-         set_symbol_state config symbol { curr_symbol_state with bbo });
-      return ()
-      (* TODO: maybe adjust some of the config stuff based on BBO *)
+         set_symbol_state config symbol { curr_symbol_state with bbo };
+         (* Re-quote only if the market actually moved enough to change where
+            we'd quote -- comparing the target [(skewed_fair, half_spread)]
+            against what's already resting, not just "did the BBO change", so
+            a reseed (which itself moves the BBO) doesn't trigger another
+            reseed forever. *)
+         let target =
+           ( skewed_fair_value
+               config
+               curr_symbol_state.fair_value_cents
+               curr_symbol_state.inventory
+           , half_spread_cents bbo )
+         in
+         if [%equal: (int * int) option]
+              (Some target)
+              curr_symbol_state.quoted
+         then return ()
+         else reseed config context symbol)
     | Order_cancel _ -> return ()
     | Fill fill ->
       let side = side_of_fill fill in
       update_books side fill.symbol (Size.to_int fill.size);
-      let%bind () = cancel_all_orders fill.symbol in
-      seed_book config context [ fill.symbol ]
+      reseed config context fill.symbol
     | Order_reject { request; reason = _; participant = _ } ->
       (* A rejected order never rests, so drop it from the book we
          optimistically added it to at submit time. *)
-      let { asks; bids; inventory = _; fair_value_cents = _; bbo = _ } =
+      let { asks
+          ; bids
+          ; inventory = _
+          ; fair_value_cents = _
+          ; bbo = _
+          ; quoted = _
+          ; reseeding = _
+          }
+        =
         get_symbol_state config context request.symbol
       in
       (match request.side with
