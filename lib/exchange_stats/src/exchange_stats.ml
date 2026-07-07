@@ -99,6 +99,14 @@ module Gc_snapshot = struct
   ;;
 end
 
+module Top_of_book = struct
+  type t =
+    { symbol : Symbol.t
+    ; bbo : Bbo.t
+    }
+  [@@deriving sexp, bin_io]
+end
+
 type t =
   { seq : int
   ; gc : Gc_snapshot.t
@@ -110,5 +118,6 @@ type t =
   ; request_queue_depth : int
   ; matching_loop_busy_us : float
   ; per_participant : Participant_stats.t list
+  ; top_of_book : Top_of_book.t list
   }
 [@@deriving sexp, bin_io]

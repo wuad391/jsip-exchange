@@ -101,6 +101,20 @@ module Display = struct
     }
   [@@deriving sexp_of, equal]
 
+  (* One symbol's top of book, formatted for display: best bid/ask as dollar
+     strings with their sizes, and the spread. Each side is [None] when that
+     side of the book is empty. The only pane showing market state rather than
+     process health. *)
+  type book_row =
+    { symbol : string
+    ; bid : string option
+    ; bid_size : int option
+    ; ask : string option
+    ; ask_size : int option
+    ; spread : string option
+    }
+  [@@deriving sexp_of, equal]
+
   type t =
     { seq : int
     ; live_mb_series : float list
@@ -116,6 +130,7 @@ module Display = struct
     ; occupancy : occupancy_row list
     ; loop_busy_series : float list
     ; loop_busy_us : float
+    ; books : book_row list
     }
   [@@deriving sexp_of, equal]
 end
@@ -168,6 +183,32 @@ let participants_display window : Display.participant_row list =
       | c -> c)
 ;;
 
+(* Market state from the newest snapshot: each traded symbol's best bid/ask as
+   dollar strings with sizes, and the spread. Empty sides stay [None]. *)
+let books_display window : Display.book_row list =
+  match List.last window with
+  | None -> []
+  | Some (current : Exchange_stats.t) ->
+    List.map current.top_of_book ~f:(fun (b : Exchange_stats.Top_of_book.t) ->
+      let bbo : Jsip_types.Bbo.t = b.bbo in
+      let price (level : Jsip_types.Level.t option) =
+        Option.map level ~f:(fun l ->
+          Jsip_types.Price.to_string_dollar l.price)
+      in
+      let size (level : Jsip_types.Level.t option) =
+        Option.map level ~f:(fun l -> Jsip_types.Size.to_int l.size)
+      in
+      { Display.symbol = Jsip_types.Symbol.to_string b.symbol
+      ; bid = price bbo.bid
+      ; bid_size = size bbo.bid
+      ; ask = price bbo.ask
+      ; ask_size = size bbo.ask
+      ; spread =
+          Jsip_types.Bbo.spread bbo
+          |> Option.map ~f:Jsip_types.Price.to_string_dollar
+      })
+;;
+
 let display t : Display.t =
   let window = snapshots t in
   let current = latest t in
@@ -193,5 +234,6 @@ let display t : Display.t =
       ]
   ; loop_busy_series = List.map window ~f:loop_busy_us
   ; loop_busy_us = Option.value_map current ~default:0. ~f:loop_busy_us
+  ; books = books_display window
   }
 ;;

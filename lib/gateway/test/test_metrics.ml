@@ -15,6 +15,7 @@ let%expect_test "window folds counts / per-participant / busy, then resets" =
     Metrics.create
       ~dispatcher
       ~matching_engine:engine
+      ~symbols:[ Symbol.of_string "AAPL" ]
       ~request_queue_length:(fun () -> 7)
   in
   let alice = Participant.of_string "alice" in

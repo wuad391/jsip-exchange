@@ -89,6 +89,18 @@ module Gc_snapshot : sig
   val of_stat : Core.Gc.Stat.t -> t
 end
 
+(** Best bid and offer for one traded symbol at snapshot time — the actual
+    market state, where every other field here is process health. A side is
+    [None] when that side of the book is empty; {!Jsip_types.Bbo.spread} gives
+    the ask-minus-bid spread when both are present. *)
+module Top_of_book : sig
+  type t =
+    { symbol : Symbol.t
+    ; bbo : Bbo.t
+    }
+  [@@deriving sexp, bin_io]
+end
+
 type t =
   { seq : int (** Monotonic snapshot index; the dashboard orders by it. *)
   ; gc : Gc_snapshot.t
@@ -105,5 +117,7 @@ type t =
       (match + dispatch) this window. Grows when individual operations get
       costlier, e.g. matching against a bloated book. *)
   ; per_participant : Participant_stats.t list
+  ; top_of_book : Top_of_book.t list
+  (** Best bid/ask per traded symbol at snapshot time. *)
   }
 [@@deriving sexp, bin_io]

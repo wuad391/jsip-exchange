@@ -14,6 +14,7 @@ let sample_interval = Time_ns.Span.of_sec 1.
 type t =
   { dispatcher : Dispatcher.t
   ; matching_engine : Matching_engine.t
+  ; symbols : Symbol.t list
   ; request_queue_length : unit -> int
   ; mutable seq : int
   ; submit_samples : float Queue.t
@@ -27,9 +28,10 @@ type t =
   ; subscribers : Exchange_stats.t Pipe.Writer.t Bag.t
   }
 
-let create ~dispatcher ~matching_engine ~request_queue_length =
+let create ~dispatcher ~matching_engine ~symbols ~request_queue_length =
   { dispatcher
   ; matching_engine
+  ; symbols
   ; request_queue_length
   ; seq = 0
   ; submit_samples = Queue.create ()
@@ -127,6 +129,13 @@ let snapshot t : Exchange_stats.t =
   ; request_queue_depth = t.request_queue_length ()
   ; matching_loop_busy_us = t.busy_max_us
   ; per_participant = per_participant t
+  ; top_of_book =
+      List.map t.symbols ~f:(fun symbol ->
+        let bbo =
+          Matching_engine.book t.matching_engine symbol
+          |> Option.value_map ~default:Bbo.empty ~f:Order_book.best_bid_offer
+        in
+        { Exchange_stats.Top_of_book.symbol; bbo })
   }
 ;;
 

@@ -22,7 +22,7 @@ let muted = "#93a4bd"
 (* One accent per pane. *)
 let c_memory = "#3fb950"
 let c_submit = "#58a6ff"
-let c_cancel = "#f0883e"
+let c_book = "#f0883e"
 let c_parts = "#bc8cff"
 let c_occupancy = "#39c5cf"
 let c_loop = "#e3b341"
@@ -206,6 +206,72 @@ let render_participants (rows : Display.participant_row list) =
     ]
 ;;
 
+(* The one pane that shows market state rather than process health: per-symbol
+   best bid/ask and spread. Bid is tinted like the buy side, ask like the sell
+   side, so the two columns read apart without reading the header. *)
+let render_book (rows : Display.book_row list) =
+  let th ~align s =
+    Vdom.Node.create
+      "th"
+      ~attrs:
+        [ style
+            [%string
+              "text-align:%{align};color:%{muted};font-size:11px;font-weight:600;padding:3px 6px;border-bottom:1px solid %{border}"]
+        ]
+      [ Vdom.Node.text s ]
+  in
+  let td ?(color = fg) ~align s =
+    Vdom.Node.create
+      "td"
+      ~attrs:
+        [ style
+            [%string
+              "text-align:%{align};color:%{color};font-size:13px;padding:3px 6px;font-variant-numeric:tabular-nums"]
+        ]
+      [ Vdom.Node.text s ]
+  in
+  (* Best price with its resting size, e.g. [$149.90 × 10]; [—] when that side
+     of the book is empty. *)
+  let quote price size =
+    match price, size with
+    | Some p, Some s -> [%string "%{p} × %{s#Int}"]
+    | _ -> "—"
+  in
+  let header =
+    Vdom.Node.create
+      "tr"
+      ~attrs:[]
+      [ th ~align:"left" "symbol"
+      ; th ~align:"right" "bid"
+      ; th ~align:"right" "ask"
+      ; th ~align:"right" "spread"
+      ]
+  in
+  let row (r : Display.book_row) =
+    Vdom.Node.create
+      "tr"
+      ~attrs:[]
+      [ td ~align:"left" r.symbol
+      ; td ~color:color_live ~align:"right" (quote r.bid r.bid_size)
+      ; td ~color:color_p99 ~align:"right" (quote r.ask r.ask_size)
+      ; td ~color:muted ~align:"right" (Option.value r.spread ~default:"—")
+      ]
+  in
+  panel
+    ~accent:c_book
+    ~title:"Top of book"
+    [ (match rows with
+       | [] -> text ~color:muted "(no market data yet)"
+       | _ :: _ ->
+         Vdom.Node.create
+           "table"
+           ~attrs:[ style "width:100%;border-collapse:collapse" ]
+           [ Vdom.Node.create "thead" ~attrs:[] [ header ]
+           ; Vdom.Node.create "tbody" ~attrs:[] (List.map rows ~f:row)
+           ])
+    ]
+;;
+
 let render_occupancy (rows : Display.occupancy_row list) =
   let row (r : Display.occupancy_row) =
     Vdom.Node.div
@@ -274,6 +340,7 @@ let view (display : Display.t option) =
       [ grid
           [ render_memory d
           ; render_order_latency d
+          ; render_book d.books
           ; render_participants d.participants
           ; render_occupancy d.occupancy
           ; render_loop d

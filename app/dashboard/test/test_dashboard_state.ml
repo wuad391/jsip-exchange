@@ -21,6 +21,7 @@ let snap ~seq ~minor ~major : Exchange_stats.t =
   ; request_queue_depth = 0
   ; matching_loop_busy_us = 0.
   ; per_participant = []
+  ; top_of_book = []
   }
 ;;
 
@@ -102,6 +103,7 @@ let%expect_test "display projects the window into render-ready pane data" =
           ; resting_orders = 0
           }
         ]
+    ; top_of_book = []
     }
   in
   let t =
@@ -133,5 +135,37 @@ let%expect_test "display projects the window into render-ready pane data" =
      (market_data
       ((label "market data") (max_depth 7) (total_depth 12) (num_pipes 4)
        (max_depth_series (0 7)))))
+    |}]
+;;
+
+(* The top-of-book projection: prices become dollar strings paired with their
+   sizes, the spread is present only when both sides are, and an empty side
+   projects to [None]. Built off [snap] with a record-update so only
+   [top_of_book] varies from the zeroed baseline. *)
+let%expect_test "top-of-book projects bid/ask/spread per symbol" =
+  let level cents size : Jsip_types.Level.t =
+    { price = Jsip_types.Price.of_int_cents cents
+    ; size = Jsip_types.Size.of_int size
+    }
+  in
+  let book symbol (bbo : Jsip_types.Bbo.t) : Exchange_stats.Top_of_book.t =
+    { symbol = Jsip_types.Symbol.of_string symbol; bbo }
+  in
+  let two_sided =
+    book "AAPL" { bid = Some (level 14990 10); ask = Some (level 15010 8) }
+  in
+  let bid_only = book "TSLA" { bid = Some (level 25000 4); ask = None } in
+  let curr =
+    { (snap ~seq:1 ~minor:0 ~major:0) with
+      top_of_book = [ two_sided; bid_only ]
+    }
+  in
+  let d = Dashboard_state.display (Dashboard_state.of_snapshots [ curr ]) in
+  print_s [%sexp (d.books : Dashboard_state.Display.book_row list)];
+  [%expect {|
+    (((symbol AAPL) (bid ($149.90)) (bid_size (10)) (ask ($150.10))
+      (ask_size (8)) (spread ($0.20)))
+     ((symbol TSLA) (bid ($250.00)) (bid_size (4)) (ask ()) (ask_size ())
+      (spread ())))
     |}]
 ;;

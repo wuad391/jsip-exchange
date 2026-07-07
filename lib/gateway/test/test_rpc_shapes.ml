@@ -126,7 +126,7 @@ let%expect_test "exchange-stats RPC" =
     {|
     (Streaming_rpc (query 86ba5df747eec837f0b391dd49f33f9e)
      (initial_response 86ba5df747eec837f0b391dd49f33f9e)
-     (update_response d74c090b153a29fbe2fbf8e1bb930a36)
+     (update_response b441a526e58251272920761a3f617b8a)
      (error 52966f4a49a77bfdff668e9cc61511b3))
     |}];
   return ()
