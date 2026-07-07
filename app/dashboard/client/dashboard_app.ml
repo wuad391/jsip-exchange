@@ -114,17 +114,12 @@ let render_memory (d : Display.t) =
     ]
 ;;
 
-let render_latency ~accent ~title (l : Display.latency) =
-  panel
-    ~accent
-    ~title
-    [ legend
-        [ color_p50, "p50"
-        ; color_p90, "p90"
-        ; color_p99, "p99"
-        ; color_max, "max"
-        ]
+let latency_block ~label (l : Display.latency) =
+  Vdom.Node.div
+    ~attrs:[ style "display:flex;flex-direction:column;gap:6px" ]
+    [ text ~color:muted ~size:"11px" ~weight:"600" label
     ; Svg_chart.line_chart
+        ~height:60
         [ color_p50, l.p50_series
         ; color_p90, l.p90_series
         ; color_p99, l.p99_series
@@ -137,6 +132,23 @@ let render_latency ~accent ~title (l : Display.latency) =
         ; tile ~color:color_max ~label:"max" ~value:(fmt_us l.max_us) ()
         ; tile ~label:"per sec" ~value:(Int.to_string l.per_sec) ()
         ]
+    ]
+;;
+
+(* Submit and cancel latency share the same percentile colors and axis, so
+   they sit stacked in a single pane under one legend. *)
+let render_order_latency (d : Display.t) =
+  panel
+    ~accent:c_submit
+    ~title:"Order latency"
+    [ legend
+        [ color_p50, "p50"
+        ; color_p90, "p90"
+        ; color_p99, "p99"
+        ; color_max, "max"
+        ]
+    ; latency_block ~label:"Submit (enqueue → matched)" d.submit
+    ; latency_block ~label:"Cancel" d.cancel
     ]
 ;;
 
@@ -261,11 +273,7 @@ let view (display : Display.t option) =
     | Some d ->
       [ grid
           [ render_memory d
-          ; render_latency
-              ~accent:c_submit
-              ~title:"Submit latency (enqueue → matched)"
-              d.submit
-          ; render_latency ~accent:c_cancel ~title:"Cancel latency" d.cancel
+          ; render_order_latency d
           ; render_participants d.participants
           ; render_occupancy d.occupancy
           ; render_loop d
