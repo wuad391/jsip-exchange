@@ -26,7 +26,12 @@ let default_symbols =
 (* No session-feed subscription here: [connect_as] only drives the seed
    market makers in [trade_back_and_forth], which submit static ladders via
    [Market_maker.seed_book] and never react to fills, so they have no need to
-   consume their session feed. *)
+   consume their session feed.
+
+   This always connects in plaintext and logs in via [login_rpc]. If the
+   server is started with TLS enabled, [-trade-back-and-forth] won't be able
+   to log in until these seed bots are migrated to present their own
+   certificates too -- not done in this pass. *)
 let connect_as ~where_to_connect participant =
   let%bind conn = Rpc.Connection.client where_to_connect >>| Result.ok_exn in
   let%bind login_result =
@@ -192,9 +197,22 @@ let trade_back_and_forth ~where_to_connect =
     ]
 ;;
 
-let start ~port ~market_maker_behavior =
+let transport_of_flags ~crt_file ~key_file ~ca_file =
+  match crt_file, key_file, ca_file with
+  | None, None, None -> Exchange_server.Plaintext
+  | Some crt_file, Some key_file, Some ca_file ->
+    Exchange_server.Tls
+      (Tls_config.server_config ~crt_file ~key_file ~ca_file)
+  | _, _, _ ->
+    raise_s
+      [%message
+        "-cert, -key, and -ca-file must all be given together, or all \
+         omitted (to run without TLS)"]
+;;
+
+let start ~port ~market_maker_behavior ~transport =
   let%bind server =
-    Exchange_server.start ~symbols:default_symbols ~port ()
+    Exchange_server.start ~symbols:default_symbols ~port ~transport ()
   in
   let where_to_connect =
     Tcp.Where_to_connect.of_host_and_port { host = "localhost"; port }
@@ -237,7 +255,23 @@ let () =
                 traffic for the monitor (mutually exclusive with \
                 -seed-market-maker)"
          ]
+     and crt_file =
+       flag
+         "-cert"
+         (optional string)
+         ~doc:
+           "FILE server certificate; enables TLS (requires -key and \
+            -ca-file too)"
+     and key_file =
+       flag "-key" (optional string) ~doc:"FILE server private key"
+     and ca_file =
+       flag
+         "-ca-file"
+         (optional string)
+         ~doc:"FILE CA certificate used to verify connecting clients"
      and () = Log.Global.set_level_via_param () in
-     fun () -> start ~port ~market_maker_behavior)
+     fun () ->
+       let transport = transport_of_flags ~crt_file ~key_file ~ca_file in
+       start ~port ~market_maker_behavior ~transport)
   |> Command_unix.run
 ;;

@@ -9,6 +9,7 @@
   jsip_scenario_runner
   jsip_market_maker
   async
+  async_ssl
   core)
  (preprocess
   (pps ppx_jane)))

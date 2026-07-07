@@ -87,7 +87,36 @@ let start_matching_loop ~engine ~dispatcher ~metrics message_reader =
            ~busy:(Time_ns.diff done_at before)))
 ;;
 
-let start ~symbols ~port () =
+(* [Plaintext] is today's unauthenticated TCP; participant identity comes
+   entirely from whatever name a client passes to [login_rpc]. [Tls]
+   terminates connections in mutual TLS instead -- every client must present
+   a certificate signed by the configured CA, and the participant is
+   established directly from that certificate's CN (see
+   {!Tls_config.participant_of_peer_cert}); [login_rpc] is never called on a
+   TLS connection. *)
+type transport =
+  | Plaintext
+  | Tls of Async_ssl.Config.Server.t
+
+(* Shared by both [login_rpc] (plaintext) and the TLS accept path: reject a
+   participant name that's already logged in elsewhere, otherwise register a
+   fresh session for them. *)
+let establish_session dispatcher participant =
+  if Dispatcher.is_active dispatcher participant
+  then
+    return
+      (Or_error.error_string
+         [%string
+           "Participant %{participant#Participant} already has a session \
+            active."])
+  else (
+    let%bind () = Dispatcher.set_up_session dispatcher participant in
+    match Dispatcher.lookup_session dispatcher participant with
+    | None -> return (Or_error.error_string "This should not be possible")
+    | Some session -> return (Ok session))
+;;
+
+let start ?(transport = Plaintext) ~symbols ~port () =
   let engine = Matching_engine.create symbols in
   let dispatcher = Dispatcher.create () in
   let message_reader, message_writer = Pipe.create () in
@@ -172,29 +201,14 @@ let start ~symbols ~port () =
                       "Whitespace names not allowed for login_rpc")
                else (
                  let participant = Participant.of_string participant_str in
-                 if Dispatcher.is_active dispatcher participant
-                 then
-                   return
-                     (Or_error.error_string
-                        [%string
-                          "Participant %{(participant_str)#String} already \
-                           has a session active."])
-                 else (
-                   let%bind () =
-                     Dispatcher.set_up_session dispatcher participant
-                   in
-                   let has_active_session =
-                     Dispatcher.lookup_session dispatcher participant
-                   in
-                   match has_active_session with
-                   | None ->
-                     return
-                       (Or_error.error_string "This should not be possible")
-                   | Some session ->
-                     let () =
-                       Connection_state.update_session state session
-                     in
-                     return (Ok participant))))
+                 let%bind session_result =
+                   establish_session dispatcher participant
+                 in
+                 match session_result with
+                 | Error _ as error -> return error
+                 | Ok session ->
+                   Connection_state.update_session state session;
+                   return (Ok participant)))
         ; Rpc.Pipe_rpc.implement
             Rpc_protocol.session_feed_rpc
             (fun state () ->
@@ -214,20 +228,53 @@ let start ~symbols ~port () =
       ~on_exception:Log_on_background_exn
   in
   let%map tcp_server =
-    Rpc.Connection.serve
-      ~implementations
-      ~initial_connection_state:(fun _addr _conn ->
-        let new_state : Connection_state.t = { session = None } in
-        let close_connection =
-          let%bind () = Rpc.Connection.close_finished _conn in
-          match new_state.session with
-          | None -> return ()
-          | Some session -> Dispatcher.clean_up_session dispatcher session
-        in
-        don't_wait_for close_connection;
-        new_state)
-      ~where_to_listen:(Tcp.Where_to_listen.of_port port)
-      ()
+    match transport with
+    | Plaintext ->
+      Rpc.Connection.serve
+        ~implementations
+        ~initial_connection_state:(fun _addr _conn ->
+          let new_state : Connection_state.t = { session = None } in
+          let close_connection =
+            let%bind () = Rpc.Connection.close_finished _conn in
+            match new_state.session with
+            | None -> return ()
+            | Some session -> Dispatcher.clean_up_session dispatcher session
+          in
+          don't_wait_for close_connection;
+          new_state)
+        ~where_to_listen:(Tcp.Where_to_listen.of_port port)
+        ()
+    | Tls tls_config ->
+      Async_ssl.Tls.listen
+        tls_config
+        (Tcp.Where_to_listen.of_port port)
+        ~on_handler_error:
+          (`Call
+            (fun _addr exn ->
+              Log.Global.error
+                "%s"
+                [%string "TLS connection error: %{Exn.to_string exn}"]))
+        ~f:(fun _addr ssl_conn reader writer ->
+          let participant =
+            Tls_config.participant_of_peer_cert ssl_conn |> Or_error.ok_exn
+          in
+          let%bind session_result =
+            establish_session dispatcher participant
+          in
+          let session = Or_error.ok_exn session_result in
+          let new_state : Connection_state.t = { session = Some session } in
+          let%bind conn_result =
+            Rpc.Connection.create
+              ~implementations
+              ~connection_state:(fun _ -> new_state)
+              reader
+              writer
+          in
+          match conn_result with
+          | Error exn -> raise exn
+          | Ok conn ->
+            let%bind () = Rpc.Connection.close_finished conn in
+            Dispatcher.clean_up_session dispatcher session)
   in
   let actual_port = Tcp.Server.listening_on tcp_server in
   { engine; dispatcher; message_writer; tcp_server; port = actual_port }
