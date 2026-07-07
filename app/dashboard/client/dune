@@ -9,6 +9,7 @@
   bonsai
   bonsai_web
   virtual_dom
+  jsip_types
   jsip_exchange_stats
   jsip_dashboard
   jsip_dashboard_protocol)
