@@ -30,7 +30,9 @@ let snap seq : Exchange_stats.t =
 let window seqs = List.map seqs ~f:snap
 let seqs w = List.map w ~f:(fun (s : Exchange_stats.t) -> s.seq)
 
-let%expect_test "still filling: diff is the new snapshots, update appends them" =
+let%expect_test "still filling: diff is the new snapshots, update appends \
+                 them"
+  =
   let from = window [ 3; 4; 5 ] in
   let to_ = window [ 3; 4; 5; 6; 7 ] in
   let diff = Window.diffs ~from ~to_ in

@@ -17,6 +17,7 @@
 ; The browser half is a separate js_of_ocaml executable; copy its compiled
 ; bundle next to this server exe so [static_handler] can serve it (it resolves
 ; [main.bc.js] relative to the running exe).
+
 (rule
  (target main.bc.js)
  (deps ../client/main.bc.js)

@@ -37,7 +37,6 @@ let text ?(color = fg) ?(size = "13px") ?(weight = "400") s =
 ;;
 
 let d1 x = Float.to_string_hum x ~decimals:1 ~strip_zero:false
-
 let fmt_mb mb = [%string "%{d1 mb} MB"]
 
 let fmt_us us =
@@ -51,7 +50,8 @@ let panel ~title children =
     ~attrs:
       [ style
           [%string
-            "background:%{panel_bg};border:1px solid %{border};border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px"]
+            "background:%{panel_bg};border:1px solid \
+             %{border};border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px"]
       ]
     (text ~size:"14px" ~weight:"600" title :: children)
 ;;
@@ -65,9 +65,7 @@ let tile ~label ~value =
 ;;
 
 let tiles cells =
-  Vdom.Node.div
-    ~attrs:[ style "display:flex;gap:16px;flex-wrap:wrap" ]
-    cells
+  Vdom.Node.div ~attrs:[ style "display:flex;gap:16px;flex-wrap:wrap" ] cells
 ;;
 
 let render_memory (d : Display.t) =
@@ -105,7 +103,9 @@ let render_latency ~title (l : Display.latency) =
 ;;
 
 let render_participants (rows : Display.participant_row list) =
-  let columns = "display:grid;grid-template-columns:1fr auto auto;gap:12px" in
+  let columns =
+    "display:grid;grid-template-columns:1fr auto auto;gap:12px"
+  in
   let header =
     Vdom.Node.div
       ~attrs:[ style columns ]
@@ -134,7 +134,8 @@ let render_occupancy (rows : Display.occupancy_row list) =
     Vdom.Node.div
       ~attrs:[ style "display:flex;flex-direction:column;gap:4px" ]
       [ Vdom.Node.div
-          ~attrs:[ style "display:flex;justify-content:space-between;gap:8px" ]
+          ~attrs:
+            [ style "display:flex;justify-content:space-between;gap:8px" ]
           [ text r.label
           ; text
               ~color:muted
@@ -143,7 +144,9 @@ let render_occupancy (rows : Display.occupancy_row list) =
                 "max %{r.max_depth#Int} · total %{r.total_depth#Int} · \
                  %{r.num_pipes#Int} pipes"]
           ]
-      ; Svg_chart.line_chart ~height:28 [ color_occupancy, r.max_depth_series ]
+      ; Svg_chart.line_chart
+          ~height:28
+          [ color_occupancy, r.max_depth_series ]
       ]
   in
   panel ~title:"Pipe occupancy" (List.map rows ~f:row)
@@ -172,12 +175,13 @@ let grid children =
 let view (display : Display.t option) =
   let body =
     match display with
-    | None ->
-      [ text ~color:muted "Connecting to the dashboard server…" ]
+    | None -> [ text ~color:muted "Connecting to the dashboard server…" ]
     | Some d ->
       [ grid
           [ render_memory d
-          ; render_latency ~title:"Submit latency (enqueue → matched)" d.submit
+          ; render_latency
+              ~title:"Submit latency (enqueue → matched)"
+              d.submit
           ; render_latency ~title:"Cancel latency" d.cancel
           ; render_participants d.participants
           ; render_occupancy d.occupancy

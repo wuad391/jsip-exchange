@@ -1,10 +1,10 @@
 (** Pure rolling-window state for the monitoring dashboard.
 
-    Folds the per-second {!Jsip_exchange_stats.Exchange_stats.t} snapshots the
-    exchange streams into a bounded window (the last {!max_window} seconds) and
-    projects it into render-ready {!Display} data. Holds no Async and no Bonsai
-    state, so it is fully testable as plain data — the analog of
-    [app/monitor]'s [Controller]. *)
+    Folds the per-second {!Jsip_exchange_stats.Exchange_stats.t} snapshots
+    the exchange streams into a bounded window (the last {!max_window}
+    seconds) and projects it into render-ready {!Display} data. Holds no
+    Async and no Bonsai state, so it is fully testable as plain data — the
+    analog of [app/monitor]'s [Controller]. *)
 
 open! Core
 open Jsip_exchange_stats
@@ -47,9 +47,9 @@ val of_snapshots : Exchange_stats.t list -> t
 
 (** The render-ready projection the Bonsai layer draws: chart series (oldest
     first) and current-second readouts for every pane. Decoupled from any
-    Bonsai/Vdom type so the pane math — words to megabytes, percentile series,
-    busiest-sender ranking, pipe occupancy — is testable as plain data, the
-    analog of [Controller.Display]. *)
+    Bonsai/Vdom type so the pane math — words to megabytes, percentile
+    series, busiest-sender ranking, pipe occupancy — is testable as plain
+    data, the analog of [Controller.Display]. *)
 module Display : sig
   (** One RPC class's latency: a line per percentile over the window plus the
       current second's readouts, with [per_sec] the throughput that second. *)
@@ -76,7 +76,8 @@ module Display : sig
   [@@deriving sexp_of, equal]
 
   (** One pipe category's occupancy: current depths plus a line of the max
-      single-pipe depth over the window (the smoking gun for a slow consumer). *)
+      single-pipe depth over the window (the smoking gun for a slow
+      consumer). *)
   type occupancy_row =
     { label : string
     ; max_depth : int

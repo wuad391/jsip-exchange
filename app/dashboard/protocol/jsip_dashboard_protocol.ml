@@ -2,10 +2,11 @@ open! Core
 open Jsip_exchange_stats
 
 (* The browser polls this [Polling_state_rpc] once a second. It carries the
-   rolling window of per-second snapshots, but between polls only the snapshots
-   the client is missing cross the wire (see [Jsip_dashboard.Window]), so the
-   transport scales to larger snapshots without re-sending the whole window
-   each time. Bonsai's [Rpc_effect] can poll this directly. *)
+   rolling window of per-second snapshots, but between polls only the
+   snapshots the client is missing cross the wire (see
+   [Jsip_dashboard.Window]), so the transport scales to larger snapshots
+   without re-sending the whole window each time. Bonsai's [Rpc_effect] can
+   poll this directly. *)
 let stats_rpc =
   Polling_state_rpc.create
     ~name:"dashboard-stats"

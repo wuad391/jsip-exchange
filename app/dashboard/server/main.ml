@@ -74,9 +74,9 @@ let serve ~http_port ~window =
       ~on_unknown_rpc:`Close_connection
       ~on_exception:Close_connection
   in
-  (* [Polling_state_rpc] tracks per-client diff state keyed by the connection,
-     so the implementation's connection state must carry the [Rpc.Connection.t]
-     alongside our own (empty) state. *)
+  (* [Polling_state_rpc] tracks per-client diff state keyed by the
+     connection, so the implementation's connection state must carry the
+     [Rpc.Connection.t] alongside our own (empty) state. *)
   Rpc_websocket.Rpc.serve
     ~where_to_listen:(Tcp.Where_to_listen.of_port http_port)
     ~implementations
