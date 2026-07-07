@@ -10,24 +10,31 @@ let description =
    trader."
 ;;
 
-(* A single liquid symbol at $150.00 keeps the pathology easy to watch. *)
-let aapl = Symbol.of_string "AAPL"
-let symbols = [ aapl ]
+(* Three liquid symbols so the storm's cancel pressure lands on more than one
+   book at once -- a single-symbol storm under-exercises anything (like the
+   monitor) that needs to track several books changing independently. *)
+let symbol_table =
+  [ Symbol.of_string "AAPL", 15000
+  ; Symbol.of_string "GOOG", 28000
+  ; Symbol.of_string "MSFT", 41000
+  ]
+;;
+
+let symbols = List.map symbol_table ~f:fst
 
 (* The market maker quotes with this half-spread when it has no BBO (its
    default), so the storm's marketable orders must reach past it to cross. *)
 let market_maker_half_spread_cents = 50
 
 let oracle_config : Jsip_fundamental.Fundamental_oracle.Config.t =
-  Symbol.Map.of_alist_exn
-    [ ( aapl
-      , { Jsip_fundamental.Fundamental_oracle.Config.initial_price_cents =
-            15000
-        ; volatility_cents_per_sec = 10.0
-        ; mean_reversion_strength = 0.1
-        ; tick_interval = Time_ns.Span.of_sec 0.2
-        } )
-    ]
+  List.map symbol_table ~f:(fun (symbol, initial_price_cents) ->
+    ( symbol
+    , { Jsip_fundamental.Fundamental_oracle.Config.initial_price_cents
+      ; volatility_cents_per_sec = 10.0
+      ; mean_reversion_strength = 0.1
+      ; tick_interval = Time_ns.Span.of_sec 0.2
+      } ))
+  |> Symbol.Map.of_alist_exn
 ;;
 
 (* A market maker gives the storm a two-sided book to cancel against and to
@@ -69,15 +76,16 @@ let noise_trader_spec =
     }
 ;;
 
-(* 25 cycles every 0.1s per bot -> ~250 submit+cancel pairs/sec each.
-   Distinct names and seeds so the copies churn independently. *)
+(* 50 cycles every 0.1s per bot -> ~500 submit+cancel pairs/sec each, spread
+   randomly across all three symbols. Distinct names and seeds so the copies
+   churn independently. *)
 let cancel_storm_spec ~index =
   Bot_spec.T
     { bot = (module Jsip_bots.Cancel_storm)
     ; config =
         Jsip_bots.Cancel_storm.create_config
           ~symbols
-          ~cycles_per_tick:25
+          ~cycles_per_tick:50
           ~size:50
           ~pct_marketable:20
           ~price_offset_cents:(market_maker_half_spread_cents + 50)
