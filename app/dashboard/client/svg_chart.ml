@@ -1,17 +1,18 @@
 open! Core
 module Vdom = Virtual_dom.Vdom
 
-(* A dependency-free line chart drawn as inline SVG. Each series is a
-   (stroke-color, values-oldest-first) pair; all series share one y-scale
-   (0 -> the max value across every series). Values map into a padded band so a
-   flat-at-zero line rests just above the baseline rather than being clipped on
-   the bottom edge -- the bug that made idle panes look like black rectangles.
-   Pass [~area] to fill translucently under the first series.
-   [preserveAspectRatio="none"] stretches the [viewBox] to the container;
-   [vector-effect] keeps strokes crisp despite that stretch. *)
+(* A dependency-free line chart. We build the SVG as raw markup and inject it
+   with [Vdom.Node.inner_html], so the browser's own parser creates real,
+   correctly-namespaced SVG shapes. Going through [Vdom.Node.create_svg] plus
+   generic string attributes does NOT paint the geometry in this virtual_dom
+   (SVG geometry needs [Virtual_dom_svg]'s typed attrs) -- injecting the markup
+   sidesteps that entirely and is what fixed the "black rectangle" panes.
 
-let attr = Vdom.Attr.create
-let svg = Vdom.Node.create_svg
+   Each series is a (stroke-color-hex, values-oldest-first) pair; all series
+   share one y-scale (0 -> max across every series). Values map into a padded
+   band so a flat-at-zero line rests just above the baseline instead of being
+   clipped on the bottom edge. Pass [~area] to fill under the first series. *)
+
 let pad = 6.
 
 let line_chart
@@ -38,7 +39,7 @@ let line_chart
   in
   let y_of value = h -. pad -. (value /. max_y *. plot) in
   let base_y = y_of 0. in
-  let line_points values =
+  let points values =
     match values with
     | [ only ] ->
       let y = y_of only in
@@ -51,69 +52,47 @@ let line_chart
       |> String.concat ~sep:" "
   in
   let baseline =
-    svg
-      "line"
-      ~attrs:
-        [ attr "x1" "0"
-        ; attr "y1" [%string "%{base_y#Float}"]
-        ; attr "x2" [%string "%{w#Float}"]
-        ; attr "y2" [%string "%{base_y#Float}"]
-        ; attr "stroke" "#243044"
-        ; attr "stroke-width" "1"
-        ; attr "vector-effect" "non-scaling-stroke"
-        ]
-      []
+    [%string
+      "<line x1='0' y1='%{base_y#Float}' x2='%{w#Float}' \
+       y2='%{base_y#Float}' stroke='#243044' stroke-width='1' \
+       vector-effect='non-scaling-stroke'/>"]
   in
-  let area_node =
+  let area_markup =
     if not area
-    then None
+    then ""
     else (
       match series with
-      | (color, values) :: _ when List.length values >= 2 ->
+      | (color, (_ :: _ :: _ as values)) :: _ ->
         let poly =
-          [%string "0,%{base_y#Float} "]
-          ^ line_points values
-          ^ [%string " %{w#Float},%{base_y#Float}"]
-        in
-        Some
-          (svg
-             "polygon"
-             ~attrs:
-               [ attr "points" poly
-               ; attr "fill" color
-               ; attr "fill-opacity" "0.14"
-               ; attr "stroke" "none"
-               ]
-             [])
-      | [] | (_, _) :: _ -> None)
-  in
-  let polyline (color, values) =
-    match values with
-    | [] -> None
-    | _ :: _ ->
-      Some
-        (svg
-           "polyline"
-           ~attrs:
-             [ attr "points" (line_points values)
-             ; attr "fill" "none"
-             ; attr "stroke" color
-             ; attr "stroke-width" "2"
-             ; attr "stroke-linejoin" "round"
-             ; attr "stroke-linecap" "round"
-             ; attr "vector-effect" "non-scaling-stroke"
-             ]
-           [])
-  in
-  svg
-    "svg"
-    ~attrs:
-      [ attr "viewBox" [%string "0 0 %{width#Int} %{height#Int}"]
-      ; attr "preserveAspectRatio" "none"
-      ; attr
-          "style"
           [%string
-            "width:100%;height:%{height#Int}px;display:block;background:#0b0f17;border:1px solid #1b2334;border-radius:6px"]
-      ]
-    (baseline :: (Option.to_list area_node @ List.filter_map series ~f:polyline))
+            "0,%{base_y#Float} %{points values} %{w#Float},%{base_y#Float}"]
+        in
+        [%string
+          "<polygon points='%{poly}' fill='%{color}' fill-opacity='0.14'/>"]
+      | [] | (_, ([] | [ _ ])) :: _ -> "")
+  in
+  let lines =
+    List.filter_map series ~f:(fun (color, values) ->
+      match values with
+      | [] -> None
+      | _ :: _ ->
+        Some
+          [%string
+            "<polyline points='%{points values}' fill='none' \
+             stroke='%{color}' stroke-width='2' stroke-linecap='round' \
+             stroke-linejoin='round' vector-effect='non-scaling-stroke'/>"])
+    |> String.concat
+  in
+  let svg =
+    [%string
+      "<svg viewBox='0 0 %{width#Int} %{height#Int}' \
+       preserveAspectRatio='none' \
+       style='width:100%;height:%{height#Int}px;display:block;background:#0b0f17;border:1px \
+       solid #1b2334;border-radius:6px'>%{baseline}%{area_markup}%{lines}</svg>"]
+  in
+  Vdom.Node.inner_html
+    ~tag:"div"
+    ~attrs:[ Vdom.Attr.create "style" "width:100%" ]
+    ~this_html_is_sanitized_and_is_totally_safe_trust_me:svg
+    ()
 ;;

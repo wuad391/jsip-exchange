@@ -170,14 +170,13 @@ let render_participants (rows : Display.participant_row list) =
       ; th ~align:"right" "resting"
       ]
   in
-  let row i (r : Display.participant_row) =
-    let name_color = if i = 0 then c_parts else fg in
+  let row (r : Display.participant_row) =
     Vdom.Node.create
       "tr"
       ~attrs:[]
-      [ td ~color:name_color ~align:"left" r.name
-      ; td ~color:c_parts ~align:"right" (Int.to_string r.orders_per_sec)
-      ; td ~align:"right" (Int.to_string r.resting_orders)
+      [ td ~align:"left" r.name
+      ; td ~align:"right" (Int.to_string r.orders_per_sec)
+      ; td ~color:muted ~align:"right" (Int.to_string r.resting_orders)
       ]
   in
   panel
@@ -190,7 +189,7 @@ let render_participants (rows : Display.participant_row list) =
            "table"
            ~attrs:[ style "width:100%;border-collapse:collapse" ]
            [ Vdom.Node.create "thead" ~attrs:[] [ header ]
-           ; Vdom.Node.create "tbody" ~attrs:[] (List.mapi rows ~f:row)
+           ; Vdom.Node.create "tbody" ~attrs:[] (List.map rows ~f:row)
            ])
     ]
 ;;
