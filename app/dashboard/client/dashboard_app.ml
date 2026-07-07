@@ -241,7 +241,7 @@ let grid children =
     children
 ;;
 
-let view (display : Display.t option) =
+let view ~feed (display : Display.t option) =
   let header =
     Vdom.Node.div
       ~attrs:[ style "display:flex;align-items:center;gap:8px" ]
@@ -273,11 +273,26 @@ let view (display : Display.t option) =
           ]
       ]
   in
+  (* Split the surface below the header ~80/20: the six-pane grid on top, the
+     live feed below. The [flex] weights (4 vs 1) size the two regions;
+     [min-height:0] lets each shrink so its own scrollbar engages. *)
+  let top =
+    Vdom.Node.div
+      ~attrs:
+        [ style "flex:4;min-height:0;display:flex;flex-direction:column" ]
+      body
+  in
+  let feed_region =
+    Vdom.Node.div
+      ~attrs:
+        [ style "flex:1;min-height:0;display:flex;flex-direction:column" ]
+      [ feed ]
+  in
   Vdom.Node.div
     ~attrs:
       [ style
           [%string
             "background:%{bg};color:%{fg};height:100vh;box-sizing:border-box;padding:16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;display:flex;flex-direction:column;gap:12px"]
       ]
-    (header :: body)
+    [ header; top; feed_region ]
 ;;
