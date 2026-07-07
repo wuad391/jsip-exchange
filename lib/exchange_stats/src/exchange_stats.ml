@@ -16,11 +16,11 @@ module Latency_summary = struct
   ;;
 
   (* [fraction] in [0, 1]; [sorted] is ascending. We index by nearest rank
-     rather than interpolating. The sampling cadence (now 2 Hz) doesn't change
-     this: the approximation's coarseness depends on how many samples land in a
-     window, and a shorter 0.5 s window simply holds fewer, so nearest-rank is
-     marginally coarser but still plenty for a monitoring dashboard — these are
-     indicative tails, not exact SLA percentiles. *)
+     rather than interpolating. The sampling cadence (now 2 Hz) doesn't
+     change this: the approximation's coarseness depends on how many samples
+     land in a window, and a shorter 0.5 s window simply holds fewer, so
+     nearest-rank is marginally coarser but still plenty for a monitoring
+     dashboard — these are indicative tails, not exact SLA percentiles. *)
   let percentile (sorted : float array) fraction =
     let n = Array.length sorted in
     if n = 0

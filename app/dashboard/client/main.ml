@@ -4,15 +4,15 @@ open Bonsai.Let_syntax
 module Dashboard_state = Jsip_dashboard.Dashboard_state
 module Exchange_stats = Jsip_exchange_stats.Exchange_stats
 
-(* The dashboard's browser half. It polls the native server's window RPCs on a
-   short interval, reconstructs the render state from the polled windows, and
-   draws the panes. All the numeric work lives in [Dashboard_state.display];
-   this file is just the Bonsai glue. It mirrors [app/monitor]'s split (pure
-   state + thin UI layer) — including the [let%map.Bonsai] idiom — diverging
-   only where it must: it polls [Polling_state_rpc]s rather than draining
-   Pipe_rpcs, because the browser's [Rpc_effect] has no Pipe_rpc support. The
-   polls are diff-based, so only newly-arrived data crosses the wire each
-   poll.
+(* The dashboard's browser half. It polls the native server's window RPCs on
+   a short interval, reconstructs the render state from the polled windows,
+   and draws the panes. All the numeric work lives in
+   [Dashboard_state.display]; this file is just the Bonsai glue. It mirrors
+   [app/monitor]'s split (pure state + thin UI layer) — including the
+   [let%map.Bonsai] idiom — diverging only where it must: it polls
+   [Polling_state_rpc]s rather than draining Pipe_rpcs, because the browser's
+   [Rpc_effect] has no Pipe_rpc support. The polls are diff-based, so only
+   newly-arrived data crosses the wire each poll.
 
    A second poll ([feed_rpc]) drives the live event feed, and a bit of
    [Bonsai.state] holds which symbol tab is selected — the feed's events are
@@ -23,10 +23,11 @@ module Exchange_stats = Jsip_exchange_stats.Exchange_stats
 
 let poll_interval = Time_ns.Span.of_sec 0.5
 
-(* The monitor's *observed* refresh latency, shown in the header: the wall-clock
-   gap between snapshots actually landing from the server. Unlike a static poll
-   interval it moves — it sits near the sample interval when healthy and climbs
-   when the monitor falls behind. Fed one [now] per snapshot arrival in [app]. *)
+(* The monitor's *observed* refresh latency, shown in the header: the
+   wall-clock gap between snapshots actually landing from the server. Unlike
+   a static poll interval it moves — it sits near the sample interval when
+   healthy and climbs when the monitor falls behind. Fed one [now] per
+   snapshot arrival in [app]. *)
 module Refresh_latency = struct
   type t =
     { last_arrival : Time_ns.t option
@@ -41,7 +42,8 @@ module Refresh_latency = struct
     | None -> { t with last_arrival = Some now }
     | Some previous ->
       let gap = Time_ns.Span.to_ms (Time_ns.diff now previous) in
-      (* Light EMA so the readout is steady rather than flickering with jitter. *)
+      (* Light EMA so the readout is steady rather than flickering with
+         jitter. *)
       let ms =
         if Float.(t.ms <= 0.) then gap else (0.6 *. t.ms) +. (0.4 *. gap)
       in
@@ -68,7 +70,8 @@ let app (local_ graph) =
       ~sexp_of_model:[%sexp_of: Refresh_latency.t]
       ~sexp_of_action:[%sexp_of: Time_ns.t]
       ~default_model:Refresh_latency.default
-      ~apply_action:(fun _ctx model now -> Refresh_latency.observe model ~now)
+      ~apply_action:(fun _ctx model now ->
+        Refresh_latency.observe model ~now)
       graph
   in
   let latest_seq =

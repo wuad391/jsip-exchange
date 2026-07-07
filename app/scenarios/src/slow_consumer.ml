@@ -106,9 +106,7 @@ let noise_trader_spec ~participant ~rng_seed =
     }
 ;;
 
-let noise_trader_roster =
-  [ "NoiseTrader-1", 101; "NoiseTrader-2", 102 ]
-;;
+let noise_trader_roster = [ "NoiseTrader-1", 101; "NoiseTrader-2", 102 ]
 
 let configure () : Scenario_config.t =
   let market_makers =

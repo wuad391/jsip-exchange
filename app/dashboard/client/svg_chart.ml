@@ -12,17 +12,17 @@ module Vdom = Virtual_dom.Vdom
    the container.
 
    Each series is a (stroke-color-hex, values-oldest-first) pair; all series
-   share one y-scale (0 -> max across every series), mapped into a padded band
-   so a flat-at-zero line stays just above the baseline. Pass [~area] to fill
-   translucently under the first series.
+   share one y-scale (0 -> max across every series), mapped into a padded
+   band so a flat-at-zero line stays just above the baseline. Pass [~area] to
+   fill translucently under the first series.
 
    A subtle left gutter carries a few grey y-axis ticks (max, mid, 0) so the
    curve's height reads as a magnitude, not just a shape. The viewBox is
    stretched with [preserveAspectRatio='none'], which would distort SVG text,
    so the ticks are HTML placed in a gutter beside the SVG. The [pad] band is
    what makes their percentage positions line up with the plot: the max value
-   sits at [pad/vb_h] of the height, zero at [1 - pad/vb_h], and -- because the
-   band is symmetric -- the midpoint value lands dead center. *)
+   sits at [pad/vb_h] of the height, zero at [1 - pad/vb_h], and -- because
+   the band is symmetric -- the midpoint value lands dead center. *)
 
 let vb_w = 1000.
 let vb_h = 300.
@@ -46,7 +46,8 @@ let axis_label value =
 (* Fraction of the height, top-down, where [pad] maps the max/zero extremes. *)
 let top_frac = pad /. vb_h
 
-(* Subtle greys: the tick text and the faint horizontal rules behind the plot. *)
+(* Subtle greys: the tick text and the faint horizontal rules behind the
+   plot. *)
 let axis_ink = "#5f6e86"
 let gridline_ink = "#182233"
 let gutter_width_px = 38
@@ -57,7 +58,8 @@ let line_chart
   (series : (string * float list) list)
   =
   let max_len =
-    List.fold series ~init:0 ~f:(fun acc (_, v) -> Int.max acc (List.length v))
+    List.fold series ~init:0 ~f:(fun acc (_, v) ->
+      Int.max acc (List.length v))
   in
   let max_y =
     List.concat_map series ~f:snd
@@ -74,8 +76,8 @@ let line_chart
   let base_y = coord (y_of 0.) in
   let right = coord vb_w in
   (* Tick positions as [(top_fraction, value)], top to bottom. A tall chart
-     gets a midpoint; a short sparkline gets only max and zero so the labels do
-     not collide. *)
+     gets a midpoint; a short sparkline gets only max and zero so the labels
+     do not collide. *)
   let ticks =
     if height >= 50
     then [ top_frac, max_y; 0.5, max_y /. 2.; 1. -. top_frac, 0. ]
@@ -95,10 +97,12 @@ let line_chart
   in
   let baseline =
     [%string
-      "<line x1='0' y1='%{base_y}' x2='%{right}' y2='%{base_y}' stroke='#243044' stroke-width='1' vector-effect='non-scaling-stroke'/>"]
+      "<line x1='0' y1='%{base_y}' x2='%{right}' y2='%{base_y}' \
+       stroke='#243044' stroke-width='1' \
+       vector-effect='non-scaling-stroke'/>"]
   in
-  (* Faint rules at the non-zero ticks (zero already has the baseline), so each
-     gutter label connects to a line across the plot. *)
+  (* Faint rules at the non-zero ticks (zero already has the baseline), so
+     each gutter label connects to a line across the plot. *)
   let gridlines =
     List.filter_map ticks ~f:(fun (_frac, value) ->
       if Float.(value <= 0.)
@@ -107,7 +111,9 @@ let line_chart
         let y = coord (y_of value) in
         Some
           [%string
-            "<line x1='0' y1='%{y}' x2='%{right}' y2='%{y}' stroke='%{gridline_ink}' stroke-width='1' vector-effect='non-scaling-stroke'/>"]))
+            "<line x1='0' y1='%{y}' x2='%{right}' y2='%{y}' \
+             stroke='%{gridline_ink}' stroke-width='1' \
+             vector-effect='non-scaling-stroke'/>"]))
     |> String.concat
   in
   let area_markup =
@@ -130,12 +136,17 @@ let line_chart
       | _ :: _ ->
         Some
           [%string
-            "<polyline points='%{points values}' fill='none' stroke='%{color}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/>"])
+            "<polyline points='%{points values}' fill='none' \
+             stroke='%{color}' stroke-width='2' stroke-linecap='round' \
+             stroke-linejoin='round' vector-effect='non-scaling-stroke'/>"])
     |> String.concat
   in
   let svg =
     [%string
-      "<svg viewBox='0 0 1000 300' preserveAspectRatio='none' style='width:100%;height:%{height#Int}px;display:block;background:#0b0f17;border:1px solid #1b2334;border-radius:6px'>%{gridlines}%{baseline}%{area_markup}%{lines}</svg>"]
+      "<svg viewBox='0 0 1000 300' preserveAspectRatio='none' \
+       style='width:100%;height:%{height#Int}px;display:block;background:#0b0f17;border:1px \
+       solid \
+       #1b2334;border-radius:6px'>%{gridlines}%{baseline}%{area_markup}%{lines}</svg>"]
   in
   let chart =
     Vdom.Node.inner_html
@@ -144,9 +155,10 @@ let line_chart
       ~this_html_is_sanitized_and_is_totally_safe_trust_me:svg
       ()
   in
-  (* Grey y-axis ticks in a narrow gutter left of the plot. Each is absolutely
-     positioned by its height fraction so it lines up with [gridlines]; the
-     flex row stretches the gutter to the SVG's pixel height. *)
+  (* Grey y-axis ticks in a narrow gutter left of the plot. Each is
+     absolutely positioned by its height fraction so it lines up with
+     [gridlines]; the flex row stretches the gutter to the SVG's pixel
+     height. *)
   let tick_label (frac, value) =
     let top = Float.iround_nearest_exn (frac *. 100.) in
     Vdom.Node.create
@@ -164,12 +176,16 @@ let line_chart
       ~attrs:
         [ Vdom.Attr.create
             "style"
-            [%string "position:relative;width:%{gutter_width_px#Int}px;flex:none"]
+            [%string
+              "position:relative;width:%{gutter_width_px#Int}px;flex:none"]
         ]
       (List.map ticks ~f:tick_label)
   in
   Vdom.Node.div
     ~attrs:
-      [ Vdom.Attr.create "style" "display:flex;align-items:stretch;width:100%" ]
+      [ Vdom.Attr.create
+          "style"
+          "display:flex;align-items:stretch;width:100%"
+      ]
     [ gutter; chart ]
 ;;

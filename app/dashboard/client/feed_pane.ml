@@ -128,7 +128,9 @@ let collapse_button ~on_collapse =
     ~attrs:
       [ style
           [%string
-            "margin-left:auto;cursor:pointer;width:20px;height:20px;flex:none;padding:0;display:flex;align-items:center;justify-content:center;background:transparent;color:%{muted};border:1px solid %{border};border-radius:5px;font-size:11px;font-family:inherit"]
+            "margin-left:auto;cursor:pointer;width:20px;height:20px;flex:none;padding:0;display:flex;align-items:center;justify-content:center;background:transparent;color:%{muted};border:1px \
+             solid \
+             %{border};border-radius:5px;font-size:11px;font-family:inherit"]
       ; Vdom.Attr.on_click (fun _ev -> on_collapse)
       ]
     [ Vdom.Node.text "»" ]

@@ -64,9 +64,11 @@ let%expect_test "gc_rate is the per-second delta of the two latest snapshots"
   [%expect {| ((minor_per_sec 5) (major_per_sec 1)) |}]
 ;;
 
-let%expect_test "rates divide by the sample period (per-second, not per-window)" =
-  (* Two snapshots 0.5 s apart: 5 minor / 2 major collections in that window is
-     10 / 4 per second. *)
+let%expect_test "rates divide by the sample period (per-second, not \
+                 per-window)"
+  =
+  (* Two snapshots 0.5 s apart: 5 minor / 2 major collections in that window
+     is 10 / 4 per second. *)
   let t =
     Dashboard_state.of_snapshots
       [ { (snap ~seq:1 ~minor:10 ~major:2) with sample_period_sec = 0.5 }
@@ -77,10 +79,11 @@ let%expect_test "rates divide by the sample period (per-second, not per-window)"
   [%expect {| ((minor_per_sec 10) (major_per_sec 4)) |}]
 ;;
 
-(* The pane math the Bonsai layer relies on: words → megabytes, GC-rate delta,
-   the current second's latency readouts, busiest-sender-first ranking, and
-   per-category occupancy. [prev] carries only the GC counters the rate needs;
-   [curr] is the fully-populated newest snapshot the readouts come from. *)
+(* The pane math the Bonsai layer relies on: words → megabytes, GC-rate
+   delta, the current second's latency readouts, busiest-sender-first
+   ranking, and per-category occupancy. [prev] carries only the GC counters
+   the rate needs; [curr] is the fully-populated newest snapshot the readouts
+   come from. *)
 let%expect_test "display projects the window into render-ready pane data" =
   let curr : Exchange_stats.t =
     { seq = 2
@@ -102,7 +105,10 @@ let%expect_test "display projects the window into render-ready pane data" =
     ; cancel_latency = Exchange_stats.Latency_summary.zero
     ; audit_pipe = Exchange_stats.Pipe_group.zero
     ; market_data_pipe =
-        { Exchange_stats.Pipe_group.total_depth = 12; max_depth = 7; num_pipes = 4 }
+        { Exchange_stats.Pipe_group.total_depth = 12
+        ; max_depth = 7
+        ; num_pipes = 4
+        }
     ; session_pipe = Exchange_stats.Pipe_group.zero
     ; request_queue_depth = 5
     ; matching_loop_busy_us = 42.
@@ -139,7 +145,8 @@ let%expect_test "display projects the window into render-ready pane data" =
         ~participants:
           (d.participants : Dashboard_state.Display.participant_row list)
         ~market_data:
-          (List.nth_exn d.occupancy 1 : Dashboard_state.Display.occupancy_row)];
+          (List.nth_exn d.occupancy 1
+           : Dashboard_state.Display.occupancy_row)];
   [%expect
     {|
     ((live_mb 4) (heap_mb 8) (peak_mb 12) (minor_per_sec 2) (major_per_sec 1)
@@ -177,7 +184,8 @@ let%expect_test "top-of-book projects bid/ask/spread per symbol" =
   in
   let d = Dashboard_state.display (Dashboard_state.of_snapshots [ curr ]) in
   print_s [%sexp (d.books : Dashboard_state.Display.book_row list)];
-  [%expect {|
+  [%expect
+    {|
     (((symbol AAPL) (bid ($149.90)) (bid_size (10)) (ask ($150.10))
       (ask_size (8)) (spread ($0.20)))
      ((symbol TSLA) (bid ($250.00)) (bid_size (4)) (ask ()) (ask_size ())

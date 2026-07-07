@@ -5,9 +5,9 @@ open Jsip_order_book
 open Jsip_exchange_stats
 
 (* Cap on latency samples retained per sample window. A burst of millions of
-   orders should not let a single snapshot allocate without bound; we keep the
-   first [max_latency_samples] as the percentile input, while the [count] and
-   [max] we report are tracked outside the cap and stay exact. *)
+   orders should not let a single snapshot allocate without bound; we keep
+   the first [max_latency_samples] as the percentile input, while the [count]
+   and [max] we report are tracked outside the cap and stay exact. *)
 let max_latency_samples = 100_000
 let sample_interval = Time_ns.Span.of_sec 0.5
 
@@ -98,12 +98,12 @@ let per_participant t =
 ;;
 
 (* [Core.Gc.stat ()] walks the heap to compute [live_words], on the Async
-   thread, once per [sample_interval]. We accept the walk: [live_words] is the
-   headline memory number the dashboard needs, and only [Gc.quick_stat] avoids
-   the walk (but it omits [live_words]); at these sampling rates the pause is
-   negligible for the heaps this exchange runs. Revisit — sampling [live_words]
-   on a slower cadence than the cheap counters — if a large heap makes the walk
-   show up in the latency percentiles. *)
+   thread, once per [sample_interval]. We accept the walk: [live_words] is
+   the headline memory number the dashboard needs, and only [Gc.quick_stat]
+   avoids the walk (but it omits [live_words]); at these sampling rates the
+   pause is negligible for the heaps this exchange runs. Revisit — sampling
+   [live_words] on a slower cadence than the cheap counters — if a large heap
+   makes the walk show up in the latency percentiles. *)
 let snapshot t : Exchange_stats.t =
   t.seq <- t.seq + 1;
   { seq = t.seq

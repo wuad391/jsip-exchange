@@ -14,13 +14,13 @@
 open! Core
 open Jsip_types
 
-(** Latency of one RPC class over one sample window, as percentiles. Under load
-    the interesting signal is the tail: [p50] can look healthy while [p99] and
-    [max] blow up. [count] (the raw number of requests handled this window; the
-    dashboard divides it by [sample_period_sec] for throughput) and [max_us]
-    (window maximum) are tracked outside the capped percentile buffer, so they
-    stay exact even under a storm; the percentiles themselves can
-    under-represent a late-window spike once the cap is hit. *)
+(** Latency of one RPC class over one sample window, as percentiles. Under
+    load the interesting signal is the tail: [p50] can look healthy while
+    [p99] and [max] blow up. [count] (the raw number of requests handled this
+    window; the dashboard divides it by [sample_period_sec] for throughput)
+    and [max_us] (window maximum) are tracked outside the capped percentile
+    buffer, so they stay exact even under a storm; the percentiles themselves
+    can under-represent a late-window spike once the cap is hit. *)
 module Latency_summary : sig
   type t =
     { p50_us : float
@@ -58,11 +58,11 @@ module Pipe_group : sig
   val of_lengths : int list -> t
 end
 
-(** Per-participant activity for one window. [order_count] is the raw number of
-    order requests (submits and cancels) that arrived from the participant this
-    window — the dashboard divides it by [sample_period_sec] for a per-second
-    rate, and high values pick out a flooding bot. [resting_orders] is the live
-    order count across all symbols right now. *)
+(** Per-participant activity for one window. [order_count] is the raw number
+    of order requests (submits and cancels) that arrived from the participant
+    this window — the dashboard divides it by [sample_period_sec] for a
+    per-second rate, and high values pick out a flooding bot.
+    [resting_orders] is the live order count across all symbols right now. *)
 module Participant_stats : sig
   type t =
     { participant : Participant.t
@@ -93,8 +93,8 @@ end
 
 (** Best bid and offer for one traded symbol at snapshot time — the actual
     market state, where every other field here is process health. A side is
-    [None] when that side of the book is empty; {!Jsip_types.Bbo.spread} gives
-    the ask-minus-bid spread when both are present. *)
+    [None] when that side of the book is empty; {!Jsip_types.Bbo.spread}
+    gives the ask-minus-bid spread when both are present. *)
 module Top_of_book : sig
   type t =
     { symbol : Symbol.t
@@ -107,9 +107,9 @@ type t =
   { seq : int (** Monotonic snapshot index; the dashboard orders by it. *)
   ; sample_period_sec : float
   (** Wall-clock seconds this window accumulated over (the server's sample
-      interval). The dashboard divides every per-window counter ([order_count],
-      latency [count], GC-collection deltas) by it to derive per-second rates,
-      so they stay correct at any sample rate. *)
+      interval). The dashboard divides every per-window counter
+      ([order_count], latency [count], GC-collection deltas) by it to derive
+      per-second rates, so they stay correct at any sample rate. *)
   ; gc : Gc_snapshot.t
   ; submit_latency : Latency_summary.t
   ; cancel_latency : Latency_summary.t

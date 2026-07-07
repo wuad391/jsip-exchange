@@ -4,10 +4,10 @@ module Display = Jsip_dashboard.Dashboard_state.Display
 
 (* The thin render layer -- the analog of [app/monitor]'s [Term_app]. Every
    number is already computed in [Dashboard_state.display]; each [render_*]
-   helper maps one pane of that [Display.t] onto Vdom nodes. Styling is inline
-   ([attr "style" ...]); each pane carries its own accent color so the six
-   panes read apart at a glance, and that accent tints the pane's headline
-   numbers. *)
+   helper maps one pane of that [Display.t] onto Vdom nodes. Styling is
+   inline ([attr "style" ...]); each pane carries its own accent color so the
+   six panes read apart at a glance, and that accent tints the pane's
+   headline numbers. *)
 
 let attr = Vdom.Attr.create
 let style s = attr "style" s
@@ -39,7 +39,8 @@ let text ?(color = fg) ?(size = "13px") ?(weight = "400") s =
   Vdom.Node.create
     "span"
     ~attrs:
-      [ style [%string "color:%{color};font-size:%{size};font-weight:%{weight}"]
+      [ style
+          [%string "color:%{color};font-size:%{size};font-weight:%{weight}"]
       ]
     [ Vdom.Node.text s ]
 ;;
@@ -80,7 +81,9 @@ let panel ~accent ~title children =
     ~attrs:
       [ style
           [%string
-            "background:%{panel_bg};border:1px solid %{border};border-top:2px solid %{accent};border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:0;overflow:auto"]
+            "background:%{panel_bg};border:1px solid \
+             %{border};border-top:2px solid \
+             %{accent};border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:0;overflow:auto"]
       ]
     (text ~color:accent ~size:"13px" ~weight:"700" title :: children)
 ;;
@@ -93,14 +96,12 @@ let tile ?(color = fg) ~label ~value () =
     ]
 ;;
 
-(* Stat readouts are centered in their pane so they stay balanced when the feed
-   is popped out and the grid columns narrow. *)
+(* Stat readouts are centered in their pane so they stay balanced when the
+   feed is popped out and the grid columns narrow. *)
 let tiles cells =
   Vdom.Node.div
     ~attrs:
-      [ style
-          "display:flex;gap:16px;flex-wrap:wrap;justify-content:center"
-      ]
+      [ style "display:flex;gap:16px;flex-wrap:wrap;justify-content:center" ]
     cells
 ;;
 
@@ -116,8 +117,14 @@ let render_memory (d : Display.t) =
         [ tile ~color:color_live ~label:"live" ~value:(fmt_mb d.live_mb) ()
         ; tile ~color:color_heap ~label:"heap" ~value:(fmt_mb d.heap_mb) ()
         ; tile ~label:"peak" ~value:(fmt_mb d.peak_mb) ()
-        ; tile ~label:"minor GC/s" ~value:(Int.to_string d.gc_minor_per_sec) ()
-        ; tile ~label:"major GC/s" ~value:(Int.to_string d.gc_major_per_sec) ()
+        ; tile
+            ~label:"minor GC/s"
+            ~value:(Int.to_string d.gc_minor_per_sec)
+            ()
+        ; tile
+            ~label:"major GC/s"
+            ~value:(Int.to_string d.gc_major_per_sec)
+            ()
         ]
     ]
 ;;
@@ -167,7 +174,8 @@ let render_participants (rows : Display.participant_row list) =
       ~attrs:
         [ style
             [%string
-              "text-align:%{align};color:%{muted};font-size:11px;font-weight:600;padding:3px 6px;border-bottom:1px solid %{border}"]
+              "text-align:%{align};color:%{muted};font-size:11px;font-weight:600;padding:3px \
+               6px;border-bottom:1px solid %{border}"]
         ]
       [ Vdom.Node.text s ]
   in
@@ -177,7 +185,8 @@ let render_participants (rows : Display.participant_row list) =
       ~attrs:
         [ style
             [%string
-              "text-align:%{align};color:%{color};font-size:13px;padding:3px 6px;font-variant-numeric:tabular-nums"]
+              "text-align:%{align};color:%{color};font-size:13px;padding:3px \
+               6px;font-variant-numeric:tabular-nums"]
         ]
       [ Vdom.Node.text s ]
   in
@@ -214,9 +223,10 @@ let render_participants (rows : Display.participant_row list) =
     ]
 ;;
 
-(* The one pane that shows market state rather than process health: per-symbol
-   best bid/ask and spread. Bid is tinted like the buy side, ask like the sell
-   side, so the two columns read apart without reading the header. *)
+(* The one pane that shows market state rather than process health:
+   per-symbol best bid/ask and spread. Bid is tinted like the buy side, ask
+   like the sell side, so the two columns read apart without reading the
+   header. *)
 let render_book (rows : Display.book_row list) =
   let th ~align s =
     Vdom.Node.create
@@ -224,7 +234,8 @@ let render_book (rows : Display.book_row list) =
       ~attrs:
         [ style
             [%string
-              "text-align:%{align};color:%{muted};font-size:11px;font-weight:600;padding:3px 6px;border-bottom:1px solid %{border}"]
+              "text-align:%{align};color:%{muted};font-size:11px;font-weight:600;padding:3px \
+               6px;border-bottom:1px solid %{border}"]
         ]
       [ Vdom.Node.text s ]
   in
@@ -234,12 +245,13 @@ let render_book (rows : Display.book_row list) =
       ~attrs:
         [ style
             [%string
-              "text-align:%{align};color:%{color};font-size:13px;padding:3px 6px;font-variant-numeric:tabular-nums"]
+              "text-align:%{align};color:%{color};font-size:13px;padding:3px \
+               6px;font-variant-numeric:tabular-nums"]
         ]
       [ Vdom.Node.text s ]
   in
-  (* Best price with its resting size, e.g. [$149.90 × 10]; [—] when that side
-     of the book is empty. *)
+  (* Best price with its resting size, e.g. [$149.90 × 10]; [—] when that
+     side of the book is empty. *)
   let quote price size =
     match price, size with
     | Some p, Some s -> [%string "%{p} × %{s#Int}"]
@@ -285,7 +297,8 @@ let render_occupancy (rows : Display.occupancy_row list) =
     Vdom.Node.div
       ~attrs:[ style "display:flex;flex-direction:column;gap:4px" ]
       [ Vdom.Node.div
-          ~attrs:[ style "display:flex;justify-content:space-between;gap:8px" ]
+          ~attrs:
+            [ style "display:flex;justify-content:space-between;gap:8px" ]
           [ text r.label
           ; text
               ~color:muted
@@ -311,7 +324,11 @@ let render_loop (d : Display.t) =
     ~title:"Matching-loop busy"
     [ Svg_chart.line_chart ~area:true [ c_loop, d.loop_busy_series ]
     ; tiles
-        [ tile ~color:c_loop ~label:"current" ~value:(fmt_us d.loop_busy_us) ()
+        [ tile
+            ~color:c_loop
+            ~label:"current"
+            ~value:(fmt_us d.loop_busy_us)
+            ()
         ; tile ~label:"sample #" ~value:(Int.to_string d.seq) ()
         ]
     ]
@@ -327,22 +344,26 @@ let grid children =
 ;;
 
 (* Collapsed state of the live-event feed: a slim rail on the right with an
-   expand button and a vertical label. While collapsed the client does not poll
-   the feed RPC (see [main.ml]) — trading the event stream for less browser and
-   websocket load during a busy period. *)
+   expand button and a vertical label. While collapsed the client does not
+   poll the feed RPC (see [main.ml]) — trading the event stream for less
+   browser and websocket load during a busy period. *)
 let expand_rail ~on_toggle_feed =
   Vdom.Node.div
     ~attrs:
       [ style
           [%string
-            "flex:none;width:26px;display:flex;flex-direction:column;align-items:center;gap:10px;padding:6px 0;background:%{panel_bg};border:1px solid %{border};border-radius:8px"]
+            "flex:none;width:26px;display:flex;flex-direction:column;align-items:center;gap:10px;padding:6px \
+             0;background:%{panel_bg};border:1px solid \
+             %{border};border-radius:8px"]
       ]
     [ Vdom.Node.create
         "button"
         ~attrs:
           [ style
               [%string
-                "cursor:pointer;width:20px;height:20px;flex:none;padding:0;display:flex;align-items:center;justify-content:center;background:transparent;color:%{muted};border:1px solid %{border};border-radius:5px;font-size:11px;font-family:inherit"]
+                "cursor:pointer;width:20px;height:20px;flex:none;padding:0;display:flex;align-items:center;justify-content:center;background:transparent;color:%{muted};border:1px \
+                 solid \
+                 %{border};border-radius:5px;font-size:11px;font-family:inherit"]
           ; Vdom.Attr.on_click (fun _ev -> on_toggle_feed)
           ]
         [ Vdom.Node.text "«" ]
@@ -398,12 +419,14 @@ let view
           ]
       ]
   in
-  (* The six-pane grid takes the width; the live feed is a full-height column on
-     the right (~10%), collapsible to a slim rail. [min-*:0] lets each region
-     shrink so its own scrollbar engages instead of overflowing the viewport. *)
+  (* The six-pane grid takes the width; the live feed is a full-height column
+     on the right (~10%), collapsible to a slim rail. [min-*:0] lets each
+     region shrink so its own scrollbar engages instead of overflowing the
+     viewport. *)
   let content =
     Vdom.Node.div
-      ~attrs:[ style "flex:1;min-width:0;display:flex;flex-direction:column" ]
+      ~attrs:
+        [ style "flex:1;min-width:0;display:flex;flex-direction:column" ]
       panes
   in
   let sidebar =
@@ -412,7 +435,8 @@ let view
       Vdom.Node.div
         ~attrs:
           [ style
-              "flex:0 0 20%;min-width:240px;min-height:0;display:flex;flex-direction:column"
+              "flex:0 0 \
+               20%;min-width:240px;min-height:0;display:flex;flex-direction:column"
           ]
         [ feed ]
     else expand_rail ~on_toggle_feed
@@ -420,7 +444,9 @@ let view
   let main =
     Vdom.Node.div
       ~attrs:
-        [ style "flex:1;min-height:0;display:flex;flex-direction:row;gap:12px" ]
+        [ style
+            "flex:1;min-height:0;display:flex;flex-direction:row;gap:12px"
+        ]
       [ content; sidebar ]
   in
   Vdom.Node.div

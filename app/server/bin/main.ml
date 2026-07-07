@@ -4,8 +4,8 @@
 
     Run with: dune exec app/server/bin/main.exe -- -port 12345
 
-    Optionally drive sustained traffic with two seed market makers: dune
-    exec app/server/bin/main.exe -- -port 12345 -trade-back-and-forth *)
+    Optionally drive sustained traffic with two seed market makers: dune exec
+    app/server/bin/main.exe -- -port 12345 -trade-back-and-forth *)
 
 open! Core
 open! Async

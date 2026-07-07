@@ -27,14 +27,14 @@ let snapshots t = List.rev t.newest_first
 let latest t = List.hd t.newest_first
 
 (* Cumulative counters differenced across consecutive snapshots give a rate;
-   dividing by the snapshot's [sample_period_sec] turns "collections per sample
-   window" into "per second", correct at any sample interval. *)
+   dividing by the snapshot's [sample_period_sec] turns "collections per
+   sample window" into "per second", correct at any sample interval. *)
 let minor_collections (s : Exchange_stats.t) = s.gc.minor_collections
 let major_collections (s : Exchange_stats.t) = s.gc.major_collections
 
 (* The window length in seconds, taken from a snapshot (guarded against a bad
-   zero). Every per-window count is divided by it to read as a per-second rate,
-   so the rates track whatever sample interval the server is using. *)
+   zero). Every per-window count is divided by it to read as a per-second
+   rate, so the rates track whatever sample interval the server is using. *)
 let period_of (s : Exchange_stats.t) =
   if Float.(s.sample_period_sec > 0.) then s.sample_period_sec else 1.
 ;;
@@ -87,8 +87,8 @@ let pipe_total (g : Exchange_stats.Pipe_group.t) = g.total_depth
 let pipe_num (g : Exchange_stats.Pipe_group.t) = g.num_pipes
 
 module Display = struct
-  (* One RPC class's latency, projected for a pane: a line per percentile over
-     the window (oldest first) plus the current second's readouts and
+  (* One RPC class's latency, projected for a pane: a line per percentile
+     over the window (oldest first) plus the current second's readouts and
      throughput ([per_sec] = requests handled that second). *)
   type latency =
     { p50_series : float list
@@ -121,8 +121,8 @@ module Display = struct
 
   (* One symbol's top of book, formatted for display: best bid/ask as dollar
      strings with their sizes, and the spread. Each side is [None] when that
-     side of the book is empty. The only pane showing market state rather than
-     process health. *)
+     side of the book is empty. The only pane showing market state rather
+     than process health. *)
   type book_row =
     { symbol : string
     ; bid : string option
@@ -158,7 +158,9 @@ let latency_display window ~get : Display.latency =
   let series f = List.map vals ~f in
   let current = List.last vals in
   let cur f = Option.value_map current ~default:0. ~f in
-  let period = Option.value_map (List.last window) ~default:1. ~f:period_of in
+  let period =
+    Option.value_map (List.last window) ~default:1. ~f:period_of
+  in
   { Display.p50_series = series p50
   ; p90_series = series p90
   ; p99_series = series p99
@@ -197,47 +199,52 @@ let participants_display window : Display.participant_row list =
       ; orders_per_sec = per_second p.order_count ~period
       ; resting_orders = p.resting_orders
       })
-    (* Busiest sender first (the flooding bot rises to the top); ties broken by
-       name so the ordering is stable. *)
+    (* Busiest sender first (the flooding bot rises to the top); ties broken
+       by name so the ordering is stable. *)
     |> List.sort ~compare:(fun a b ->
-      match Int.compare b.Display.orders_per_sec a.Display.orders_per_sec with
+      match
+        Int.compare b.Display.orders_per_sec a.Display.orders_per_sec
+      with
       | 0 -> String.compare a.Display.name b.Display.name
       | c -> c)
 ;;
 
-(* Market state from the newest snapshot: each traded symbol's best bid/ask as
-   dollar strings with sizes, and the spread. Empty sides stay [None]. *)
+(* Market state from the newest snapshot: each traded symbol's best bid/ask
+   as dollar strings with sizes, and the spread. Empty sides stay [None]. *)
 let books_display window : Display.book_row list =
   match List.last window with
   | None -> []
   | Some (current : Exchange_stats.t) ->
-    List.map current.top_of_book ~f:(fun (b : Exchange_stats.Top_of_book.t) ->
-      let bbo : Jsip_types.Bbo.t = b.bbo in
-      let price (level : Jsip_types.Level.t option) =
-        Option.map level ~f:(fun l ->
-          Jsip_types.Price.to_string_dollar l.price)
-      in
-      let size (level : Jsip_types.Level.t option) =
-        Option.map level ~f:(fun l -> Jsip_types.Size.to_int l.size)
-      in
-      { Display.symbol = Jsip_types.Symbol.to_string b.symbol
-      ; bid = price bbo.bid
-      ; bid_size = size bbo.bid
-      ; ask = price bbo.ask
-      ; ask_size = size bbo.ask
-      ; spread =
-          Jsip_types.Bbo.spread bbo
-          |> Option.map ~f:Jsip_types.Price.to_string_dollar
-      })
+    List.map
+      current.top_of_book
+      ~f:(fun (b : Exchange_stats.Top_of_book.t) ->
+        let bbo : Jsip_types.Bbo.t = b.bbo in
+        let price (level : Jsip_types.Level.t option) =
+          Option.map level ~f:(fun l ->
+            Jsip_types.Price.to_string_dollar l.price)
+        in
+        let size (level : Jsip_types.Level.t option) =
+          Option.map level ~f:(fun l -> Jsip_types.Size.to_int l.size)
+        in
+        { Display.symbol = Jsip_types.Symbol.to_string b.symbol
+        ; bid = price bbo.bid
+        ; bid_size = size bbo.bid
+        ; ask = price bbo.ask
+        ; ask_size = size bbo.ask
+        ; spread =
+            Jsip_types.Bbo.spread bbo
+            |> Option.map ~f:Jsip_types.Price.to_string_dollar
+        })
 ;;
 
-(* The request queue is the one server-side pipe with genuine backpressure: the
-   matching loop drains it and [exchange_server] bounds it at a fixed budget, so
-   its depth is the real "is the engine keeping up?" signal. The three subscriber
-   feeds sit near zero even for a slow consumer — Async's [Pipe_rpc] keeps the
-   exchange-side pipe drained into the client, so the backlog lands on the client,
-   not here — but this queue actually climbs under a submit/cancel storm. Modeled
-   as a single-pipe occupancy row so it shares the pane. *)
+(* The request queue is the one server-side pipe with genuine backpressure:
+   the matching loop drains it and [exchange_server] bounds it at a fixed
+   budget, so its depth is the real "is the engine keeping up?" signal. The
+   three subscriber feeds sit near zero even for a slow consumer — Async's
+   [Pipe_rpc] keeps the exchange-side pipe drained into the client, so the
+   backlog lands on the client, not here — but this queue actually climbs
+   under a submit/cancel storm. Modeled as a single-pipe occupancy row so it
+   shares the pane. *)
 let request_queue_display window : Display.occupancy_row =
   let depths =
     List.map window ~f:(fun (s : Exchange_stats.t) -> s.request_queue_depth)
