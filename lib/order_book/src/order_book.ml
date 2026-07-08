@@ -163,13 +163,13 @@ let best_bid_offer t : Bbo.t =
    Level.of_order order) ;; *)
 
 let snapshot_side t (side : Side.t) =
-  let fold_fun (accum : Level.t List.t) (level : Level.t) =
+  let fold_fun (level : Level.t) (accum : Level.t List.t) =
     match accum with
     | x :: _ ->
       if Price.equal x.price level.price then accum else level :: accum
     | [] -> [ level ]
   in
-  List.fold
+  List.fold_right
     ~init:[]
     (List.map
        (Map.to_alist ~key_order:`Increasing (side_map t side))
