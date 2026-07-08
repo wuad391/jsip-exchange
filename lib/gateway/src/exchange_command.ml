@@ -15,16 +15,16 @@ end
 
 type t =
   | Submit of Order.Request.t
-  | Book of Symbol.t
-  | Subscribe of Symbol.t
+  | Book of Symbol_id.t
+  | Subscribe of Symbol_id.t
   | Cancel of Order.Cancel.t
 [@@deriving sexp]
 
 let to_string t =
   match t with
   | Submit request -> [%string "%{request#Order.Request}"]
-  | Book symbol -> [%string "BOOK %{symbol#Symbol}"]
-  | Subscribe symbol -> [%string "SUBSCRIBE %{symbol#Symbol}"]
+  | Book symbol -> [%string "BOOK %{symbol#Symbol_id}"]
+  | Subscribe symbol -> [%string "SUBSCRIBE %{symbol#Symbol_id}"]
   | Cancel cancel -> [%string "%{(cancel)#Order.Cancel}"]
 ;;
 
@@ -73,7 +73,7 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
               [%string "invalid price: %{price_str}\nexception: %{exn_str}"]
         in
         let%bind symbol =
-          try Ok (Symbol.of_string symbol_str) with
+          try Ok (Symbol_id.of_string symbol_str) with
           | exn ->
             let exn_str = Exn.to_string exn in
             Or_error.error_string
@@ -115,7 +115,7 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
              [%{Time_in_force.all_str#String}]"]
     in
     let parse_symbol symbol_str =
-      try Ok (Symbol.of_string symbol_str) with
+      try Ok (Symbol_id.of_string symbol_str) with
       | exn ->
         let exn_str = Exn.to_string exn in
         Or_error.error_string

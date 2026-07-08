@@ -1,100 +1,16 @@
 open! Core
 open! Async
-open Jsip_types
-open Jsip_gateway
-module Fundamental_oracle = Jsip_fundamental.Fundamental_oracle
-module News_injector = Jsip_news_injector.News_injector
-module Bot_runtime = Jsip_bot_runtime.Bot_runtime
 
-(* Bring up one bot end-to-end: open its own RPC connection, subscribe to the
-   market-data stream for the symbols listed in the spec, and run the bot.
-   Once the session feed exists (week 2 exercise 1) this is also where each
-   bot will log in and subscribe to its session-feed RPC, so its [on_event]
-   handler can react to the matching engine's responses to its own orders and
-   to fills against its resting orders. *)
-let start_bot ~where_to_connect ~oracle (Bot_spec.T spec) =
-  let%bind connection =
-    Rpc.Connection.client where_to_connect
-    >>| Result.map_error ~f:Error.of_exn
-    >>| ok_exn
-  in
-  let%bind login_result =
-    Rpc.Rpc.dispatch_exn
-      Rpc_protocol.login_rpc
-      connection
-      (Participant.to_string spec.participant)
-  in
-  let () =
-    match login_result with
-    | Ok _ -> print_endline [%string "Bot is logged in and running."]
-    | Error _ -> print_endline [%string "Error logging bot in."]
-  in
-  let submit request =
-    Rpc.Rpc.dispatch_exn Rpc_protocol.submit_order_rpc connection request
-  in
-  let cancel client_order_id =
-    Rpc.Rpc.dispatch_exn
-      Rpc_protocol.cancel_order_rpc
-      connection
-      client_order_id
-  in
-  let bot =
-    Bot_runtime.create
-      spec.bot
-      spec.config
-      ~participant:spec.participant
-      ~oracle
-      ~rng:(Splittable_random.of_int spec.rng_seed)
-      ~submit
-      ~cancel
-      ~tick_interval:spec.tick_interval
-  in
-  let%bind session_feed, _metadata =
-    Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc connection ()
-  in
-  (* Only subscribe to market data if this bot actually consumes it. A bot
-     that opts out (e.g. a pure order/cancel spammer) then never receives MD,
-     saving the subscription and the per-event [feed_event] work. *)
-  let%bind market_data_feeds =
-    if spec.is_marketdata_consumer
-    then (
-      let%map md_pipe, _metadata =
-        Rpc.Pipe_rpc.dispatch_exn
-          Rpc_protocol.market_data_rpc
-          connection
-          spec.symbols
-      in
-      [ md_pipe ])
-    else return []
-  in
-  let output = Pipe.interleave (session_feed :: market_data_feeds) in
-  don't_wait_for (Pipe.iter output ~f:(Bot_runtime.feed_event bot));
-  print_endline
-    [%string "[scenario] starting bot %{spec.participant#Participant}"];
-  don't_wait_for (Bot_runtime.start bot);
-  return ()
-;;
-
-let run (config : Scenario_config.t) ~port ~seed =
-  print_endline
-    [%string
-      "[scenario] starting %{config.name} on port %{port#Int} \
-       (seed=%{seed#Int})"];
-  let%bind server = Exchange_server.start ~symbols:config.symbols ~port () in
-  let where_to_connect =
-    Tcp.Where_to_connect.of_host_and_port
-      { Host_and_port.host = "localhost"; port }
-  in
-  let oracle = Fundamental_oracle.create config.oracle_config ~seed in
-  let injector = News_injector.create oracle config.news in
-  (* Background tasks. *)
-  don't_wait_for (Fundamental_oracle.start oracle);
-  don't_wait_for (News_injector.start injector);
-  let%bind () =
-    Deferred.List.iter
-      ~how:`Parallel
-      config.bots
-      ~f:(start_bot ~where_to_connect ~oracle)
-  in
-  Exchange_server.close_finished server
+(* Ex4 phase 1 removes Symbol.t from the live path entirely, which breaks
+   every scenario's bot/oracle plumbing (Fundamental_oracle, Bot_runtime,
+   Jsip_bots, and Jsip_market_maker are all still Symbol.t-keyed) — and there
+   is currently no scenario that could reach this code anyway, since
+   Jsip_scenarios.all is empty until phase 2 restores it (see the "clear the
+   decks" commit). The full implementation ([start_bot] plus [run]'s real
+   body) is intact in git history and restorable once those libraries speak
+   Symbol_id.t and names can flow again. See
+   /home/ubuntu/.claude/plans/eventual-juggling-marshmallow.md. *)
+let run (_ : Scenario_config.t) ~port:_ ~seed:_ =
+  failwith
+    "Runner.run is not yet updated for Ex4 phase 1 -- see the phase 1 plan"
 ;;

@@ -41,7 +41,7 @@ open Jsip_order_book
 (* Setup helpers *)
 (* ---------------------------------------------------------------- *)
 
-let aapl = Symbol.of_string "AAPL"
+let aapl = Symbol_id.of_int 0
 let alice = Participant.of_string "Alice"
 let bob = Participant.of_string "Bob"
 let client_order_id_test_ref = ref 1
@@ -55,8 +55,8 @@ let new_client_order_id () =
     distinct prices 1..n (in cents) above [min_price], giving a realistic
     spread for benchmarking find_match and best_price queries. Pass
     [~same_price:true] to stack all [n] orders at [min_price] instead —
-    useful for benchmarking operations (like snapshot aggregation) whose
-    cost depends on how many orders share a price level. *)
+    useful for benchmarking operations (like snapshot aggregation) whose cost
+    depends on how many orders share a price level. *)
 let book_with_n_asks ?(min_price = 10_000) ?(same_price = false) n =
   let book = Order_book.create aapl in
   let gen = Order_id.Generator.create () in
@@ -80,9 +80,9 @@ let book_with_n_asks ?(min_price = 10_000) ?(same_price = false) n =
   book, gen
 ;;
 
-(** Build a matching engine with [n] resting sells on AAPL. *)
+(** Build a matching engine with [n] resting sells on symbol id 0. *)
 let engine_with_n_asks ?(min_price = 10_000) n =
-  let engine = Matching_engine.create [ aapl ] in
+  let engine = Matching_engine.create 1 in
   for i = 1 to n do
     ignore
       (Matching_engine.submit
@@ -102,13 +102,9 @@ let engine_with_n_asks ?(min_price = 10_000) n =
 ;;
 
 (** Build a matching engine trading [n] distinct (empty) symbols. Returns the
-    engine and the last symbol created, so a lookup pays the full cost
-    regardless of how the underlying structure orders its keys. *)
+    engine and its last valid id, for benchmarking a lookup. *)
 let engine_with_n_symbols n =
-  let symbols =
-    List.init n ~f:(fun i -> Symbol.of_string [%string "SYM%{i#Int}"])
-  in
-  Matching_engine.create symbols, List.last_exn symbols
+  Matching_engine.create n, Symbol_id.of_int (n - 1)
 ;;
 
 (* ---------------------------------------------------------------- *)
@@ -184,8 +180,8 @@ let bench_add_remove ~n =
 ;;
 
 let bench_snapshot ~n =
-  (* All [n] orders stack at a single price, so this measures the
-     aggregation cost that a book spread across distinct prices (like
+  (* All [n] orders stack at a single price, so this measures the aggregation
+     cost that a book spread across distinct prices (like
      [book_with_n_asks]'s default) wouldn't exercise at all. *)
   let book, _gen = book_with_n_asks ~same_price:true n in
   Bench.Test.create ~name:[%string "snapshot (n=%{n#Int})"] (fun () ->
@@ -358,8 +354,8 @@ let () =
        ~summary:"JSIP order-book benchmarks"
        [ "existing", Bench.make_command tests
        ; ( "snapshot"
-         , Bench.make_command (List.map sizes ~f:(fun n -> bench_snapshot ~n))
-         )
+         , Bench.make_command
+             (List.map sizes ~f:(fun n -> bench_snapshot ~n)) )
        ; ( "symbol-lookup"
          , Bench.make_command
              (List.map symbol_counts ~f:(fun n -> bench_symbol_lookup ~n)) )

@@ -1,8 +1,6 @@
 (library
  (name jsip_scenarios)
  (public_name jsip-exchange.jsip_scenarios)
- (libraries
-  jsip_scenario_runner
-  core)
+ (libraries jsip_scenario_runner core)
  (preprocess
   (pps ppx_jane)))
