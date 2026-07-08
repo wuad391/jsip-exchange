@@ -157,18 +157,31 @@ let best_bid_offer t : Bbo.t =
   { bid = best_level t Buy; ask = best_level t Sell }
 ;;
 
+(* before *)
+(* let snapshot_side t (side : Side.t) = List.map (Map.to_alist
+   ~key_order:`Increasing (side_map t side)) ~f:(fun (_, order) ->
+   Level.of_order order) ;; *)
+
 let snapshot_side t (side : Side.t) =
-  List.map
-    (Map.to_alist ~key_order:`Increasing (side_map t side))
-    ~f:(fun (_, order) -> Level.of_order order)
+  let fold_fun (accum : Level.t List.t) (level : Level.t) =
+    match accum with
+    | x :: _ ->
+      if Price.equal x.price level.price then accum else level :: accum
+    | [] -> [ level ]
+  in
+  List.fold
+    ~init:[]
+    (List.map
+       (Map.to_alist ~key_order:`Increasing (side_map t side))
+       ~f:(fun (_, order) -> Level.of_order order))
+    ~f:fold_fun
 ;;
 
-(* let snapshot_side t (side : Side.t) = let fold_fun (accum : Level.t
-   List.t) (level : Level.t) = match accum with | x :: _ -> if Price.equal
-   x.price level.price then accum else level :: accum | [] -> [ level ] in
-   List.fold ~init:[] (List.map (Map.to_alist ~key_order:`Increasing
-   (side_map t side)) ~f:(fun (_, order) -> Level.of_order order))
-   ~f:fold_fun ;; *)
+(* default *)
+(* let snapshot_side t (side : Side.t) = let compare = match side with | Buy
+   -> Comparable.reverse Level.compare | Sell -> Level.compare in
+   orders_on_side t side |> List.map ~f:Level.of_order |> List.sort ~compare
+   ;; *)
 
 let snapshot t =
   { Book.symbol = symbol t
