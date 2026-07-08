@@ -297,7 +297,7 @@ dune promote
 
 The project includes benchmarks for the order book and matching engine
 (`lib/order_book/bench/bench_order_book.ml`).
-
+ 
 ```sh
 # Run benchmarks (takes ~4 minutes with default quota)
 dune exec lib/order_book/bench/bench_order_book.exe -- -ascii -quota 5

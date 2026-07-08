@@ -42,10 +42,23 @@ let bench_silly =
    in index order: hence [List.iter] over [List.init] rather than a
    side-effecting [List.init], whose evaluation order isn't guaranteed
    left-to-right. *)
+let seq_sizes = [ 10; 100; 1000 ]
+
 let seq_tests ~name ~create ~set ~get =
-  (* "TODO: benchmark for part 4, 0b" *)
-  ignore (name, create, set, get);
-  []
+  List.concat_map seq_sizes ~f:(fun n ->
+    let prebuilt = create () in
+    [ Bench.Test.create ~name:(sprintf "%s create" name) (fun () ->
+        ignore (create ()))
+    ; Bench.Test.create ~name:(sprintf "%s set" name) (fun () ->
+        ignore
+          (List.iter
+             (List.range 0 (n - 1))
+             ~f:(fun i -> set prebuilt ~key:i ~data:0)))
+    ; Bench.Test.create ~name:(sprintf "%s get_hit" name) (fun () ->
+        ignore (get prebuilt (n - 1)))
+    ; Bench.Test.create ~name:(sprintf "%s get_miss" name) (fun () ->
+        ignore (get prebuilt (n + 1)))
+    ])
 ;;
 
 let bench_sequential =
