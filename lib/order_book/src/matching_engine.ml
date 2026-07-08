@@ -13,11 +13,13 @@ module Symbol_registry = struct
     }
   [@@deriving sexp_of]
 
-  (* TODO(human): implement. Assign symbol [i] (0-based, in list order) the
-     id [i], and build [ids] (symbol -> id) and [books] (id -> a fresh
-     Order_book.t for that symbol) together in one pass over [symbols]. *)
-  let create (_symbols : Symbol.t list) : t =
-    failwith "TODO: implement Symbol_registry.create"
+  let create (symbols : Symbol.t list) : t =
+    let books = List.map symbols ~f:Order_book.create |> Array.of_list in
+    let ids =
+      List.mapi symbols ~f:(fun id symbol -> symbol, id)
+      |> Hashtbl.of_alist_exn (module Symbol)
+    in
+    { ids; books }
   ;;
 
   let find t symbol =
