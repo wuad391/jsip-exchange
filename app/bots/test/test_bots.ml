@@ -502,6 +502,33 @@ let%expect_test "BBO for an unconfigured symbol is ignored" =
   return ()
 ;;
 
+(* A low enough fundamental combined with the default 50c half-spread would
+   drive every buy price below zero; [clamp_to_positive_cents] floors each
+   one at one cent instead of letting a negative-priced order reach the
+   exchange. The sell side isn't affected here, since adding the spread only
+   pushes it further from zero. *)
+let%expect_test "a quote that would go negative is floored at one cent" =
+  let bot, submitted, _cancelled =
+    make_recording_bot
+      (module Market_maker_bot)
+      (default_config ())
+      ~initial_price_cents:3
+      ()
+  in
+  let%bind () = Bot_runtime.For_testing.manual_start bot in
+  print_submitted submitted;
+  [%expect
+    {|
+    BUY AAPL 100@$0.01 DAY
+    SELL AAPL 100@$0.53 DAY
+    BUY AAPL 100@$0.01 DAY
+    SELL AAPL 100@$0.54 DAY
+    BUY AAPL 100@$0.01 DAY
+    SELL AAPL 100@$0.55 DAY
+    |}];
+  return ()
+;;
+
 (* ---------------------------------------------------------------- *)
 (* Noise trader tests *)
 (* ---------------------------------------------------------------- *)
