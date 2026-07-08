@@ -101,6 +101,16 @@ let engine_with_n_asks ?(min_price = 10_000) n =
   engine
 ;;
 
+(** Build a matching engine trading [n] distinct (empty) symbols. Returns the
+    engine and the last symbol created, so a lookup pays the full cost
+    regardless of how the underlying structure orders its keys. *)
+let engine_with_n_symbols n =
+  let symbols =
+    List.init n ~f:(fun i -> Symbol.of_string [%string "SYM%{i#Int}"])
+  in
+  Matching_engine.create symbols, List.last_exn symbols
+;;
+
 (* ---------------------------------------------------------------- *)
 (* Order_book micro-benchmarks *)
 (* ---------------------------------------------------------------- *)
@@ -272,6 +282,16 @@ let bench_submit_sweep ~n =
 ;;
 
 (* ---------------------------------------------------------------- *)
+(* Symbol lookup (Exercise 2): pure [book] lookup, no submit/cancel *)
+(* ---------------------------------------------------------------- *)
+
+let bench_symbol_lookup ~n =
+  let engine, symbol = engine_with_n_symbols n in
+  Bench.Test.create ~name:[%string "book_lookup (n=%{n#Int})"] (fun () ->
+    ignore (Matching_engine.book engine symbol : Order_book.t option))
+;;
+
+(* ---------------------------------------------------------------- *)
 (* Allocation measurement *)
 (* ---------------------------------------------------------------- *)
 
@@ -315,6 +335,7 @@ let bench_find_match_alloc ~n =
 (* ---------------------------------------------------------------- *)
 
 let sizes = [ 10; 50; 100; 500 ]
+let symbol_counts = [ 10; 100; 10_000 ]
 
 let () =
   let tests =
@@ -339,5 +360,8 @@ let () =
        ; ( "snapshot"
          , Bench.make_command (List.map sizes ~f:(fun n -> bench_snapshot ~n))
          )
+       ; ( "symbol-lookup"
+         , Bench.make_command
+             (List.map symbol_counts ~f:(fun n -> bench_symbol_lookup ~n)) )
        ])
 ;;
