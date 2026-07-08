@@ -7,12 +7,12 @@ open Jsip_exchange_stats
    Every snapshot carries a monotonically increasing [seq], and the window is
    always the last [Dashboard_state.max_window] of them, so a diff need only
    carry the snapshots newer than the ones the client already holds; [update]
-   reconstructs the exact server window by appending them and re-capping. That
-   keeps the wire small no matter how large individual snapshots grow.
+   reconstructs the exact server window by appending them and re-capping.
+   That keeps the wire small no matter how large individual snapshots grow.
 
    This is the (duck-typed) [Polling_state_rpc.Response] interface — [t] with
-   [bin_io], an [Update] with [bin_io]+[sexp_of], and [diffs]/[update] — so the
-   module itself needs no RPC dependency. *)
+   [bin_io], an [Update] with [bin_io]+[sexp_of], and [diffs]/[update] — so
+   the module itself needs no RPC dependency. *)
 
 type t = Exchange_stats.t list [@@deriving bin_io]
 
@@ -25,7 +25,8 @@ module Update = struct
 end
 
 let newest_seq window =
-  List.fold window ~init:0 ~f:(fun acc snapshot -> Int.max acc (seq snapshot))
+  List.fold window ~init:0 ~f:(fun acc snapshot ->
+    Int.max acc (seq snapshot))
 ;;
 
 let diffs ~from ~to_ =

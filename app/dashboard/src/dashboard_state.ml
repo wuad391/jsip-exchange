@@ -69,8 +69,8 @@ let pipe_total (g : Exchange_stats.Pipe_group.t) = g.total_depth
 let pipe_num (g : Exchange_stats.Pipe_group.t) = g.num_pipes
 
 module Display = struct
-  (* One RPC class's latency, projected for a pane: a line per percentile over
-     the window (oldest first) plus the current second's readouts and
+  (* One RPC class's latency, projected for a pane: a line per percentile
+     over the window (oldest first) plus the current second's readouts and
      throughput ([per_sec] = requests handled that second). *)
   type latency =
     { p50_series : float list
@@ -160,10 +160,12 @@ let participants_display window : Display.participant_row list =
       ; orders_per_sec = p.orders_per_sec
       ; resting_orders = p.resting_orders
       })
-    (* Busiest sender first (the flooding bot rises to the top); ties broken by
-       name so the ordering is stable. *)
+    (* Busiest sender first (the flooding bot rises to the top); ties broken
+       by name so the ordering is stable. *)
     |> List.sort ~compare:(fun a b ->
-      match Int.compare b.Display.orders_per_sec a.Display.orders_per_sec with
+      match
+        Int.compare b.Display.orders_per_sec a.Display.orders_per_sec
+      with
       | 0 -> String.compare a.Display.name b.Display.name
       | c -> c)
 ;;

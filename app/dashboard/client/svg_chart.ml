@@ -2,14 +2,18 @@ open! Core
 module Vdom = Virtual_dom.Vdom
 
 (* A dependency-free line chart drawn as an inline SVG. Each series is a
-   (stroke-color, values-oldest-first) pair; all series share one y-scale (0 to
-   the max value across every series) so their lines are directly comparable.
-   The [viewBox] stretches to the container via [preserveAspectRatio="none"],
-   and [vector-effect] keeps the stroke crisp despite that stretch. *)
+   (stroke-color, values-oldest-first) pair; all series share one y-scale (0
+   to the max value across every series) so their lines are directly
+   comparable. The [viewBox] stretches to the container via
+   [preserveAspectRatio="none"], and [vector-effect] keeps the stroke crisp
+   despite that stretch. *)
 
 let attr = Vdom.Attr.create
 
-let line_chart ?(width = 260) ?(height = 64) (series : (string * float list) list)
+let line_chart
+  ?(width = 260)
+  ?(height = 64)
+  (series : (string * float list) list)
   =
   let max_len =
     List.fold series ~init:0 ~f:(fun acc (_, values) ->

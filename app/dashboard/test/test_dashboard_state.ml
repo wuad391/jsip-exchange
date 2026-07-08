@@ -62,10 +62,11 @@ let%expect_test "gc_rate is the per-second delta of the two latest snapshots"
   [%expect {| ((minor_per_sec 5) (major_per_sec 1)) |}]
 ;;
 
-(* The pane math the Bonsai layer relies on: words → megabytes, GC-rate delta,
-   the current second's latency readouts, busiest-sender-first ranking, and
-   per-category occupancy. [prev] carries only the GC counters the rate needs;
-   [curr] is the fully-populated newest snapshot the readouts come from. *)
+(* The pane math the Bonsai layer relies on: words → megabytes, GC-rate
+   delta, the current second's latency readouts, busiest-sender-first
+   ranking, and per-category occupancy. [prev] carries only the GC counters
+   the rate needs; [curr] is the fully-populated newest snapshot the readouts
+   come from. *)
 let%expect_test "display projects the window into render-ready pane data" =
   let curr : Exchange_stats.t =
     { seq = 2
@@ -86,7 +87,10 @@ let%expect_test "display projects the window into render-ready pane data" =
     ; cancel_latency = Exchange_stats.Latency_summary.zero
     ; audit_pipe = Exchange_stats.Pipe_group.zero
     ; market_data_pipe =
-        { Exchange_stats.Pipe_group.total_depth = 12; max_depth = 7; num_pipes = 4 }
+        { Exchange_stats.Pipe_group.total_depth = 12
+        ; max_depth = 7
+        ; num_pipes = 4
+        }
     ; session_pipe = Exchange_stats.Pipe_group.zero
     ; request_queue_depth = 5
     ; matching_loop_busy_us = 42.
@@ -122,7 +126,8 @@ let%expect_test "display projects the window into render-ready pane data" =
         ~participants:
           (d.participants : Dashboard_state.Display.participant_row list)
         ~market_data:
-          (List.nth_exn d.occupancy 1 : Dashboard_state.Display.occupancy_row)];
+          (List.nth_exn d.occupancy 1
+           : Dashboard_state.Display.occupancy_row)];
   [%expect
     {|
     ((live_mb 4) (heap_mb 8) (peak_mb 12) (minor_per_sec 2) (major_per_sec 1)
