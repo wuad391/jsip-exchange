@@ -163,6 +163,13 @@ let snapshot_side t (side : Side.t) =
     ~f:(fun (_, order) -> Level.of_order order)
 ;;
 
+(* let snapshot_side t (side : Side.t) = let fold_fun (accum : Level.t
+   List.t) (level : Level.t) = match accum with | x :: _ -> if Price.equal
+   x.price level.price then accum else level :: accum | [] -> [ level ] in
+   List.fold ~init:[] (List.map (Map.to_alist ~key_order:`Increasing
+   (side_map t side)) ~f:(fun (_, order) -> Level.of_order order))
+   ~f:fold_fun ;; *)
+
 let snapshot t =
   { Book.symbol = symbol t
   ; bids = snapshot_side t Buy

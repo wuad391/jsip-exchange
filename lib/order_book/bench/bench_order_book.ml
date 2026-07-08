@@ -317,5 +317,8 @@ let () =
         [ bench_find_match_alloc ~n:100 ]
       ]
   in
-  Command_unix.run (Bench.make_command tests)
+  Command_unix.run
+    (Command.group
+       ~summary:"JSIP order-book benchmarks"
+       [ "existing", Bench.make_command tests ])
 ;;
