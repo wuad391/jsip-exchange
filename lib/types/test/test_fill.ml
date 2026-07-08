@@ -50,7 +50,7 @@ let%expect_test "to_participant_view: aggressor (buyer) sees their own order"
           "testing to_participant returned None when should have Some _"]
   in
   print_s [%message (test : string)];
-  [%expect {| (test "Order 7: You bought 100 AAPL at $150.25.") |}]
+  [%expect {| (test "Order 7: You bought 100 0 at $150.25.") |}]
 ;;
 
 let%expect_test "to_participant_view: resting (seller) sees their own order" =
@@ -78,5 +78,5 @@ let%expect_test "to_participant_view: resting (seller) sees their own order" =
           "testing to_participant returned None when should have Some _"]
   in
   print_s [%message (test : string)];
-  [%expect {| (test "Order 9: You sold 100 AAPL at $150.25.") |}]
+  [%expect {| (test "Order 9: You sold 100 0 at $150.25.") |}]
 ;;

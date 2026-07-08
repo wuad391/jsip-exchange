@@ -87,8 +87,8 @@ let start_matching_loop ~engine ~dispatcher ~metrics message_reader =
            ~busy:(Time_ns.diff done_at before)))
 ;;
 
-let start ~symbols ~port () =
-  let engine = Matching_engine.create symbols in
+let start ~num_symbols ~port () =
+  let engine = Matching_engine.create num_symbols in
   let dispatcher = Dispatcher.create () in
   let message_reader, message_writer = Pipe.create () in
   Pipe.set_size_budget message_writer message_queue_size_budget;
