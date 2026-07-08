@@ -1,0 +1,8 @@
+Estimated testing time 15s (3 benchmarks x 5s). Change using '-quota'.
+                                                           
+  Name                    Time/Run   mWd/Run   Percentage  
+ ----------------------- ---------- --------- ------------ 
+  book_lookup (n=10)       67.45ns     5.00w       29.87%  
+  book_lookup (n=100)     102.69ns     5.00w       45.49%  
+  book_lookup (n=10000)   225.77ns     5.00w      100.00%  
+                                                           

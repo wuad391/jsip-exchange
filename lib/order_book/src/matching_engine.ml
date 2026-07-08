@@ -1,11 +1,35 @@
 open! Core
 open Jsip_types
 
+(* Interns each symbol to a small int id and indexes order books by that id
+   instead of by the symbol string, so a lookup becomes one string hash plus
+   an O(1) array index instead of an O(log n) tree walk of string
+   comparisons. The symbol set is fixed at [create] and never grows, so the
+   ids stay stable for the engine's lifetime. *)
+module Symbol_registry = struct
+  type t =
+    { ids : int Symbol.Table.t
+    ; books : Order_book.t array
+    }
+  [@@deriving sexp_of]
+
+  (* TODO(human): implement. Assign symbol [i] (0-based, in list order) the
+     id [i], and build [ids] (symbol -> id) and [books] (id -> a fresh
+     Order_book.t for that symbol) together in one pass over [symbols]. *)
+  let create (_symbols : Symbol.t list) : t =
+    failwith "TODO: implement Symbol_registry.create"
+  ;;
+
+  let find t symbol =
+    Option.map (Hashtbl.find t.ids symbol) ~f:(fun id -> t.books.(id))
+  ;;
+end
+
 (* We store an additional client_order_id_lookup so the matching machine can
    easily create Fill events (which require client order ids) from orders
    (which do not have client order ids for anonymity) *)
 type t =
-  { books : Order_book.t Symbol.Map.t
+  { symbols : Symbol_registry.t
   ; order_id_gen : Order_id.Generator.t
   ; mutable next_fill_id : int
   ; client_order_tables : Order.t Client_order_id.Table.t Participant.Table.t
@@ -14,11 +38,7 @@ type t =
 [@@deriving sexp_of]
 
 let create symbols =
-  let books =
-    List.map symbols ~f:(fun sym -> sym, Order_book.create sym)
-    |> Symbol.Map.of_alist_exn
-  in
-  { books
+  { symbols = Symbol_registry.create symbols
   ; order_id_gen = Order_id.Generator.create ()
   ; next_fill_id = 1
   ; client_order_tables = Hashtbl.create (module Participant)
@@ -26,7 +46,7 @@ let create symbols =
   }
 ;;
 
-let book t symbol = Map.find t.books symbol
+let book t symbol = Symbol_registry.find t.symbols symbol
 
 let resting_order_counts t =
   Hashtbl.fold

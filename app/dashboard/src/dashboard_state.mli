@@ -87,6 +87,19 @@ module Display : sig
     }
   [@@deriving sexp_of, equal]
 
+  (** One symbol's top of book for the market-state pane: best bid/ask as
+      formatted dollar strings with sizes, and the spread. A side is [None]
+      when that side of the book is empty. *)
+  type book_row =
+    { symbol : string
+    ; bid : string option
+    ; bid_size : int option
+    ; ask : string option
+    ; ask_size : int option
+    ; spread : string option
+    }
+  [@@deriving sexp_of, equal]
+
   type t =
     { seq : int
     ; live_mb_series : float list
@@ -102,6 +115,7 @@ module Display : sig
     ; occupancy : occupancy_row list
     ; loop_busy_series : float list
     ; loop_busy_us : float
+    ; books : book_row list
     }
   [@@deriving sexp_of, equal]
 end
