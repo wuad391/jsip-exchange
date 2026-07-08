@@ -9,6 +9,7 @@ open Jsip_dashboard
 
 let snap seq : Exchange_stats.t =
   { seq
+  ; sample_period_sec = 1.
   ; gc =
       { Exchange_stats.Gc_snapshot.live_words = seq
       ; heap_words = 0
@@ -24,13 +25,16 @@ let snap seq : Exchange_stats.t =
   ; request_queue_depth = 0
   ; matching_loop_busy_us = 0.
   ; per_participant = []
+  ; top_of_book = []
   }
 ;;
 
 let window seqs = List.map seqs ~f:snap
 let seqs w = List.map w ~f:(fun (s : Exchange_stats.t) -> s.seq)
 
-let%expect_test "still filling: diff is the new snapshots, update appends them" =
+let%expect_test "still filling: diff is the new snapshots, update appends \
+                 them"
+  =
   let from = window [ 3; 4; 5 ] in
   let to_ = window [ 3; 4; 5; 6; 7 ] in
   let diff = Window.diffs ~from ~to_ in

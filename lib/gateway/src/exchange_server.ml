@@ -96,6 +96,7 @@ let start ~symbols ~port () =
     Metrics.create
       ~dispatcher
       ~matching_engine:engine
+      ~symbols
       ~request_queue_length:(fun () -> Pipe.length message_reader)
   in
   start_matching_loop ~engine ~dispatcher ~metrics message_reader;

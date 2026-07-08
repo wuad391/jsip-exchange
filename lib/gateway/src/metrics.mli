@@ -23,6 +23,7 @@ type t
 val create
   :  dispatcher:Dispatcher.t
   -> matching_engine:Jsip_order_book.Matching_engine.t
+  -> symbols:Symbol.t list
   -> request_queue_length:(unit -> int)
   -> t
 

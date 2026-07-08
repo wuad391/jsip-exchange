@@ -197,6 +197,9 @@ dune exec app/scenario_runner/bin/main.exe -- -scenario calm-day -port 12345 -se
 
 # Watch the exchange's audit log in a filterable TUI
 dune exec app/monitor/bin/main.exe -- -host localhost -port 12345
+
+# Watch the exchange's web monitor
+dune exec app/dashboard/server/main.exe -- -exchange-port 12345 -http-port 8080
 ```
 
 ### Client commands
