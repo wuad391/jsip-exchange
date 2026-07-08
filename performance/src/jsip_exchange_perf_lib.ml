@@ -138,8 +138,27 @@ let bench_associative =
    in how much they allocate (watch the mWd/Run column). Inputs are prebuilt
    so the timed op is just the pattern under test. *)
 let bench_allocation =
-  (* TODO: benchmark for part 4, 0d *)
-  []
+  List.concat_map sizes ~f:(fun n ->
+    let xs = List.init n ~f:Fn.id in
+    [ Bench.Test.create
+        ~name:(sprintf "Build_list silly (n=%d)" n)
+        (fun () -> ignore (Allocations.Build_list.silly xs : int list))
+    ; Bench.Test.create
+        ~name:(sprintf "Build_list non_silly (n=%d)" n)
+        (fun () -> ignore (Allocations.Build_list.non_silly xs : int list))
+    ; Bench.Test.create
+        ~name:(sprintf "First_match silly (n=%d)" n)
+        (fun () ->
+           ignore
+             (Allocations.First_match.silly xs ~f:(fun x -> Int.equal x 0)
+              : int option))
+    ; Bench.Test.create
+        ~name:(sprintf "First_match non_silly (n=%d)" n)
+        (fun () ->
+           ignore
+             (Allocations.First_match.non_silly xs ~f:(fun x -> Int.equal x 0)
+              : int option))
+    ])
 ;;
 
 let command =
