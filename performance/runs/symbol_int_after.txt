@@ -1,0 +1,8 @@
+Estimated testing time 45s (3 benchmarks x 15s). Change using '-quota'.
+                                                           
+  Name                    Time/Run   mWd/Run   Percentage  
+ ----------------------- ---------- --------- ------------ 
+  book_lookup (n=10)       46.57ns    11.00w       40.75%  
+  book_lookup (n=100)     114.28ns    11.00w      100.00%  // apparently this quirk is the result of a bad hash
+  book_lookup (n=10000)    58.99ns    11.00w       51.62%  
+                                                           
