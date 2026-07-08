@@ -8,7 +8,7 @@ open Jsip_bot_runtime
 open Jsip_market_maker
 open! Jsip_bots
 
-let aapl = Symbol.of_string "AAPL"
+let aapl = Symbol_id.of_int 0
 let alice = Participant.of_string "Alice"
 let market_maker = Participant.of_string "Market Maker"
 
@@ -44,7 +44,7 @@ let fill_event : Exchange_event.t =
 (* ............................................................... *)
 
 let oracle_config ~initial_price_cents =
-  Symbol.Map.of_alist_exn
+  Symbol_id.Map.of_alist_exn
     [ ( aapl
       , { Fundamental_oracle.Config.initial_price_cents
         ; volatility_cents_per_sec = 0.0
@@ -135,7 +135,7 @@ let print_submitted (submitted : Order.Request.t list ref) =
   let recent = List.rev !submitted in
   List.iter recent ~f:(fun req ->
     printf
-      !"%{Side} %{Symbol} %d@%{Price#dollar} %{Time_in_force}\n"
+      !"%{Side} %{Symbol_id} %d@%{Price#dollar} %{Time_in_force}\n"
       req.side
       req.symbol
       (Size.to_int req.size)
@@ -218,7 +218,7 @@ let%expect_test "Basic test of Market Maker" =
   print_cancelled cancel_list;
   [%expect
     {|
-    START for AAPL====================
+    START for 0====================
     Fair value price: 15000
     BBO: $149.90 x100 / $150.10 x200
     Inventory: 0
@@ -228,7 +228,7 @@ let%expect_test "Basic test of Market Maker" =
     ASKS: 12, 10, 8,
     END ====================
 
-    START for AAPL====================
+    START for 0====================
     Fair value price: 15000
     BBO: $149.90 x100 / $150.10 x200
     Inventory: 50
@@ -237,24 +237,24 @@ let%expect_test "Basic test of Market Maker" =
     BIDS: 17, 13, 15,
     ASKS: 16, 18, 14,
     END ====================
-    BUY AAPL 100@$149.50 DAY
-    SELL AAPL 100@$150.50 DAY
-    BUY AAPL 100@$149.49 DAY
-    SELL AAPL 100@$150.51 DAY
-    BUY AAPL 100@$149.48 DAY
-    SELL AAPL 100@$150.52 DAY
-    BUY AAPL 100@$149.90 DAY
-    SELL AAPL 100@$150.10 DAY
-    BUY AAPL 100@$149.89 DAY
-    SELL AAPL 100@$150.11 DAY
-    BUY AAPL 100@$149.88 DAY
-    SELL AAPL 100@$150.12 DAY
-    BUY AAPL 100@$148.90 DAY
-    SELL AAPL 100@$149.10 DAY
-    BUY AAPL 100@$148.89 DAY
-    SELL AAPL 100@$149.11 DAY
-    BUY AAPL 100@$148.88 DAY
-    SELL AAPL 100@$149.12 DAY
+    BUY 0 100@$149.50 DAY
+    SELL 0 100@$150.50 DAY
+    BUY 0 100@$149.49 DAY
+    SELL 0 100@$150.51 DAY
+    BUY 0 100@$149.48 DAY
+    SELL 0 100@$150.52 DAY
+    BUY 0 100@$149.90 DAY
+    SELL 0 100@$150.10 DAY
+    BUY 0 100@$149.89 DAY
+    SELL 0 100@$150.11 DAY
+    BUY 0 100@$149.88 DAY
+    SELL 0 100@$150.12 DAY
+    BUY 0 100@$148.90 DAY
+    SELL 0 100@$149.10 DAY
+    BUY 0 100@$148.89 DAY
+    SELL 0 100@$149.11 DAY
+    BUY 0 100@$148.88 DAY
+    SELL 0 100@$149.12 DAY
     ..................................................
      1 3 5 6 4 2 9 7 11 8 10 12
     |}];
@@ -273,12 +273,12 @@ let%expect_test "on_start seeds a symmetric default-spread ladder" =
   print_submitted submitted;
   [%expect
     {|
-    BUY AAPL 100@$149.50 DAY
-    SELL AAPL 100@$150.50 DAY
-    BUY AAPL 100@$149.49 DAY
-    SELL AAPL 100@$150.51 DAY
-    BUY AAPL 100@$149.48 DAY
-    SELL AAPL 100@$150.52 DAY
+    BUY 0 100@$149.50 DAY
+    SELL 0 100@$150.50 DAY
+    BUY 0 100@$149.49 DAY
+    SELL 0 100@$150.51 DAY
+    BUY 0 100@$149.48 DAY
+    SELL 0 100@$150.52 DAY
     |}];
   return ()
 ;;
@@ -300,12 +300,12 @@ let%expect_test "buy fill skews both quotes down at the BBO half-spread" =
   print_submitted submitted;
   [%expect
     {|
-    BUY AAPL 100@$148.90 DAY
-    SELL AAPL 100@$149.10 DAY
-    BUY AAPL 100@$148.89 DAY
-    SELL AAPL 100@$149.11 DAY
-    BUY AAPL 100@$148.88 DAY
-    SELL AAPL 100@$149.12 DAY
+    BUY 0 100@$148.90 DAY
+    SELL 0 100@$149.10 DAY
+    BUY 0 100@$148.89 DAY
+    SELL 0 100@$149.11 DAY
+    BUY 0 100@$148.88 DAY
+    SELL 0 100@$149.12 DAY
     |}];
   return ()
 ;;
@@ -367,12 +367,12 @@ let%expect_test "resting-side sell fill skews both quotes up" =
   print_submitted submitted;
   [%expect
     {|
-    BUY AAPL 100@$150.90 DAY
-    SELL AAPL 100@$151.10 DAY
-    BUY AAPL 100@$150.89 DAY
-    SELL AAPL 100@$151.11 DAY
-    BUY AAPL 100@$150.88 DAY
-    SELL AAPL 100@$151.12 DAY
+    BUY 0 100@$150.90 DAY
+    SELL 0 100@$151.10 DAY
+    BUY 0 100@$150.89 DAY
+    SELL 0 100@$151.11 DAY
+    BUY 0 100@$150.88 DAY
+    SELL 0 100@$151.12 DAY
     |}];
   return ()
 ;;
@@ -436,12 +436,12 @@ let%expect_test "one-sided BBO falls back to the default half-spread" =
   print_submitted submitted;
   [%expect
     {|
-    BUY AAPL 100@$148.50 DAY
-    SELL AAPL 100@$149.50 DAY
-    BUY AAPL 100@$148.49 DAY
-    SELL AAPL 100@$149.51 DAY
-    BUY AAPL 100@$148.48 DAY
-    SELL AAPL 100@$149.52 DAY
+    BUY 0 100@$148.50 DAY
+    SELL 0 100@$149.50 DAY
+    BUY 0 100@$148.49 DAY
+    SELL 0 100@$149.51 DAY
+    BUY 0 100@$148.48 DAY
+    SELL 0 100@$149.52 DAY
     |}];
   return ()
 ;;
@@ -462,12 +462,12 @@ let%expect_test "inventory accumulates across fills, deepening the skew" =
   print_submitted submitted;
   [%expect
     {|
-    BUY AAPL 100@$147.90 DAY
-    SELL AAPL 100@$148.10 DAY
-    BUY AAPL 100@$147.89 DAY
-    SELL AAPL 100@$148.11 DAY
-    BUY AAPL 100@$147.88 DAY
-    SELL AAPL 100@$148.12 DAY
+    BUY 0 100@$147.90 DAY
+    SELL 0 100@$148.10 DAY
+    BUY 0 100@$147.89 DAY
+    SELL 0 100@$148.11 DAY
+    BUY 0 100@$147.88 DAY
+    SELL 0 100@$148.12 DAY
     |}];
   return ()
 ;;
@@ -484,7 +484,7 @@ let%expect_test "BBO for an unconfigured symbol is ignored" =
   submitted := [];
   let msft_bbo : Exchange_event.t =
     Best_bid_offer_update
-      { symbol = Symbol.of_string "MSFT"
+      { symbol = Symbol_id.of_int 3
       ; bbo =
           { bid =
               Some
@@ -536,26 +536,26 @@ let%expect_test "noise trader prices off the fundamental when the book is \
   print_submitted submitted;
   [%expect
     {|
-    BUY AAPL 104@$149.95 DAY
-    SELL AAPL 113@$149.99 DAY
-    SELL AAPL 82@$149.96 IOC
-    SELL AAPL 79@$150.02 DAY
-    SELL AAPL 95@$149.96 DAY
-    BUY AAPL 96@$149.99 DAY
-    BUY AAPL 118@$149.99 IOC
-    SELL AAPL 86@$150.03 IOC
-    BUY AAPL 118@$150.01 DAY
-    SELL AAPL 89@$149.98 DAY
-    BUY AAPL 84@$150.05 IOC
-    BUY AAPL 92@$150.02 IOC
-    SELL AAPL 124@$149.99 IOC
-    BUY AAPL 92@$149.96 DAY
-    BUY AAPL 85@$149.98 DAY
-    SELL AAPL 91@$149.99 DAY
-    SELL AAPL 98@$150.03 DAY
-    BUY AAPL 101@$150.04 DAY
-    BUY AAPL 111@$149.96 DAY
-    SELL AAPL 78@$150.04 IOC
+    BUY 0 104@$149.95 DAY
+    SELL 0 113@$149.99 DAY
+    SELL 0 82@$149.96 IOC
+    SELL 0 79@$150.02 DAY
+    SELL 0 95@$149.96 DAY
+    BUY 0 96@$149.99 DAY
+    BUY 0 118@$149.99 IOC
+    SELL 0 86@$150.03 IOC
+    BUY 0 118@$150.01 DAY
+    SELL 0 89@$149.98 DAY
+    BUY 0 84@$150.05 IOC
+    BUY 0 92@$150.02 IOC
+    SELL 0 124@$149.99 IOC
+    BUY 0 92@$149.96 DAY
+    BUY 0 85@$149.98 DAY
+    SELL 0 91@$149.99 DAY
+    SELL 0 98@$150.03 DAY
+    BUY 0 101@$150.04 DAY
+    BUY 0 111@$149.96 DAY
+    SELL 0 78@$150.04 IOC
     |}];
   return ()
 ;;
@@ -575,26 +575,26 @@ let%expect_test "noise trader prices marketable and resting orders off the \
   print_submitted submitted;
   [%expect
     {|
-    BUY AAPL 104@$149.85 DAY
-    SELL AAPL 113@$149.89 DAY
-    SELL AAPL 82@$149.86 IOC
-    SELL AAPL 79@$150.12 DAY
-    SELL AAPL 95@$149.86 DAY
-    BUY AAPL 96@$149.89 DAY
-    BUY AAPL 118@$149.89 IOC
-    SELL AAPL 86@$150.13 IOC
-    BUY AAPL 118@$150.11 DAY
-    SELL AAPL 89@$149.88 DAY
-    BUY AAPL 84@$150.15 IOC
-    BUY AAPL 92@$150.12 IOC
-    SELL AAPL 124@$149.89 IOC
-    BUY AAPL 92@$149.86 DAY
-    BUY AAPL 85@$149.88 DAY
-    SELL AAPL 91@$149.89 DAY
-    SELL AAPL 98@$150.13 DAY
-    BUY AAPL 101@$150.14 DAY
-    BUY AAPL 111@$149.86 DAY
-    SELL AAPL 78@$150.14 IOC
+    BUY 0 104@$149.85 DAY
+    SELL 0 113@$149.89 DAY
+    SELL 0 82@$149.86 IOC
+    SELL 0 79@$150.12 DAY
+    SELL 0 95@$149.86 DAY
+    BUY 0 96@$149.89 DAY
+    BUY 0 118@$149.89 IOC
+    SELL 0 86@$150.13 IOC
+    BUY 0 118@$150.11 DAY
+    SELL 0 89@$149.88 DAY
+    BUY 0 84@$150.15 IOC
+    BUY 0 92@$150.12 IOC
+    SELL 0 124@$149.89 IOC
+    BUY 0 92@$149.86 DAY
+    BUY 0 85@$149.88 DAY
+    SELL 0 91@$149.89 DAY
+    SELL 0 98@$150.13 DAY
+    BUY 0 101@$150.14 DAY
+    BUY 0 111@$149.86 DAY
+    SELL 0 78@$150.14 IOC
     |}];
   return ()
 ;;

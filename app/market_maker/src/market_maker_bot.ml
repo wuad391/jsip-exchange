@@ -45,7 +45,7 @@ module Config = struct
     { size_per_level : int
     ; num_levels : int
     ; inventory_skew_cents_per_share : int
-    ; state : symbol_state Symbol.Table.t
+    ; state : symbol_state Symbol_id.Table.t
     ; client_order_id_ref : Int.t Ref.t
     ; print_books : Bool.t
     }
@@ -158,7 +158,7 @@ let create_config
   { size_per_level
   ; num_levels
   ; inventory_skew_cents_per_share
-  ; state = Hashtbl.of_alist_exn (module Symbol) symbol_state_list
+  ; state = Hashtbl.of_alist_exn (module Symbol_id) symbol_state_list
   ; client_order_id_ref = ref 0
   ; print_books = testing
   }
@@ -167,7 +167,7 @@ let create_config
 let seed_book
   (config : Config.t)
   (context : Bot_runtime.Context.t)
-  (symbols : Symbol.t List.t)
+  (symbols : Symbol_id.t List.t)
   =
   let%bind () =
     Deferred.List.iter
@@ -329,7 +329,7 @@ let on_tick (config : Config.t) context =
             }
         ->
         print_endline
-          [%string "\nSTART for %{symbol#Symbol}===================="];
+          [%string "\nSTART for %{symbol#Symbol_id}===================="];
         print_endline [%string "Fair value price: %{fair_value_cents#Int}"];
         print_endline [%string "BBO: %{bbo#Bbo}"];
         print_endline [%string "Inventory: %{!(inventory)#Int}\n"];
