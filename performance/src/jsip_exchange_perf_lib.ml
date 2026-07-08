@@ -68,9 +68,26 @@ let bench_sequential =
    [Int.to_string] for string keys), so the same helper covers both int- and
    string-keyed stores. *)
 let assoc_tests ~name ~create ~set ~get ~key_of_index =
-  (* "TODO: benchmark for part 4, 0c" *)
-  ignore (name, create, set, get, key_of_index);
-  []
+  let build n =
+    let store = create () in
+    List.iter (List.range 0 n) ~f:(fun i ->
+      set store ~key:(key_of_index i) ~data:i);
+    store
+  in
+  List.concat_map sizes ~f:(fun n ->
+    let prebuilt = build n in
+    [ Bench.Test.create
+        ~name:(sprintf "%s build (n=%d)" name n)
+        (fun () -> ignore (build n : _))
+    ; Bench.Test.create
+        ~name:(sprintf "%s get_hit (n=%d)" name n)
+        (fun () ->
+           ignore (get prebuilt (key_of_index (present_key n)) : int option))
+    ; Bench.Test.create
+        ~name:(sprintf "%s get_miss (n=%d)" name n)
+        (fun () ->
+           ignore (get prebuilt (key_of_index absent_key) : int option))
+    ])
 ;;
 
 let bench_associative =
