@@ -80,6 +80,8 @@ let bench_sequential =
    type. [key_of_index] maps an index to a key ([Fn.id] for int keys,
    [Int.to_string] for string keys), so the same helper covers both int- and
    string-keyed stores. *)
+let assoc_sizes = [ 10; 100; 1000 ]
+
 let assoc_tests ~name ~create ~set ~get ~key_of_index =
   let build n =
     let store = create () in
@@ -87,15 +89,12 @@ let assoc_tests ~name ~create ~set ~get ~key_of_index =
       set store ~key:(key_of_index i) ~data:i);
     store
   in
-  List.concat_map sizes ~f:(fun n ->
+  List.concat_map assoc_sizes ~f:(fun n ->
     let prebuilt = build n in
-    [ Bench.Test.create
-        ~name:(sprintf "%s build (n=%d)" name n)
-        (fun () -> ignore (build n : _))
-    ; Bench.Test.create
-        ~name:(sprintf "%s get_hit (n=%d)" name n)
-        (fun () ->
-           ignore (get prebuilt (key_of_index (present_key n)) : int option))
+    [ Bench.Test.create ~name:(sprintf "%s build (n=%d)" name n) (fun () ->
+        ignore (build n : _))
+    ; Bench.Test.create ~name:(sprintf "%s get_hit (n=%d)" name n) (fun () ->
+        ignore (get prebuilt (key_of_index (present_key n)) : int option))
     ; Bench.Test.create
         ~name:(sprintf "%s get_miss (n=%d)" name n)
         (fun () ->
