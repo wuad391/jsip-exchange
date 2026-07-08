@@ -23,7 +23,9 @@ module Symbol_registry = struct
   ;;
 
   let find t symbol =
-    Option.map (Hashtbl.find t.ids symbol) ~f:(fun id -> t.books.(id))
+    match Hashtbl.find t.ids symbol with
+    | None -> None
+    | Some id -> Some t.books.(id)
   ;;
 end
 
@@ -62,17 +64,10 @@ let resting_order_counts t =
 
 (* These are client_order_id functions to interact with the sets and lookup *)
 let validate_client_id t ~participant (request : Order.Request.t) =
-  let client_order_id = request.client_order_id in
-  let client_order_table =
-    Hashtbl.find_or_add t.client_order_tables participant ~default:(fun () ->
-      Hashtbl.create (module Client_order_id))
-  in
-  let is_duplicate =
-    match Hashtbl.find client_order_table client_order_id with
-    | None -> false
-    | Some _ -> true
-  in
-  not is_duplicate
+  match Hashtbl.find t.client_order_tables participant with
+  | None -> true
+  | Some client_order_table ->
+    not (Hashtbl.mem client_order_table request.client_order_id)
 ;;
 
 let get_client_order t participant client_order_id =
@@ -121,13 +116,11 @@ let add_client_order t client_order_id order =
     Hashtbl.find_or_add t.client_order_tables participant ~default:(fun () ->
       Hashtbl.create (module Client_order_id))
   in
-  ignore (Hashtbl.add client_order_table ~key:client_order_id ~data:order);
-  ignore
-    (Hashtbl.add
-       t.client_order_id_lookup
-       ~key:order_id
-       ~data:client_order_id);
-  ()
+  Hashtbl.add_exn client_order_table ~key:client_order_id ~data:order;
+  Hashtbl.add_exn
+    t.client_order_id_lookup
+    ~key:order_id
+    ~data:client_order_id
 ;;
 
 (* END client order id functions *)
@@ -148,11 +141,8 @@ let rec match_loop t ~book ~order ~fill_id =
       Order.fill order ~by:fill_size;
       Order.fill resting ~by:fill_size;
       let aggressor_client_order_id, resting_client_order_id =
-        (* match *)
         ( get_client_order_id t (Order.order_id order)
         , get_client_order_id t (Order.order_id resting) )
-        (* with | Some id1, Some id2 -> id1, id2 | _ -> raise (Exn.of_string
-           "Client order ID missing") *)
       in
       if Order.is_fully_filled resting
       then (
@@ -206,8 +196,8 @@ let cancel t ({ participant; client_order_id } : Order.Cancel.t) =
        that order *)
     let book = Option.value_exn (book t symbol) in
     let bbo = Order_book.best_bid_offer book in
-    let () = Order_book.remove book order_id in
-    let () = remove_client_order t participant client_order_id in
+    Order_book.remove book order_id;
+    remove_client_order t participant client_order_id;
     let new_bbo = Order_book.best_bid_offer book in
     let cancel_event =
       Exchange_event.Order_cancel

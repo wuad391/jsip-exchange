@@ -3,7 +3,6 @@
 
 open! Core
 open Jsip_types
-open! Async_log_kernel.Ppx_log_syntax
 
 (* 1. could use two modules. one for Buy and one for sell (most clear)
    2. could also make the key Price.t Order_id.t Side.t *)
@@ -74,9 +73,7 @@ let add t order =
           (order : Order.t)]
   else (
     let side = Order.side order in
-    let () =
-      Hashtbl.add_exn t.id_hash ~key:(hash_key_of order) ~data:order
-    in
+    Hashtbl.add_exn t.id_hash ~key:(hash_key_of order) ~data:order;
     match side with
     | Buy -> t.bids <- Map.set t.bids ~key:(map_key_of order) ~data:order
     | Sell -> t.asks <- Map.set t.asks ~key:(map_key_of order) ~data:order)
@@ -89,11 +86,9 @@ let remove' t order_id =
   | None -> None
   | Some order ->
     let side = Order.side order in
-    let () =
-      match side with
-      | Buy -> t.bids <- Map.remove t.bids (map_key_of order)
-      | Sell -> t.asks <- Map.remove t.asks (map_key_of order)
-    in
+    (match side with
+     | Buy -> t.bids <- Map.remove t.bids (map_key_of order)
+     | Sell -> t.asks <- Map.remove t.asks (map_key_of order));
     Some order
 ;;
 
@@ -165,8 +160,10 @@ let best_bid_offer t : Bbo.t =
 let snapshot_side t (side : Side.t) =
   let fold_fun (level : Level.t) (accum : Level.t List.t) =
     match accum with
-    | x :: _ ->
-      if Price.equal x.price level.price then accum else level :: accum
+    | x :: rest ->
+      if Price.equal x.price level.price
+      then { x with size = Size.( + ) x.size level.size } :: rest
+      else level :: accum
     | [] -> [ level ]
   in
   List.fold_right
