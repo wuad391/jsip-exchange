@@ -91,7 +91,9 @@ let assoc_tests ~name ~create ~set ~get ~key_of_index =
   in
   List.concat_map assoc_sizes ~f:(fun n ->
     let prebuilt = build n in
-    [ Bench.Test.create ~name:(sprintf "%s build (n=%d)" name n) (fun () ->
+    [ Bench.Test.create ~name:(sprintf "%s create (n=%d)" name n) (fun () ->
+        ignore (create () : _))
+    ; Bench.Test.create ~name:(sprintf "%s build (n=%d)" name n) (fun () ->
         ignore (build n : _))
     ; Bench.Test.create ~name:(sprintf "%s get_hit (n=%d)" name n) (fun () ->
         ignore (get prebuilt (key_of_index (present_key n)) : int option))
