@@ -27,16 +27,11 @@ module First_match = struct
      away. *)
   let silly xs ~f =
     let all_matches = List.filter xs ~f in
-    match all_matches with x :: xs -> Some x | [] -> None
+    match all_matches with x :: _ -> Some x | [] -> None
   ;;
 
   (* Stop at the first match; allocate nothing but the returned [Some]. *)
-  let non_silly xs ~f =
-    let rec non_silly xs =
-      match xs with
-      | x :: xs -> if f x then Some x else non_silly xs
-      | [] -> None
-    in
-    non_silly xs
-  ;;
+  let non_silly xs ~f = List.find xs ~f
+  (* let rec non_silly xs = match xs with | x :: xs -> if f x then Some x
+     else non_silly xs | [] -> None in non_silly xs ;; *)
 end

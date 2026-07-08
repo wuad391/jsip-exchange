@@ -161,13 +161,13 @@ let bench_allocation =
         ~name:(sprintf "First_match silly (n=%d)" n)
         (fun () ->
            ignore
-             (Allocations.First_match.silly xs ~f:(fun x -> Int.equal x 0)
+             (Allocations.First_match.silly xs ~f:(fun x -> x % 2 = 0)
               : int option))
     ; Bench.Test.create
         ~name:(sprintf "First_match non_silly (n=%d)" n)
         (fun () ->
            ignore
-             (Allocations.First_match.non_silly xs ~f:(fun x -> Int.equal x 0)
+             (Allocations.First_match.non_silly xs ~f:(fun x -> x % 2 = 0)
               : int option))
     ])
 ;;
