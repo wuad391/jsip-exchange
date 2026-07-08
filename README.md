@@ -200,6 +200,9 @@ dune exec app/scenario_runner/bin/main.exe -- -scenario calm-day -port 12345 -se
 
 # Watch the exchange's audit log in a filterable TUI
 dune exec app/monitor/bin/main.exe -- -host localhost -port 12345
+
+# Watch the exchange's web monitor
+dune exec app/dashboard/server/main.exe -- -exchange-port 12345 -http-port 8080
 ```
 
 ### Authentication
@@ -336,7 +339,7 @@ dune promote
 
 The project includes benchmarks for the order book and matching engine
 (`lib/order_book/bench/bench_order_book.ml`).
-
+ 
 ```sh
 # Run benchmarks (takes ~4 minutes with default quota)
 dune exec lib/order_book/bench/bench_order_book.exe -- -ascii -quota 5

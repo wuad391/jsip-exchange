@@ -7,10 +7,12 @@ name: CI
 # dependency, so each run only checks out, builds, tests, and checks
 # formatting -- no compiler or dependency compilation.
 #
-# The image reference is hard-coded to the UPSTREAM repository on purpose: when
-# a student forks this repo, their CI pulls the upstream (public) image instead
-# of a non-existent image in their own namespace. A fork that changes the
-# dependency set would need to build and point at its own image.
+# The image reference uses the CURRENT repository's own namespace
+# (github.repository_owner), not a hard-coded upstream path. A vanilla fork
+# that hasn't changed the dependency set could point at the upstream image
+# instead, but this fork has added opam dependencies (cohttp_static_handler,
+# polling_state_rpc for the dashboard) that the upstream image doesn't have, so
+# it must build and use its own image -- see build-image.yml.
 #
 # This workflow file travels with forks automatically. Note that GitHub
 # disables Actions on a newly-created fork by default. The first time you push
@@ -33,7 +35,7 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/jane-street-immersion-program/jsip-exchange-ci:latest
+      image: ghcr.io/${{ github.repository_owner }}/jsip-exchange-ci:latest
 
     steps:
       - name: Check out the code
@@ -62,7 +64,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/jane-street-immersion-program/jsip-exchange-ci:latest
+      image: ghcr.io/${{ github.repository_owner }}/jsip-exchange-ci:latest
 
     steps:
       - name: Check out the code

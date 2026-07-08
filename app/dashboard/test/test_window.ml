@@ -9,6 +9,7 @@ open Jsip_dashboard
 
 let snap seq : Exchange_stats.t =
   { seq
+  ; sample_period_sec = 1.
   ; gc =
       { Exchange_stats.Gc_snapshot.live_words = seq
       ; heap_words = 0
@@ -24,6 +25,7 @@ let snap seq : Exchange_stats.t =
   ; request_queue_depth = 0
   ; matching_loop_busy_us = 0.
   ; per_participant = []
+  ; top_of_book = []
   }
 ;;
 

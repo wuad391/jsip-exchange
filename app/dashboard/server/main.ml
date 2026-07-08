@@ -2,14 +2,15 @@ open! Core
 open! Async
 open Jsip_gateway
 module Dashboard_state = Jsip_dashboard.Dashboard_state
+module Event_window = Jsip_dashboard.Event_window
 
 (* The dashboard's native half. It connects to a running exchange, subscribes
-   to its per-second stats stream ([Rpc_protocol.exchange_stats_rpc]), folds
-   each snapshot into a rolling window, and serves that window to browsers:
-   the window over a websocket RPC the browser polls, and the compiled Bonsai
-   app as static files over HTTP. Keeping the web serving here — not in the
-   exchange — matches "a separate binary that connects to a running
-   exchange". *)
+   to its per-second stats stream ([Rpc_protocol.exchange_stats_rpc]) and its
+   audit-event firehose ([Rpc_protocol.audit_log_rpc]), folds each into a
+   rolling window, and serves both to browsers: the windows over websocket
+   RPCs the browser polls, and the compiled Bonsai app as static files over
+   HTTP. Keeping the web serving here — not in the exchange — matches "a
+   separate binary that connects to a running exchange". *)
 
 let connect_to_exchange ~host ~port =
   let%map result =
@@ -41,6 +42,20 @@ let subscribe_stats ~connection ~host ~port =
   | Ok (Ok (pipe, _metadata)) -> pipe
 ;;
 
+let subscribe_audit_log ~connection ~host ~port =
+  match%map
+    Rpc.Pipe_rpc.dispatch Rpc_protocol.audit_log_rpc connection ()
+  with
+  | Error err | Ok (Error err) ->
+    raise_s
+      [%message
+        "dashboard: audit-log subscription failed"
+          (host : string)
+          (port : int)
+          (err : Error.t)]
+  | Ok (Ok (pipe, _metadata)) -> pipe
+;;
+
 (* Serve the compiled client bundle ([main.bc.js], copied next to this exe by
    a dune rule) plus a boilerplate index page whose body holds a
    [<div id="app">] for Bonsai to mount into. *)
@@ -58,18 +73,23 @@ let static_handler =
     ~on_unknown_url:`Index
 ;;
 
-let serve ~http_port ~window =
+let on_client_and_server_out_of_sync details =
+  Core.eprint_s
+    [%message "dashboard: client and server out of sync" (details : Sexp.t)]
+;;
+
+let serve ~http_port ~window ~feed =
   let implementations =
     Rpc.Implementations.create_exn
       ~implementations:
         [ Polling_state_rpc.implement
-            ~on_client_and_server_out_of_sync:(fun details ->
-              Core.eprint_s
-                [%message
-                  "dashboard: client and server out of sync"
-                    (details : Sexp.t)])
+            ~on_client_and_server_out_of_sync
             Jsip_dashboard_protocol.stats_rpc
             (fun (_ : unit) () -> return (Dashboard_state.snapshots !window))
+        ; Polling_state_rpc.implement
+            ~on_client_and_server_out_of_sync
+            Jsip_dashboard_protocol.feed_rpc
+            (fun (_ : unit) () -> return !feed)
         ]
       ~on_unknown_rpc:`Close_connection
       ~on_exception:Close_connection
@@ -92,13 +112,27 @@ let main ~exchange_host ~exchange_port ~http_port () =
   let%bind stats =
     subscribe_stats ~connection ~host:exchange_host ~port:exchange_port
   in
+  let%bind events =
+    subscribe_audit_log ~connection ~host:exchange_host ~port:exchange_port
+  in
   (* Fold the exchange's snapshots into the rolling window as they arrive;
      the poll RPC just reads the current window. *)
   let window = ref Dashboard_state.empty in
   don't_wait_for
     (Pipe.iter_without_pushback stats ~f:(fun snapshot ->
        window := Dashboard_state.add !window snapshot));
-  let%bind _server = serve ~http_port ~window in
+  (* Tag each audit event with a monotonic id (starting at 1, since a fresh
+     buffer's [newest_id] is 0) and admit it into the bounded feed buffer;
+     the feed poll just reads it. [Event_window.update] does the
+     append-and-cap. *)
+  let feed : Event_window.t ref = ref [] in
+  let next_id = ref 1 in
+  don't_wait_for
+    (Pipe.iter_without_pushback events ~f:(fun event ->
+       let id = !next_id in
+       incr next_id;
+       feed := Event_window.update !feed [ id, event ]));
+  let%bind _server = serve ~http_port ~window ~feed in
   Core.print_s
     [%message
       "dashboard: serving"

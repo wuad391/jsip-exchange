@@ -33,6 +33,8 @@
   bonsai_web
   virtual_dom
   cohttp-async
+  cohttp_static_handler
+  polling_state_rpc
   core
   core_unix
   core_bench
