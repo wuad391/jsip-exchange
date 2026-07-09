@@ -139,6 +139,16 @@ let skewed_fair_value (config : Config.t) fair_value_cents inventory =
   fair_value_cents - (!inventory * config.inventory_skew_cents_per_share)
 ;;
 
+(* A skewed quote can go non-positive: enough inventory skew or price levels
+   can push [skewed_fair_value_cents -/+ offset] to or below zero, and
+   [Price.of_int_cents] will happily wrap a negative number into a [Price.t]
+   with no complaint. The exchange now rejects negative-priced orders
+   outright (see [Matching_engine.submit]), so an un-clamped quote here would
+   just get bounced -- but the market maker should never try to post one in
+   the first place. Floor at one cent, the smallest representable price tick,
+   matching [Fundamental_oracle.min_price_cents]. *)
+let clamp_to_positive_cents cents = Int.max cents 1
+
 (* ....................................................... *)
 
 (* Seeds each symbol's state with fair value 0; [on_start] repopulates the
@@ -208,7 +218,9 @@ let seed_book
                  ; participant = Context.participant context
                  ; side = Buy
                  ; price =
-                     Price.of_int_cents (skewed_fair_value_cents - offset)
+                     Price.of_int_cents
+                       (clamp_to_positive_cents
+                          (skewed_fair_value_cents - offset))
                  ; size = Size.of_int config.size_per_level
                  ; time_in_force = Day
                  ; client_order_id = buy_client_order_id
@@ -221,7 +233,9 @@ let seed_book
                  ; participant = Context.participant context
                  ; side = Sell
                  ; price =
-                     Price.of_int_cents (skewed_fair_value_cents + offset)
+                     Price.of_int_cents
+                       (clamp_to_positive_cents
+                          (skewed_fair_value_cents + offset))
                  ; size = Size.of_int config.size_per_level
                  ; time_in_force = Day
                  ; client_order_id = sell_client_order_id

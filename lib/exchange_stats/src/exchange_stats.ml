@@ -16,7 +16,11 @@ module Latency_summary = struct
   ;;
 
   (* [fraction] in [0, 1]; [sorted] is ascending. We index by nearest rank
-     rather than interpolating — plenty precise for a 1 Hz dashboard. *)
+     rather than interpolating. The sampling cadence (now 2 Hz) doesn't
+     change this: the approximation's coarseness depends on how many samples
+     land in a window, and a shorter 0.5 s window simply holds fewer, so
+     nearest-rank is marginally coarser but still plenty for a monitoring
+     dashboard — these are indicative tails, not exact SLA percentiles. *)
   let percentile (sorted : float array) fraction =
     let n = Array.length sorted in
     if n = 0
@@ -71,9 +75,13 @@ module Pipe_group = struct
 end
 
 module Participant_stats = struct
+  (* [order_count] is the raw number of orders this participant submitted
+     during the sample window; the dashboard divides it by the snapshot's
+     [sample_period_sec] to show a per-second rate, so the rate is honest
+     whatever the sample interval is. *)
   type t =
     { participant : Participant.t
-    ; orders_per_sec : int
+    ; order_count : int
     ; resting_orders : int
     }
   [@@deriving sexp, bin_io]
@@ -99,8 +107,20 @@ module Gc_snapshot = struct
   ;;
 end
 
+module Top_of_book = struct
+  type t =
+    { symbol : Symbol_id.t
+    ; bbo : Bbo.t
+    }
+  [@@deriving sexp, bin_io]
+end
+
 type t =
   { seq : int
+  ; (* Wall-clock seconds this window accumulated over (the server's sample
+       interval). The dashboard divides window counters by it to derive
+       per-second rates, so they stay correct at any sample rate. *)
+    sample_period_sec : float
   ; gc : Gc_snapshot.t
   ; submit_latency : Latency_summary.t
   ; cancel_latency : Latency_summary.t
@@ -110,5 +130,6 @@ type t =
   ; request_queue_depth : int
   ; matching_loop_busy_us : float
   ; per_participant : Participant_stats.t list
+  ; top_of_book : Top_of_book.t list
   }
 [@@deriving sexp, bin_io]

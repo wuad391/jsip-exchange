@@ -4,8 +4,8 @@
 
     Run with: dune exec app/server/bin/main.exe -- -port 12345
 
-    Optionally seed the book with a market maker: dune exec
-    app/server/bin/main.exe -- -port 12345 -seed-market-maker *)
+    Optionally drive sustained traffic with two seed market makers: dune exec
+    app/server/bin/main.exe -- -port 12345 -trade-back-and-forth *)
 
 open! Core
 open! Async
@@ -63,8 +63,7 @@ let () =
              (no_arg_some `Trade_back_and_forth)
              ~doc:
                " run two market makers in a loop, generating sustained \
-                traffic for the monitor (mutually exclusive with \
-                -seed-market-maker)"
+                traffic for the monitor"
          ]
      and () = Log.Global.set_level_via_param () in
      fun () -> start ~port ~market_maker_behavior)

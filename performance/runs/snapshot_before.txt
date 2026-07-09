@@ -1,0 +1,9 @@
+Estimated testing time 20s (4 benchmarks x 5s). Change using '-quota'.
+                                                                                 
+  Name               Prom/Run   mjWd/Run      Time/Run     mWd/Run   Percentage  
+ ------------------ ---------- ---------- ------------- ----------- ------------ 
+  snapshot (n=10)                             637.80ns     201.00w        1.84%  
+  snapshot (n=50)       0.20w      0.20w    2_576.50ns     921.00w        7.45%  
+  snapshot (n=100)      0.83w      0.83w    5_555.61ns   1_821.00w       16.06%  
+  snapshot (n=500)     20.84w     20.84w   34_593.78ns   9_021.00w      100.00%  
+                                                                                 
