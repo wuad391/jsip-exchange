@@ -1,0 +1,6 @@
+(library
+ (name jsip_aug_table)
+ (public_name jsip-exchange.jsip_aug_table)
+ (libraries core)
+ (preprocess
+  (pps ppx_jane)))
