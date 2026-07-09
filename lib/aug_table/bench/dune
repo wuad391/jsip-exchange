@@ -1,0 +1,5 @@
+(executable
+ (name bench_aug_table)
+ (libraries jsip_types jsip_aug_table core)
+ (preprocess
+  (pps ppx_jane)))
