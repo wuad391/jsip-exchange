@@ -179,3 +179,48 @@ let%expect_test "default participant: used when none specified" =
   (* print_endline [%string "participant=%{req.participant#Participant}"]; *)
   [%expect {| Order 1: BUY 0 100@$150.00 DAY as Default |}]
 ;;
+
+(* Ex4 phase 2: with a directory, the symbol token is a human name resolved
+   to its id at parse time (the [~directory] the interactive client fetched
+   at connect); without one, the token is still the raw id, as in every test
+   above. *)
+let directory =
+  Symbol_directory.of_names
+    (List.map [ "AAPL"; "TSLA"; "GOOG"; "MSFT" ] ~f:Symbol.of_string)
+;;
+
+let print_parse_named line =
+  match Exchange_command.parse ~directory line with
+  | Error msg -> print_s [%sexp (msg : Error.t)]
+  | Ok command -> print_endline [%string "%{command#Exchange_command}"]
+;;
+
+let%expect_test "parse with directory: names resolve to ids" =
+  print_parse_named "BUY 1 AAPL 100 150.25";
+  print_parse_named "SELL 1 GOOG 50 200.00";
+  print_parse_named "BOOK TSLA";
+  print_parse_named "SUBSCRIBE MSFT";
+  [%expect
+    {|
+    Order 1: BUY 0 100@$150.25 DAY as anonymous
+    Order 1: SELL 2 50@$200.00 DAY as anonymous
+    BOOK 1
+    SUBSCRIBE 3
+    |}]
+;;
+
+let%expect_test "parse with directory: name is case-insensitive (uppercased)"
+  =
+  print_parse_named "buy 1 aapl 100 150.00";
+  [%expect {| Order 1: BUY 0 100@$150.00 DAY as anonymous |}]
+;;
+
+let%expect_test "parse with directory: unknown name is rejected" =
+  print_parse_named "BUY 1 NFLX 100 150.00";
+  print_parse_named "BOOK NFLX";
+  [%expect
+    {|
+    "unknown symbol NFLX (known: AAPL, TSLA, GOOG, MSFT)"
+    "unknown symbol NFLX (known: AAPL, TSLA, GOOG, MSFT)"
+    |}]
+;;

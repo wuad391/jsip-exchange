@@ -135,9 +135,11 @@ let start ~directory ~port () =
             ignore state;
             Matching_engine.book engine symbol
             |> Option.map ~f:Order_book.snapshot)
-        ; Rpc.Rpc.implement' Rpc_protocol.symbol_directory_rpc (fun state () ->
-            ignore state;
-            Symbol_directory.to_alist directory)
+        ; Rpc.Rpc.implement'
+            Rpc_protocol.symbol_directory_rpc
+            (fun state () ->
+               ignore state;
+               Symbol_directory.to_alist directory)
         ; Rpc.Rpc.implement
             Rpc_protocol.cancel_order_rpc
             (fun state client_order_id ->

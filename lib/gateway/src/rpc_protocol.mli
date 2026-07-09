@@ -32,8 +32,8 @@ val submit_order_rpc : (Order.Request.t, unit Or_error.t) Rpc.Rpc.t
     all resting orders on both sides, if a book for that symbol exists. *)
 val book_query_rpc : (Symbol_id.t, Book.t option) Rpc.Rpc.t
 
-(** Fetch the exchange's symbol directory: the [(id, name)] pairs mapping each
-    wire {!Jsip_types.Symbol_id.t} to its human-readable
+(** Fetch the exchange's symbol directory: the [(id, name)] pairs mapping
+    each wire {!Jsip_types.Symbol_id.t} to its human-readable
     {!Jsip_types.Symbol.t}. A client fetches this once at connect and mirrors
     it locally (see {!Jsip_gateway.Symbol_directory}) so it can show [AAPL]
     instead of [0]; the wire itself stays int-only. *)

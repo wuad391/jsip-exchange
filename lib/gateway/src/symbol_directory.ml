@@ -1,8 +1,8 @@
 open! Core
 open Jsip_types
 
-(* [id_to_name] is indexed by the raw id (dense, [0 .. n-1]), so id->name is a
-   bounds check and an array index — no hashing, mirroring how the engine
+(* [id_to_name] is indexed by the raw id (dense, [0 .. n-1]), so id->name is
+   a bounds check and an array index — no hashing, mirroring how the engine
    indexes its books. [name_to_id] is the reverse map for parse-time lookup,
    where the key is a string and a hash is unavoidable (but parsing runs at
    human-typing speed, so it never matters). *)
@@ -13,7 +13,9 @@ type t =
 
 (* The ordered name list already determines both fields, so the sexp is just
    that list — [id_to_name] with the id being each name's position. *)
-let sexp_of_t t : Sexp.t = [%sexp (Array.to_list t.id_to_name : Symbol.t list)]
+let sexp_of_t t : Sexp.t =
+  [%sexp (Array.to_list t.id_to_name : Symbol.t list)]
+;;
 
 let of_names names =
   let id_to_name = Array.of_list names in

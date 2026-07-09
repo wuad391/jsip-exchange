@@ -18,7 +18,10 @@ open Jsip_types
    [symbol_directory_rpc] so clients can render names. The wire itself still
    carries only [Symbol_id.t] — names live here and at the display edges. *)
 let symbol_names = [ "AAPL"; "TSLA"; "GOOG"; "MSFT" ]
-let directory = Symbol_directory.of_names (List.map symbol_names ~f:Symbol.of_string)
+
+let directory =
+  Symbol_directory.of_names (List.map symbol_names ~f:Symbol.of_string)
+;;
 
 (* Ex4 phase 1 removes Symbol.t from the live path entirely, which breaks
    [Jsip_market_maker]/[Jsip_fundamental]/[Jsip_bot_runtime] (all still
