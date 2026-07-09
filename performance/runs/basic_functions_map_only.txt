@@ -1,0 +1,43 @@
+Estimated testing time 2m20s (28 benchmarks x 5s). Change using '-quota'.
+                                                                                        
+  Name                     Prom/Run   mjWd/Run      Time/Run      mWd/Run   Percentage  
+ ------------------------ ---------- ---------- ------------- ------------ ------------ 
+  find (n=10)                                        37.54ns        5.00w        0.10%  
+  find (n=50)                                        33.69ns        5.00w        0.09%  
+  find (n=100)                                       34.96ns        5.00w        0.09%  
+  find (n=500)                                       32.83ns        5.00w        0.08%  
+  count (n=10)                                       16.90ns        3.00w        0.04%  
+  count (n=50)                                       17.03ns        3.00w        0.04%  
+  count (n=100)                                      16.07ns        3.00w        0.04%  
+  count (n=500)                                      15.90ns        3.00w        0.04%  
+  find_match (n=10)                                  42.26ns        8.00w        0.11%  
+  find_match (n=50)                                  43.87ns        8.00w        0.11%  
+  find_match (n=100)                                 49.65ns        8.00w        0.13%  
+  find_match (n=500)                                 45.54ns        8.00w        0.12%  
+  best_bid_offer (n=10)                             334.35ns       91.00w        0.85%  
+  best_bid_offer (n=50)                           1_502.19ns      391.00w        3.81%  
+  best_bid_offer (n=100)      0.25w      0.25w    3_145.41ns      766.00w        7.97%  
+  best_bid_offer (n=500)      6.15w      6.15w   13_653.74ns    3_766.00w       34.60%  
+  orders_on_side (n=10)                             185.54ns       78.00w        0.47%  
+  orders_on_side (n=50)                             814.11ns      378.00w        2.06%  
+  orders_on_side (n=100)      0.25w      0.25w    1_772.26ns      753.00w        4.49%  
+  orders_on_side (n=500)      6.22w      6.22w   11_036.77ns    3_753.00w       27.97%  
+  snapshot (n=10)                                   953.19ns      258.00w        2.42%  
+  snapshot (n=50)             0.24w      0.24w    4_207.79ns    1_218.00w       10.66%  
+  snapshot (n=100)            0.93w      0.93w    7_469.22ns    2_418.00w       18.93%  
+  snapshot (n=500)           23.65w     23.65w   39_459.18ns   12_018.00w      100.00%  
+  add+remove (n=10)                                 298.48ns       64.00w        0.76%  
+  add+remove (n=50)                                 445.64ns      100.00w        1.13%  
+  add+remove (n=100)                                539.83ns      121.00w        1.37%  
+  add+remove (n=500)                                760.20ns      148.00w        1.93%  
+                                                                                        
+
+separate add / remove cost (manual timing — core_bench can't isolate a non-reversible op; book build/teardown untimed):
+  add (n=10)       127.8 ns/op  (best of 10000 trials x 10 ops)
+  add (n=50)       168.1 ns/op  (best of 2000 trials x 50 ops)
+  add (n=100)      188.4 ns/op  (best of 1000 trials x 100 ops)
+  add (n=500)      235.4 ns/op  (best of 200 trials x 500 ops)
+  remove (n=10)     75.7 ns/op  (best of 10000 trials x 10 ops)
+  remove (n=50)    122.7 ns/op  (best of 2000 trials x 50 ops)
+  remove (n=100)   138.9 ns/op  (best of 1000 trials x 100 ops)
+  remove (n=500)   182.4 ns/op  (best of 200 trials x 500 ops)

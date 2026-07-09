@@ -193,6 +193,135 @@ let bench_snapshot ~n =
 ;;
 
 (* ---------------------------------------------------------------- *)
+(* Basic functions: unit cost of each order-book base operation *)
+(* ---------------------------------------------------------------- *)
+
+(* These isolate the individual building blocks the matching engine leans on,
+   so we can read each one's cost curve as the book deepens at a fixed price
+   band. The story is in the slopes: [find] and [count] are O(1);
+   [find_match] is a single [Map.min_elt] (O(log n), effectively flat);
+   [best_bid_offer] and [orders_on_side] walk the whole side via
+   [Map.to_alist], so they climb linearly. Pair these with the
+   [-count-orders] scenario tally (how often each runs) to see where
+   wall-clock actually goes. *)
+
+let bench_find ~n =
+  (* Look up an id known to be resting: seed one extra order past the band
+     and keep its id, so every call is a guaranteed hit through the id
+     hashtable. *)
+  let min_price = 10_000 in
+  let book, gen = book_with_n_asks ~min_price n in
+  let order =
+    Order.create
+      { symbol = aapl
+      ; participant = bob
+      ; side = Sell
+      ; price = Price.of_int_cents (min_price + n + 1)
+      ; size = Size.of_int 100
+      ; time_in_force = Day
+      ; client_order_id = new_client_order_id ()
+      }
+      ~order_id:(Order_id.Generator.next gen)
+  in
+  Order_book.add book order;
+  let oid = Order.order_id order in
+  Bench.Test.create ~name:[%string "find (n=%{n#Int})"] (fun () ->
+    ignore (Order_book.find book oid : Order.t option))
+;;
+
+let bench_count ~n =
+  let book, _gen = book_with_n_asks n in
+  Bench.Test.create ~name:[%string "count (n=%{n#Int})"] (fun () ->
+    ignore (Order_book.count book Sell : int))
+;;
+
+let bench_orders_on_side ~n =
+  let book, _gen = book_with_n_asks n in
+  Bench.Test.create ~name:[%string "orders_on_side (n=%{n#Int})"] (fun () ->
+    ignore (Order_book.orders_on_side book Sell : Order.t list))
+;;
+
+(* ---------------------------------------------------------------- *)
+(* Separate add / remove timing (manual — core_bench can't isolate them) *)
+(* ---------------------------------------------------------------- *)
+
+(** Pre-generate [n] distinct-price sell orders, not yet in any book, so a
+    benchmark can add or remove them with all order construction done up
+    front and outside the timed region. Safe to replay into a fresh book each
+    trial: [Order_book.add] keys on the order id, and a fresh book starts
+    with an empty id table, so the shared orders never collide. *)
+let pregenerate_asks ?(min_price = 10_000) n =
+  let gen = Order_id.Generator.create () in
+  Array.init n ~f:(fun i ->
+    Order.create
+      { symbol = aapl
+      ; participant = bob
+      ; side = Sell
+      ; price = Price.of_int_cents (min_price + i)
+      ; size = Size.of_int 100
+      ; time_in_force = Day
+      ; client_order_id = new_client_order_id ()
+      }
+      ~order_id:(Order_id.Generator.next gen))
+;;
+
+(* core_bench times a whole closure and chooses its own batch sizes, so it
+   can't isolate a single [add] or [remove]: the op isn't reversible, so
+   repeating it either grows the book without bound (add) or drains it and
+   then measures no-op misses (remove). Instead we time a batch of [n] of one
+   operation directly, with the book build/teardown done *outside* the timed
+   region. We report the fastest trial (best-of-N): each trial still does [n]
+   real ops, but the fastest one is the least disturbed by a GC pause landing
+   mid-measurement, so it estimates intrinsic op cost with far less noise
+   than an average. This is the number to watch when comparing data
+   structures — a list's O(n) remove or a sorted array's O(n) insert surfaces
+   here, where a symmetric round-trip average would hide it. *)
+let measure_per_op ~name ~n ~build ~op =
+  let target_ops = 100_000 in
+  let trials = Int.max 1 (target_ops / n) in
+  let best_ns_per_op = ref Float.infinity in
+  for _ = 1 to trials do
+    let book = build () in
+    let start = Time_ns.now () in
+    op book;
+    let stop = Time_ns.now () in
+    let ns_per_op =
+      Time_ns.Span.to_ns (Time_ns.diff stop start) /. Float.of_int n
+    in
+    if Float.( < ) ns_per_op !best_ns_per_op then best_ns_per_op := ns_per_op
+  done;
+  printf
+    "  %-14s %7.1f ns/op  (best of %d trials x %d ops)\n"
+    name
+    !best_ns_per_op
+    trials
+    n
+;;
+
+let measure_add ~n =
+  let orders = pregenerate_asks n in
+  measure_per_op
+    ~name:[%string "add (n=%{n#Int})"]
+    ~n
+    ~build:(fun () -> Order_book.create aapl)
+    ~op:(fun book ->
+      Array.iter orders ~f:(fun order -> Order_book.add book order))
+;;
+
+let measure_remove ~n =
+  let orders = pregenerate_asks n in
+  let ids = Array.map orders ~f:Order.order_id in
+  measure_per_op
+    ~name:[%string "remove (n=%{n#Int})"]
+    ~n
+    ~build:(fun () ->
+      let book = Order_book.create aapl in
+      Array.iter orders ~f:(fun order -> Order_book.add book order);
+      book)
+    ~op:(fun book -> Array.iter ids ~f:(fun id -> Order_book.remove book id))
+;;
+
+(* ---------------------------------------------------------------- *)
 (* Matching engine end-to-end benchmarks *)
 (* ---------------------------------------------------------------- *)
 
@@ -353,10 +482,71 @@ let () =
         [ bench_find_match_alloc ~n:100 ]
       ]
   in
+  (* [basic-functions] reports both halves of the cost story in one
+     invocation. Every test below goes into core_bench's own table, including
+     the reversible add+remove round-trip — the one mutation core_bench can
+     bench, since it sizes its own batches and reruns the closure many times
+     per batch, so it needs an op whose repetition leaves the book unchanged.
+     We then *also* time add and remove on their own — see [measure_per_op] —
+     and print that breakdown underneath, so the statistically-rigorous
+     round-trip and the cruder separate estimates sit side by side for
+     cross-checking. [make_command_ext] hands us the parsed
+     [-quota]/[-ascii]/... configs so the core_bench half still behaves
+     exactly like a normal benchmark command. *)
+  let basic_function_tests =
+    List.concat
+      [ List.map sizes ~f:(fun n -> bench_find ~n)
+      ; List.map sizes ~f:(fun n -> bench_count ~n)
+      ; List.map sizes ~f:(fun n -> bench_find_match ~n)
+      ; List.map sizes ~f:(fun n -> bench_best_bid_offer ~n)
+      ; List.map sizes ~f:(fun n -> bench_orders_on_side ~n)
+      ; List.map sizes ~f:(fun n -> bench_snapshot ~n)
+      ; List.map sizes ~f:(fun n -> bench_add_remove ~n)
+      ]
+  in
   Command_unix.run
     (Command.group
        ~summary:"JSIP order-book benchmarks"
        [ "existing", Bench.make_command tests
+       ; ( "basic-functions"
+         , Bench.make_command_ext
+             ~summary:
+               "order-book base-operation costs: core_bench read table, \
+                then separate add/remove (manual timing)"
+             (Command.Param.return
+                (fun (analysis_configs, display_config, source) ->
+                   match source with
+                   | `Run (save_to_file, run_config) ->
+                     Bench.bench
+                       ~analysis_configs
+                       ~display_config
+                       ~run_config
+                       ?save_to_file
+                       basic_function_tests;
+                     print_endline "";
+                     print_endline
+                       "separate add / remove cost (manual timing — \
+                        core_bench can't isolate a non-reversible op; book \
+                        build/teardown untimed):";
+                     List.iter sizes ~f:(fun n -> measure_add ~n);
+                     List.iter sizes ~f:(fun n -> measure_remove ~n)
+                   | `From_file filenames ->
+                     let results =
+                       List.filter_map filenames ~f:(fun filename ->
+                         let measurement =
+                           Bench.Measurement.load ~filename
+                         in
+                         match
+                           Bench.analyze ~analysis_configs measurement
+                         with
+                         | Ok result -> Some result
+                         | Error err ->
+                           Bench.Display_config.print_warning
+                             display_config
+                             (Error.to_string_hum err);
+                           None)
+                     in
+                     Bench.display ~display_config results)) )
        ; ( "snapshot"
          , Bench.make_command
              (List.map sizes ~f:(fun n -> bench_snapshot ~n)) )
