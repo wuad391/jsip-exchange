@@ -6,13 +6,7 @@
 
     The scenario runner ([app/scenario_runner/bin/main.ml]) consumes this
     registry to populate the [-scenario] command-line argument and to
-    dispatch to the chosen scenario's [configure].
-
-    Ex4 phase 1: {!all} is temporarily empty. Every scenario implementation
-    built its symbol universe from human-readable [Symbol.t] names, which
-    phase 1 removes from the live path entirely — restoring them is phase 2
-    work, once the symbol directory lets [Exchange_command] resolve names
-    back to ids. *)
+    dispatch to the chosen scenario's [configure]. *)
 
 open! Core
 module Scenario = Scenario

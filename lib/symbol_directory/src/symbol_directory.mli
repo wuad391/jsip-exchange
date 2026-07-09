@@ -51,6 +51,11 @@ val name : t -> Symbol_id.t -> Symbol.t option
     trades. *)
 val id : t -> Symbol.t -> Symbol_id.t option
 
+(** [id_exn t name] is the id for [name], raising if the directory does not
+    trade it — for callers resolving their own declared symbols (e.g. a
+    scenario building its bots' configs), where an unknown name is a bug. *)
+val id_exn : t -> Symbol.t -> Symbol_id.t
+
 (** [name_or_id t id] is the human name for [id] if the directory knows it,
     otherwise the numeric id as a string. The render-side fallback every
     display shares, so an unknown id still prints something sensible rather

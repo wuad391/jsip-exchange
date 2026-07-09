@@ -38,6 +38,14 @@ let name t id =
 
 let id t name = Map.find t.name_to_id name
 
+let id_exn t name =
+  match id t name with
+  | Some id -> id
+  | None ->
+    raise_s
+      [%message "Symbol_directory.id_exn: unknown symbol" (name : Symbol.t)]
+;;
+
 let name_or_id t id =
   match name t id with
   | Some name -> Symbol.to_string name
