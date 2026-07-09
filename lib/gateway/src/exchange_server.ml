@@ -87,7 +87,8 @@ let start_matching_loop ~engine ~dispatcher ~metrics message_reader =
            ~busy:(Time_ns.diff done_at before)))
 ;;
 
-let start ~num_symbols ~port () =
+let start ~directory ~port () =
+  let num_symbols = Symbol_directory.num_symbols directory in
   let engine = Matching_engine.create num_symbols in
   let dispatcher = Dispatcher.create () in
   let message_reader, message_writer = Pipe.create () in
@@ -134,6 +135,9 @@ let start ~num_symbols ~port () =
             ignore state;
             Matching_engine.book engine symbol
             |> Option.map ~f:Order_book.snapshot)
+        ; Rpc.Rpc.implement' Rpc_protocol.symbol_directory_rpc (fun state () ->
+            ignore state;
+            Symbol_directory.to_alist directory)
         ; Rpc.Rpc.implement
             Rpc_protocol.cancel_order_rpc
             (fun state client_order_id ->

@@ -10,12 +10,15 @@
 open! Core
 open! Async
 open Jsip_gateway
+open Jsip_types
 
-(* Ex4 phase 1: symbols are ints end-to-end, so this is just a count now (id
-   0 = AAPL, 1 = TSLA, 2 = GOOG, 3 = MSFT for anyone reading the source —
-   nothing in the running system knows those names until phase 2's
-   directory). *)
-let num_symbols = 4
+(* Ex4 phase 2: the server is the authority for the id<->name mapping. It
+   trades this fixed set of tickers; the directory assigns id 0 to the first,
+   1 to the second, and so on, then serves that mapping over
+   [symbol_directory_rpc] so clients can render names. The wire itself still
+   carries only [Symbol_id.t] — names live here and at the display edges. *)
+let symbol_names = [ "AAPL"; "TSLA"; "GOOG"; "MSFT" ]
+let directory = Symbol_directory.of_names (List.map symbol_names ~f:Symbol.of_string)
 
 (* Ex4 phase 1 removes Symbol.t from the live path entirely, which breaks
    [Jsip_market_maker]/[Jsip_fundamental]/[Jsip_bot_runtime] (all still
@@ -29,7 +32,7 @@ let num_symbols = 4
    /home/ubuntu/.claude/plans/eventual-juggling-marshmallow.md. *)
 
 let start ~port ~market_maker_behavior =
-  let%bind server = Exchange_server.start ~num_symbols ~port () in
+  let%bind server = Exchange_server.start ~directory ~port () in
   let%bind () =
     match market_maker_behavior with
     | `Trade_back_and_forth ->
@@ -45,8 +48,7 @@ let start ~port ~market_maker_behavior =
       "JSIP Exchange server listening on port %{Exchange_server.port \
        server#Int}"];
   print_endline
-    [%string
-      "Trading: %{num_symbols#Int} symbols (ids 0-%{(num_symbols - 1)#Int})"];
+    [%string "Trading: %{String.concat ~sep:\", \" symbol_names}"];
   Exchange_server.close_finished server
 ;;
 

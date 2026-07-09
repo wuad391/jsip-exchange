@@ -9,11 +9,17 @@ open! Async
 
 type t
 
-(** Start a server on the given port trading [num_symbols] symbols (ids
-    [0, 1, ..., num_symbols - 1]). Returns the server handle and the port it
-    is actually listening on (useful when you pass port 0 to get an
+(** Start a server on the given port trading the symbols in [directory] (which
+    fixes both the count and the id<->name mapping; the engine runs on ids
+    [0 .. num_symbols - 1] and the server serves [directory] over
+    {!Rpc_protocol.symbol_directory_rpc}). Returns the server handle and the
+    port it is actually listening on (useful when you pass port 0 to get an
     OS-assigned port). *)
-val start : num_symbols:int -> port:int -> unit -> t Deferred.t
+val start
+  :  directory:Symbol_directory.t
+  -> port:int
+  -> unit
+  -> t Deferred.t
 
 (** The port the server is listening on. *)
 val port : t -> int
