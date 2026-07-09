@@ -287,6 +287,20 @@ let bench_symbol_lookup ~n =
     ignore (Matching_engine.book engine symbol : Order_book.t option))
 ;;
 
+(* The reject path's lookup: an id one past the last valid one fails the
+   bounds check in [Symbol_registry.find] and returns [None] without touching
+   the array. Benched alongside the hit case to confirm that rejecting an
+   out-of-range symbol is also O(1) and independent of [n]. *)
+let bench_symbol_lookup_miss ~n =
+  let engine, _last_valid = engine_with_n_symbols n in
+  let out_of_range = Symbol_id.of_int n in
+  Bench.Test.create
+    ~name:[%string "book_lookup_miss (n=%{n#Int})"]
+    (fun () ->
+       ignore
+         (Matching_engine.book engine out_of_range : Order_book.t option))
+;;
+
 (* ---------------------------------------------------------------- *)
 (* Allocation measurement *)
 (* ---------------------------------------------------------------- *)
@@ -358,6 +372,7 @@ let () =
              (List.map sizes ~f:(fun n -> bench_snapshot ~n)) )
        ; ( "symbol-lookup"
          , Bench.make_command
-             (List.map symbol_counts ~f:(fun n -> bench_symbol_lookup ~n)) )
+             (List.concat_map symbol_counts ~f:(fun n ->
+                [ bench_symbol_lookup ~n; bench_symbol_lookup_miss ~n ])) )
        ])
 ;;

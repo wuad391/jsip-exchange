@@ -42,6 +42,25 @@ let%expect_test "unknown lookups return None" =
     |}]
 ;;
 
+(* [id_exn] is for callers resolving their own declared symbols (e.g. a
+   scenario building its bots' configs), where an unknown name is a bug, not
+   a user error — so it resolves a known name to its id and raises on one it
+   never registered. *)
+let%expect_test "id_exn resolves a known name and raises on an unknown one" =
+  print_s
+    [%sexp
+      (Symbol_directory.id_exn directory (Symbol.of_string "GOOG")
+       : Symbol_id.t)];
+  [%expect {| 2 |}];
+  (match
+     Or_error.try_with (fun () ->
+       Symbol_directory.id_exn directory (Symbol.of_string "NFLX"))
+   with
+   | Ok id -> print_s [%sexp (id : Symbol_id.t)]
+   | Error e -> print_s [%sexp (e : Error.t)]);
+  [%expect {| ("Symbol_directory.id_exn: unknown symbol" (name NFLX)) |}]
+;;
+
 (* The server sends the mapping as an unordered [(id, name)] alist;
    [of_alist] must rebuild the same directory no matter what order the pairs
    arrive in, so a client that reorders them still agrees with the server. *)
