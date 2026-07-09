@@ -48,6 +48,51 @@ let%expect_test "events appear in insertion order" =
     |}]
 ;;
 
+(* Ex4 phase 2: give the log a directory and the same events render their
+   symbol names instead of raw ids. [Harness.directory] maps id 0 -> AAPL,
+   which is the symbol every sample event uses. *)
+let log_with_sample_events_named () =
+  List.fold
+    Harness.sample_events
+    ~init:(Event_log.create ~directory:Harness.directory ())
+    ~f:Event_log.add_event
+;;
+
+let%expect_test "with a directory, lines render symbol names" =
+  print_lines (Event_log.visible_lines (log_with_sample_events_named ()));
+  [%expect
+    {|
+    ACCEPTED id=1 AAPL BUY 100@$150.00 DAY
+    FILL fill_id=1 AAPL $150.00 x100 aggressor=2(Alice w/ client order ID = 4) BUY resting=1(Bob w/ client order ID = 3)
+    CANCELLED id=1 AAPL remaining=50 reason=IOC_REMAINDER
+    REJECTED AAPL BUY 100@$150.00 reason=unknown symbol
+    REJECTED CANCEL because Cannot cancel non-existent order
+    BBO AAPL bid=$149.90 x100 ask=$150.10 x200
+    TRADE AAPL $150.00 x100
+    |}]
+;;
+
+(* Filtering is done on the same text that is displayed, so a name substring
+   keeps exactly the lines that carry that symbol — something that would
+   match nothing before phase 2, when the lines showed "0". *)
+let%expect_test "substring filter matches the rendered name" =
+  let log =
+    Event_log.set_filter
+      (log_with_sample_events_named ())
+      (Event_log.Filter.by_substring "AAPL")
+  in
+  print_lines (Event_log.visible_lines log);
+  [%expect
+    {|
+    ACCEPTED id=1 AAPL BUY 100@$150.00 DAY
+    FILL fill_id=1 AAPL $150.00 x100 aggressor=2(Alice w/ client order ID = 4) BUY resting=1(Bob w/ client order ID = 3)
+    CANCELLED id=1 AAPL remaining=50 reason=IOC_REMAINDER
+    REJECTED AAPL BUY 100@$150.00 reason=unknown symbol
+    BBO AAPL bid=$149.90 x100 ask=$150.10 x200
+    TRADE AAPL $150.00 x100
+    |}]
+;;
+
 (* ----- filter: substring ----- *)
 
 let%expect_test "filter by substring keeps only matching lines" =

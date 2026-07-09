@@ -46,29 +46,15 @@ let to_string
     (Client_order_id.to_string resting_client_order_id)
 ;;
 
-(* Satisfies exercise 4: renders a fill from one participant's point of view,
-   or [None] if they were not a party to it. The two [Some] cases differ only
-   in whose [client_order_id] and which side to show, so the [sprintf] is
-   factored into [describe] and each branch just supplies those two values —
-   which keeps the [None] case in the match. *)
-let to_participant_view t participant =
-  let describe client_order_id (side : Side.t) =
-    sprintf
-      "Order %s: You %s %d %s at %s."
-      (Client_order_id.to_string client_order_id)
-      (match side with Buy -> "bought" | Sell -> "sold")
-      (Size.to_int t.size)
-      (Symbol_id.to_string t.symbol)
-      (Price.to_string_dollar t.price)
-  in
-  match
-    ( Participant.equal participant t.aggressor_participant
-    , Participant.equal participant t.resting_participant )
-  with
-  | true, _ -> Some (describe t.aggressor_client_order_id t.aggressor_side)
-  | _, true ->
-    Some (describe t.resting_client_order_id (Side.flip t.aggressor_side))
-  | _ -> None
-;;
+(* [to_string] deliberately prints the raw [Symbol_id.t]: turning an id into
+   a human name needs a symbol directory, and the directory lives at the
+   edges (the gateway, the interactive client), never in the domain layer —
+   so [Fill] has no notion of a symbol's name and no second source of truth
+   for its symbol.
+
+   The per-viewer "Order <id>: You bought <n> <symbol> at <price>" line (an
+   exercise-4 feature, formerly [to_participant_view] here) has exactly the
+   same naming need, so it is built in [Jsip_gateway.Protocol.format_event],
+   where the directory is in scope, rather than in this module. *)
 
 let notional_cents t = Price.to_int_cents t.price * Size.to_int t.size

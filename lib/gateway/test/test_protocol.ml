@@ -1,3 +1,60 @@
+open! Core
+open Jsip_types
+open Jsip_gateway
+open Jsip_test_harness
+
+(* Fills are rendered by [Protocol.format_event] (not [Fill.to_string]),
+   which holds the directory needed to name the symbol. Two shapes: the
+   generic line the audit log / TUI monitor see (no [participant]), and the
+   per-viewer "You bought/sold" line a client sees for its own fills. This
+   coverage moved here when [Fill.to_participant_view] was removed from
+   [lib/types]. Symbol id 0 is AAPL in [Harness.directory]. *)
+let fill : Exchange_event.t =
+  Fill
+    { fill_id = 1
+    ; symbol = Symbol_id.of_int 0
+    ; price = Price.of_int_cents 15025
+    ; size = Size.of_int 100
+    ; aggressor_order_id = Order_id.of_string "7"
+    ; aggressor_client_order_id = Client_order_id.of_int 3
+    ; aggressor_participant = Harness.alice
+    ; aggressor_side = Buy
+    ; resting_order_id = Order_id.of_string "9"
+    ; resting_client_order_id = Client_order_id.of_int 4
+    ; resting_participant = Harness.bob
+    }
+;;
+
+let%expect_test "fill generic line: id without a directory, name with one" =
+  print_endline (Protocol.format_event fill);
+  print_endline (Protocol.format_event ~directory:Harness.directory fill);
+  [%expect
+    {|
+    FILL fill_id=1 0 $150.25 x100 aggressor=7(Alice w/ client order ID = 3) BUY resting=9(Bob w/ client order ID = 4)
+    FILL fill_id=1 AAPL $150.25 x100 aggressor=7(Alice w/ client order ID = 3) BUY resting=9(Bob w/ client order ID = 4)
+    |}]
+;;
+
+let%expect_test "fill per-viewer line shows the viewer's own order and side" =
+  let view participant =
+    Protocol.format_event
+      ~directory:Harness.directory
+      ~participant:(Some participant)
+      fill
+  in
+  (* Alice aggressed (bought); Bob rested (so, sold — the opposite side);
+     Charlie was not a party, so falls back to the generic line. *)
+  print_endline (view Harness.alice);
+  print_endline (view Harness.bob);
+  print_endline (view Harness.charlie);
+  [%expect
+    {|
+    FILL Order 3: You bought 100 AAPL at $150.25.
+    FILL Order 4: You sold 100 AAPL at $150.25.
+    FILL fill_id=1 AAPL $150.25 x100 aggressor=7(Alice w/ client order ID = 3) BUY resting=9(Bob w/ client order ID = 4)
+    |}]
+;;
+
 (* open! Core open Jsip_types open Jsip_order_book open Jsip_gateway
 
    let print_parse line = match Protocol.parse_command line with | Error msg

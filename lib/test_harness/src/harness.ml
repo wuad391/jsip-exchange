@@ -11,6 +11,15 @@ open Jsip_gateway
 let aapl = Symbol_id.of_int 0
 let tsla = Symbol_id.of_int 1
 let goog = Symbol_id.of_int 2
+
+(* A directory that gives those ids the names their bindings already imply,
+   so a test can exercise the phase-2 render path (ids -> names) instead of
+   the raw-id fallback. Ordering matches [aapl]/[tsla]/[goog] = 0/1/2. *)
+let directory =
+  Symbol_directory.of_names
+    (List.map [ "AAPL"; "TSLA"; "GOOG" ] ~f:Symbol.of_string)
+;;
+
 let alice = Participant.of_string "Alice"
 let bob = Participant.of_string "Bob"
 let charlie = Participant.of_string "Charlie"

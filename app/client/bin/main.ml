@@ -33,9 +33,7 @@ let run_client ~host ~port ~participant_name =
     in
     let directory = Symbol_directory.of_alist directory_alist in
     let render_symbol symbol =
-      match Symbol_directory.name directory symbol with
-      | Some name -> Symbol.to_string name
-      | None -> Symbol_id.to_string symbol
+      Symbol_directory.name_or_id directory symbol
     in
     let symbol_names =
       Symbol_directory.to_alist directory
@@ -86,7 +84,12 @@ let run_client ~host ~port ~participant_name =
                 | None ->
                   print_endline
                     [%string "No book available for %{render_symbol symbol}"]
-                | Some result -> print_endline (Book.to_string result));
+                | Some result ->
+                  (* [Book.to_string] prints the raw id in its header, so
+                     name the book ourselves first (we hold the directory
+                     here). *)
+                  print_endline [%string "Book for %{render_symbol symbol}:"];
+                  print_endline (Book.to_string result));
                loop ()
              | Subscribe symbol ->
                let%bind result =

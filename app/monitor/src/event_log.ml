@@ -84,8 +84,10 @@ module Filter = struct
     | Substring s -> String.Caseless.is_substring line ~substring:s
   ;;
 
-  let matches t event =
-    let line = Protocol.format_event event in
+  let matches ?(directory = Symbol_directory.empty) t event =
+    (* Filter on the same text the user sees, so a substring filter like
+       "AAPL" matches the rendered name rather than the raw id. *)
+    let line = Protocol.format_event ~directory event in
     List.for_all t ~f:(predicate_matches event line)
   ;;
 end
@@ -96,9 +98,15 @@ type t =
   ; (* Ordered by first appearance — newest symbol last. Reorganising on
        every BBO would be visually noisy. *)
     bbos_rev : (Symbol_id.t * Bbo.t) list
+  ; (* The id<->name map the monitor fetched at connect. Every rendered line
+       resolves ids through it; [Symbol_directory.empty] (the default) just
+       shows the ids, which is what the tests and a pre-connect model do. *)
+    directory : Symbol_directory.t
   }
 
-let create () = { events_rev = []; filter = Filter.all; bbos_rev = [] }
+let create ?(directory = Symbol_directory.empty) () =
+  { events_rev = []; filter = Filter.all; bbos_rev = []; directory }
+;;
 
 let update_bbos bbos_rev symbol bbo =
   let found, updated =
@@ -126,12 +134,18 @@ let set_filter t filter = { t with filter }
 let filter t = t.filter
 
 let visible_events t =
-  List.rev_filter t.events_rev ~f:(Filter.matches t.filter)
+  List.rev_filter
+    t.events_rev
+    ~f:(Filter.matches ~directory:t.directory t.filter)
 ;;
 
-let visible_lines t = List.map (visible_events t) ~f:Protocol.format_event
+let visible_lines t =
+  List.map
+    (visible_events t)
+    ~f:(Protocol.format_event ~directory:t.directory)
+;;
 
 let visible_styled_lines t =
   List.map (visible_events t) ~f:(fun event ->
-    Color.of_event event, Protocol.format_event event)
+    Color.of_event event, Protocol.format_event ~directory:t.directory event)
 ;;

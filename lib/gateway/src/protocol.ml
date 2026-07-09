@@ -9,10 +9,7 @@ let format_event ?directory ?(participant = None) event =
   let symbol_to_string symbol =
     match directory with
     | None -> Symbol_id.to_string symbol
-    | Some directory ->
-      (match Symbol_directory.name directory symbol with
-       | Some name -> Symbol.to_string name
-       | None -> Symbol_id.to_string symbol)
+    | Some directory -> Symbol_directory.name_or_id directory symbol
   in
   match event with
   | Exchange_event.Order_accept { order_id; participant = _; request } ->
@@ -25,12 +22,51 @@ let format_event ?directory ?(participant = None) event =
       (Price.to_string_dollar request.price)
       (Time_in_force.to_string request.time_in_force)
   | Fill fill ->
+    (* Fills are hand-formatted here (like every other event variant) rather
+       than via [Fill.to_string], because rendering the symbol as a name
+       needs the directory, which lives here, not in [lib/types]. *)
+    let symbol = symbol_to_string fill.symbol in
+    let generic_line () =
+      sprintf
+        "FILL fill_id=%d %s %s x%d aggressor=%s(%s w/ client order ID = %s) \
+         %s resting=%s(%s w/ client order ID = %s)"
+        fill.fill_id
+        symbol
+        (Price.to_string_dollar fill.price)
+        (Size.to_int fill.size)
+        (Order_id.to_string fill.aggressor_order_id)
+        (Participant.to_string fill.aggressor_participant)
+        (Client_order_id.to_string fill.aggressor_client_order_id)
+        (Side.to_string fill.aggressor_side)
+        (Order_id.to_string fill.resting_order_id)
+        (Participant.to_string fill.resting_participant)
+        (Client_order_id.to_string fill.resting_client_order_id)
+    in
     (match participant with
-     | None -> [%string "FILL %{fill#Fill}"]
-     | Some guy ->
-       (match Fill.to_participant_view fill guy with
-        | None -> [%string "FILL %{fill#Fill}"]
-        | Some new_fill_string -> [%string "FILL %{new_fill_string}"]))
+     | None -> generic_line ()
+     | Some viewer ->
+       (* The viewer's own perspective: their [client_order_id] and the side
+          they were on — the resting party's side is the opposite of the
+          aggressor's. Not a party to this fill → fall back to the generic
+          line. *)
+       let own_side =
+         if Participant.equal viewer fill.aggressor_participant
+         then Some (fill.aggressor_client_order_id, fill.aggressor_side)
+         else if Participant.equal viewer fill.resting_participant
+         then
+           Some (fill.resting_client_order_id, Side.flip fill.aggressor_side)
+         else None
+       in
+       (match own_side with
+        | None -> generic_line ()
+        | Some (client_order_id, side) ->
+          sprintf
+            "FILL Order %s: You %s %d %s at %s."
+            (Client_order_id.to_string client_order_id)
+            (match side with Buy -> "bought" | Sell -> "sold")
+            (Size.to_int fill.size)
+            symbol
+            (Price.to_string_dollar fill.price)))
   | Order_cancel
       { order_id; participant = _; symbol; remaining_size; reason; _ } ->
     sprintf

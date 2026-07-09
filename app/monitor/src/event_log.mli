@@ -9,6 +9,7 @@
 
 open! Core
 open Jsip_types
+open Jsip_gateway
 
 (** Coarse-grained grouping of [Exchange_event.t] variants, suited for "show
     only orders" / "show only trades" / "show only market data" filters.
@@ -65,13 +66,23 @@ module Filter : sig
   (** [combine a b] returns a filter that requires both [a] and [b]. *)
   val combine : t -> t -> t
 
-  (** Whether the filter would keep [event]. *)
-  val matches : t -> Exchange_event.t -> bool
+  (** Whether the filter would keep [event]. A substring predicate tests the
+      event's rendered line, so pass the same [directory] the log renders
+      with (default {!Jsip_gateway.Symbol_directory.empty}) to filter on
+      names. *)
+  val matches
+    :  ?directory:Symbol_directory.t
+    -> t
+    -> Exchange_event.t
+    -> bool
 end
 
 type t
 
-val create : unit -> t
+(** Create an empty log. [directory] (default
+    {!Jsip_gateway.Symbol_directory.empty}) is the id<->name map used to
+    render every line; the default shows raw ids. *)
+val create : ?directory:Symbol_directory.t -> unit -> t
 
 (** Append an event to the log. Also refreshes [current_bbos] when [event] is
     a [Best_bid_offer_update]. *)

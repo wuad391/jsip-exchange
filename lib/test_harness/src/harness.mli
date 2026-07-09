@@ -16,6 +16,7 @@
 open! Core
 open Jsip_types
 open Jsip_order_book
+open Jsip_gateway
 
 (** {2 Constants}
 
@@ -27,6 +28,12 @@ open Jsip_order_book
 val aapl : Symbol_id.t
 val tsla : Symbol_id.t
 val goog : Symbol_id.t
+
+(** A directory naming [aapl]/[tsla]/[goog] as "AAPL"/"TSLA"/"GOOG", for
+    tests that exercise the phase-2 render path (ids rendered back as names)
+    rather than the raw-id fallback. *)
+val directory : Symbol_directory.t
+
 val alice : Participant.t
 val bob : Participant.t
 val charlie : Participant.t

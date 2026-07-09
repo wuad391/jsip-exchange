@@ -21,6 +21,13 @@ type t [@@deriving sexp_of]
     trades: the name at position [i] gets id [i]. Raises on a duplicate name. *)
 val of_names : Symbol.t list -> t
 
+(** The empty directory: it knows no names, so {!name} and {!id} always
+    return [None] and {!name_or_id} always falls back to the numeric id.
+    Handy as a default for a consumer that renders before (or without)
+    fetching a real directory — it degrades to showing ids rather than
+    needing one. *)
+val empty : t
+
 (** The [(id, name)] pairs in id order — what
     {!Rpc_protocol.symbol_directory_rpc} serves. *)
 val to_alist : t -> (Symbol_id.t * Symbol.t) list
@@ -35,6 +42,12 @@ val name : t -> Symbol_id.t -> Symbol.t option
 (** The id for a name, or [None] if the name is not one this directory
     trades. *)
 val id : t -> Symbol.t -> Symbol_id.t option
+
+(** [name_or_id t id] is the human name for [id] if the directory knows it,
+    otherwise the numeric id as a string. The render-side fallback every
+    display shares, so an unknown id still prints something sensible rather
+    than raising. *)
+val name_or_id : t -> Symbol_id.t -> string
 
 (** How many symbols the directory covers (ids [0 .. num_symbols - 1]). *)
 val num_symbols : t -> int

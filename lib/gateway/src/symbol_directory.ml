@@ -26,6 +26,7 @@ let of_names names =
   { id_to_name; name_to_id }
 ;;
 
+let empty = of_names []
 let num_symbols t = Array.length t.id_to_name
 
 let name t id =
@@ -36,6 +37,12 @@ let name t id =
 ;;
 
 let id t name = Map.find t.name_to_id name
+
+let name_or_id t id =
+  match name t id with
+  | Some name -> Symbol.to_string name
+  | None -> Symbol_id.to_string id
+;;
 
 let to_alist t =
   Array.to_list t.id_to_name

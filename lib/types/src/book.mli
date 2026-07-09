@@ -13,4 +13,7 @@ type t =
   }
 [@@deriving sexp, bin_io]
 
+(** Render the book as multi-line text; the header prints the raw
+    {!Symbol_id.t}. A caller that wants the human name has a directory and
+    prints the name itself before this — [Book] stays int-only. *)
 val to_string : t -> string
