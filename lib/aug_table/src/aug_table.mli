@@ -99,11 +99,6 @@ val find : ('key, 'data, _) t -> 'key -> 'data option
 
 val mem : ('key, _, _) t -> 'key -> bool
 
-(** Smallest / largest key with its data, or [None] when empty. O(log n). *)
-val min_elt : ('key, 'data, _) t -> ('key * 'data) option
-
-val max_elt : ('key, 'data, _) t -> ('key * 'data) option
-
 (** Fold over entries in increasing key order. O(n). *)
 val fold
   :  ('key, 'data, _) t

@@ -252,24 +252,6 @@ let find t key =
 
 let mem t key = Option.is_some (find t key)
 
-let min_elt t =
-  let rec go = function
-    | Empty -> None
-    | Node { left = Empty; key; data; _ } -> Some (key, data)
-    | Node { left; _ } -> go left
-  in
-  go t.root
-;;
-
-let max_elt t =
-  let rec go = function
-    | Empty -> None
-    | Node { right = Empty; key; data; _ } -> Some (key, data)
-    | Node { right; _ } -> go right
-  in
-  go t.root
-;;
-
 let fold t ~init ~f =
   let rec go acc = function
     | Empty -> acc
