@@ -1,29 +1,35 @@
-Aug_table vs Core.Map — keys:int values:Order.t measure:max-key (combine=max, identity=0)
-best-of-5 trials; ns per operation, lower is better
+Aug_table vs Core.Map — core_bench (-ascii -quota 1)
+keys:int values:Order.t  measure:max-key (combine=max, identity=0)
+Time/Run: lower is better.  mWd/Run: minor words allocated per run.
 
-  op         n             aug_table      core_map    map/aug
-  -----------------------------------------------------------
-  creation   1000              784.4         439.3       0.6x
-  add        1000              340.2         154.4       0.5x
-  remove     1000              394.4         183.5       0.5x
-  find       1000              125.2          91.8       0.7x
-  fold       1000                8.2           7.6       0.9x
-  measure    1000                3.6        5028.4    1386.6x
-             (Core.Map.max_elt gets this measure in O(log n): 14.9 ns/call)
-
-  creation   100000           1925.5         952.3       0.5x
-  add        100000           1029.7         377.8       0.4x
-  remove     100000           1829.1         543.2       0.3x
-  find       100000            445.6         341.4       0.8x
-  fold       100000             49.9          13.5       0.3x
-  measure    100000              3.0     1518691.4  514347.9x
-             (Core.Map.max_elt gets this measure in O(log n): 49.2 ns/call)
-
-notes:
-  measure: aug_table returns the cached root measure in O(1), for any monoid.
-  Core.Map has no cached reduce, so a general measure costs an O(n) fold (shown).
-  For this particular measure (max key), Core.Map.max_elt is a special O(log n)
-  case (shown per-n above), not O(n).
-  creation/add/remove/find: O(log n) both; the 2-5x favoring Core.Map is its
-  constant-factor edge (Leaf-specialized nodes, tuned paths) plus the measure
-  aug_table maintains on every write.
+Estimated testing time 26s (26 benchmarks x 1s). Change using '-quota'.
+                                                                                                                          
+  Name                                         Prom/Run        mjWd/Run           Time/Run          mWd/Run   Percentage  
+ --------------------------------------- --------------- --------------- ------------------ ---------------- ------------ 
+  aug creation n=1000                           290.29w         290.29w       486_730.75ns       73_564.00w        0.26%  
+  map creation n=1000                           136.32w         136.32w       223_959.46ns       57_341.00w        0.12%  
+  aug add n=1000                                                                  657.54ns           86.00w               
+  map add n=1000                                                                  189.75ns           66.00w               
+  aug remove n=1000                                                               340.23ns           58.00w               
+  map remove n=1000                                                               133.35ns           45.00w               
+  aug find n=1000                                                                  73.27ns           10.00w               
+  map find n=1000                                                                  54.17ns            3.00w               
+  aug fold n=1000                                                               7_345.87ns            8.00w               
+  map fold n=1000                                                               7_947.42ns            3.00w               
+  aug measure O(1) n=1000                                                          12.04ns            3.00w               
+  map measure O(n) fold n=1000                                                  6_798.90ns            3.00w               
+  map measure O(log n) max_elt n=1000                                              39.23ns            3.00w               
+  aug creation n=100000                   2_559_658.40w   2_559_658.40w   185_750_569.43ns   12_434_298.00w      100.00%  
+  map creation n=100000                   1_765_300.80w   1_765_300.80w    94_895_336.67ns    9_964_205.00w       51.09%  
+  aug add n=100000                                                              1_005.93ns          156.00w               
+  map add n=100000                                                                358.51ns          120.00w               
+  aug remove n=100000                                                             647.42ns          107.00w               
+  map remove n=100000                                                             250.23ns           87.00w               
+  aug find n=100000                                                               118.92ns           10.00w               
+  map find n=100000                                                                98.04ns            3.00w               
+  aug fold n=100000                                                         3_729_834.00ns            8.00w        2.01%  
+  map fold n=100000                                                         1_014_222.91ns            3.00w        0.55%  
+  aug measure O(1) n=100000                                                        11.65ns            3.00w               
+  map measure O(n) fold n=100000                                            1_074_023.39ns            3.00w        0.58%  
+  map measure O(log n) max_elt n=100000                                            54.17ns            3.00w               
+                                                                                                                          
