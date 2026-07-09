@@ -1,7 +1,19 @@
 open! Core
 module Scenario = Scenario
 
-let all : (module Scenario.S) list = [ (module Calm_day) ]
+let all : (module Scenario.S) list =
+  [ (module Calm_day)
+  ; (module Active_day)
+  ; (module Earnings_shock)
+  ; (module Momentum_day)
+  ; (module Flash_crash)
+  ; (module Pump_and_dump)
+  ; (module Cancel_storm)
+  ; (module Book_filler_storm)
+  ; (module Spam_storm)
+  ; (module Slow_consumer)
+  ]
+;;
 
 let all_names =
   List.map all ~f:(fun (module S : Scenario.S) -> S.name)

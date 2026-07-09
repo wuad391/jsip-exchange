@@ -1,0 +1,170 @@
+open! Core
+open Jsip_types
+open Jsip_scenario_runner
+open Jsip_symbol_directory
+module Fundamental_oracle = Jsip_fundamental.Fundamental_oracle
+module Spammer = Jsip_bots.Spammer
+module Noise_trader = Jsip_bots.Noise_trader
+module Momentum_trader = Jsip_bots.Momentum_trader_hansel
+module Market_maker_bot = Jsip_market_maker.Market_maker_bot
+
+(* A single-symbol market with four participants, arranged to show a
+   pump-and-dump extracting money from a price-chaser:
+
+   - the [pump-and-dumper] ({!Spammer} in its [Pump_and_dump] behavior) walks
+     AAPL up on marketable buys, then dumps its inventory once the mid has
+     risen;
+   - the [momentum-trader] reads the public tape and chases the rising price
+     -- it is the intended victim, buying near the top and left holding as
+     the price falls back;
+   - the [market-maker] quotes a ladder anchored on the *fundamental*, so it
+     is NOT fooled into repricing upward: it supplies the offers the pump
+     lifts on the way up and mostly refuses to chase. This is the control --
+     against it alone the scheme is barely profitable;
+   - the [noise-trader] supplies organic two-sided flow, so the book has real
+     resting bids for the dump to land in and the manipulation hides in
+     noise.
+
+   The contrast between the momentum trader (chases, gets hurt) and the
+   market maker (value-anchored, mostly doesn't) is the whole point: the
+   scheme only extracts money from participants who trade on price rather
+   than value. *)
+
+let name = "pump-and-dump"
+
+let description =
+  "A pump-and-dump bot walks a price up and dumps into a momentum trader \
+   that chased the move, while a fundamental-anchored market maker mostly \
+   refuses the bait."
+;;
+
+let symbol = Symbol.of_string "AAPL"
+let initial_price_cents = 15000
+
+(* Low volatility and weak mean reversion so the pump's signal stands out and
+   the manipulated price is allowed to drift rather than snapping straight
+   back to fundamental against the scheme. *)
+let oracle_config ~symbol_id : Fundamental_oracle.Config.t =
+  Symbol_id.Map.of_alist_exn
+    [ ( symbol_id
+      , { Fundamental_oracle.Config.initial_price_cents
+        ; volatility_cents_per_sec = 1.5
+        ; mean_reversion_strength = 0.02
+        ; tick_interval = Time_ns.Span.of_sec 1.0
+        } )
+    ]
+;;
+
+(* The manipulator. Every knob is chosen relative to the other bots below:
+   [clip_size] is 3x the market maker's [size_per_level] so each buy walks
+   several offer levels; [pump_target_pct] of 1% (a 150-cent move off 150.00)
+   is well above the momentum trader's 10-cent trigger, so the pump trips the
+   victim long before the target is hit; [max_inventory] of 150 is a long the
+   momentum trader (max_position 250) plus the noise-trader bids can
+   plausibly absorb on the dump; [give_up_ticks] of 40 (~10s at this tick
+   rate) gives the pump time to work but guarantees an unwind if it stalls. *)
+let pump_and_dump_spec ~symbol_id =
+  let params =
+    Spammer.Config.pump_and_dump_params
+      ~target_symbol:symbol_id
+      ~pump_target_pct:(Percent.of_percentage 1.0)
+      ~clip_size:30
+      ~max_inventory:150
+      ~give_up_ticks:40
+      ~aggression_offset_cents:3
+      ~entry_time_in_force:Ioc
+  in
+  Bot_spec.T
+    { bot = (module Spammer)
+    ; config =
+        Spammer.Config.create
+          ~symbols:[ symbol_id ]
+          ~behavior:(Pump_and_dump params)
+    ; participant = Participant.of_string "pump-and-dumper"
+    ; symbols = [ symbol_id ]
+    ; rng_seed = 5001
+    ; tick_interval = Time_ns.Span.of_ms 250.0
+    ; is_marketdata_consumer = true
+    }
+;;
+
+(* The victim: a short window and a low threshold make it eager to chase the
+   pump's rising prints, and a large [max_position] lets it keep buying into
+   the top -- exactly the counterparty the dump needs. *)
+let momentum_trader_spec ~symbol_id =
+  Bot_spec.T
+    { bot = (module Momentum_trader)
+    ; config =
+        Momentum_trader.Config.create_exn
+          ~symbol:symbol_id
+          ~window_capacity:4
+          ~threshold_cents:10
+          ~max_order_size:30
+          ~max_position:250
+          ~cooldown_ticks:0
+          ()
+    ; participant = Participant.of_string "momentum-trader"
+    ; symbols = [ symbol_id ]
+    ; rng_seed = 4001
+    ; tick_interval = Time_ns.Span.of_ms 300.0
+    ; is_marketdata_consumer = true
+    }
+;;
+
+(* The control: a fundamental-anchored ladder. It supplies the offers the
+   pump lifts and the bids the dump hits, but reprices off the oracle, not
+   the last trade, so it does not chase the manipulated price. *)
+let market_maker_spec ~symbols =
+  Bot_spec.T
+    { bot = (module Market_maker_bot)
+    ; config =
+        Market_maker_bot.create_config
+          ()
+          ~size_per_level:10
+          ~num_levels:5
+          ~inventory_skew_cents_per_share:1
+          ~symbols
+    ; participant = Participant.of_string "market-maker"
+    ; symbols
+    ; rng_seed = 2001
+    ; tick_interval = Time_ns.Span.of_sec 1.0
+    ; is_marketdata_consumer = true
+    }
+;;
+
+(* Organic two-sided flow so the book has real resting liquidity beyond the
+   market maker -- bids for the dump to land in, and cover for the pump. *)
+let noise_trader_spec ~symbols =
+  Bot_spec.T
+    { bot = (module Noise_trader)
+    ; config =
+        Noise_trader.create_config
+          ~symbols
+          ~avg_size:8
+          ~tick_chance:0.8
+          ~aggressiveness_pct:50
+          ~ioc_pct:40
+    ; participant = Participant.of_string "noise-trader"
+    ; symbols
+    ; rng_seed = 3001
+    ; tick_interval = Time_ns.Span.of_ms 200.0
+    ; is_marketdata_consumer = true
+    }
+;;
+
+let configure () : Scenario_config.t =
+  let directory = Symbol_directory.of_names [ symbol ] in
+  let symbol_id = Symbol_directory.id_exn directory symbol in
+  let symbols = [ symbol_id ] in
+  { name
+  ; directory
+  ; oracle_config = oracle_config ~symbol_id
+  ; news = []
+  ; bots =
+      [ pump_and_dump_spec ~symbol_id
+      ; momentum_trader_spec ~symbol_id
+      ; market_maker_spec ~symbols
+      ; noise_trader_spec ~symbols
+      ]
+  }
+;;
