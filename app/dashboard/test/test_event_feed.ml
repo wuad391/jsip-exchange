@@ -1,6 +1,7 @@
 open! Core
 open Jsip_types
 open Jsip_dashboard
+open Jsip_symbol_directory
 
 (* [Event_feed.format] is what the browser feed pane draws, so these pin the
    text and color of every event kind — and, via the [symbol] field,
@@ -115,5 +116,28 @@ let%expect_test "format renders each event kind" =
     ((symbol (0)) (text "BBO 0 bid=$149.90 x5 ask=$150.10 x7") (color #58a6ff))
     trade_report
     ((symbol (0)) (text "TRADE 0 $150.05 x3") (color #bc8cff))
+    |}]
+;;
+
+let%expect_test "format resolves the symbol id to its name via the directory"
+  =
+  let directory = Symbol_directory.of_names [ Symbol.of_string "AAPL" ] in
+  let find name = List.Assoc.find_exn events name ~equal:String.equal in
+  (* The [symbol] field still carries the raw id (for tab filtering); only
+     the display [text] gains the name. The hand-formatted fill line and a
+     [%string] line both pick it up. *)
+  print_s
+    [%sexp
+      (Event_feed.format ~directory (find "fill") : Event_feed.feed_row)];
+  print_s
+    [%sexp (Event_feed.format ~directory (find "bbo") : Event_feed.feed_row)];
+  [%expect
+    {|
+    ((symbol (0))
+     (text
+      "FILL fill_id=1 AAPL $150.00 x50 aggressor=7(alice w/ client order ID = 1) BUY resting=3(bob w/ client order ID = 2)")
+     (color #39c5cf))
+    ((symbol (0)) (text "BBO AAPL bid=$149.90 x5 ask=$150.10 x7")
+     (color #58a6ff))
     |}]
 ;;

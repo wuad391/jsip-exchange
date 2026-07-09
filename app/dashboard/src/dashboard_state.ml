@@ -1,5 +1,6 @@
 open! Core
 open Jsip_exchange_stats
+module Symbol_directory = Jsip_symbol_directory.Symbol_directory
 
 let max_window = 60
 
@@ -211,7 +212,9 @@ let participants_display window : Display.participant_row list =
 
 (* Market state from the newest snapshot: each traded symbol's best bid/ask
    as dollar strings with sizes, and the spread. Empty sides stay [None]. *)
-let books_display window : Display.book_row list =
+let books_display ?(directory = Symbol_directory.empty) window
+  : Display.book_row list
+  =
   match List.last window with
   | None -> []
   | Some (current : Exchange_stats.t) ->
@@ -226,7 +229,7 @@ let books_display window : Display.book_row list =
         let size (level : Jsip_types.Level.t option) =
           Option.map level ~f:(fun l -> Jsip_types.Size.to_int l.size)
         in
-        { Display.symbol = Jsip_types.Symbol_id.to_string b.symbol
+        { Display.symbol = Symbol_directory.name_or_id directory b.symbol
         ; bid = price bbo.bid
         ; bid_size = size bbo.bid
         ; ask = price bbo.ask
@@ -258,7 +261,7 @@ let request_queue_display window : Display.occupancy_row =
   }
 ;;
 
-let display t : Display.t =
+let display ?(directory = Symbol_directory.empty) t : Display.t =
   let window = snapshots t in
   let current = latest t in
   let gc = gc_rate t in
@@ -284,6 +287,6 @@ let display t : Display.t =
       ]
   ; loop_busy_series = List.map window ~f:loop_busy_us
   ; loop_busy_us = Option.value_map current ~default:0. ~f:loop_busy_us
-  ; books = books_display window
+  ; books = books_display ~directory window
   }
 ;;

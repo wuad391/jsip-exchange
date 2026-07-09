@@ -27,5 +27,4 @@ val feed_rpc : (unit, (int * Exchange_event.t) list) Polling_state_rpc.t
     lifetime), the browser mirrors it locally to render names instead of ids
     in the books pane and event feed. The dashboard server relays it straight
     from the exchange; the wire otherwise stays int-only. *)
-val symbol_directory_rpc
-  : (unit, (Symbol_id.t * Symbol.t) list) Rpc.Rpc.t
+val symbol_directory_rpc : (unit, (Symbol_id.t * Symbol.t) list) Rpc.Rpc.t

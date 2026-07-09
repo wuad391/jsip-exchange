@@ -1,6 +1,11 @@
 (library
  (name jsip_dashboard_test)
- (libraries jsip_dashboard jsip_exchange_stats jsip_types core)
+ (libraries
+  jsip_dashboard
+  jsip_symbol_directory
+  jsip_exchange_stats
+  jsip_types
+  core)
  (inline_tests)
  (preprocess
   (pps ppx_jane)))

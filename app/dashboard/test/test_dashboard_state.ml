@@ -192,3 +192,43 @@ let%expect_test "top-of-book projects bid/ask/spread per symbol" =
       (spread ())))
     |}]
 ;;
+
+(* The same projection, but with a directory: each book's [symbol] renders as
+   its name rather than the raw id. *)
+let%expect_test "top-of-book renders symbol names when given a directory" =
+  let level cents size : Jsip_types.Level.t =
+    { price = Jsip_types.Price.of_int_cents cents
+    ; size = Jsip_types.Size.of_int size
+    }
+  in
+  let book symbol_id (bbo : Jsip_types.Bbo.t) : Exchange_stats.Top_of_book.t =
+    { symbol = Jsip_types.Symbol_id.of_int symbol_id; bbo }
+  in
+  let curr =
+    { (snap ~seq:1 ~minor:0 ~major:0) with
+      top_of_book =
+        [ book 0 { bid = Some (level 14990 10); ask = None }
+        ; book 1 { bid = None; ask = Some (level 25000 4) }
+        ]
+    }
+  in
+  let directory =
+    Jsip_symbol_directory.Symbol_directory.of_names
+      [ Jsip_types.Symbol.of_string "AAPL"
+      ; Jsip_types.Symbol.of_string "TSLA"
+      ]
+  in
+  let d =
+    Dashboard_state.display
+      ~directory
+      (Dashboard_state.of_snapshots [ curr ])
+  in
+  print_s [%sexp (d.books : Dashboard_state.Display.book_row list)];
+  [%expect
+    {|
+    (((symbol AAPL) (bid ($149.90)) (bid_size (10)) (ask ()) (ask_size ())
+      (spread ()))
+     ((symbol TSLA) (bid ()) (bid_size ()) (ask ($250.00)) (ask_size (4))
+      (spread ())))
+    |}]
+;;

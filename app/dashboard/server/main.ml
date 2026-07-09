@@ -92,9 +92,9 @@ let serve ~http_port ~window ~feed ~directory =
             (fun (_ : unit) () -> return !feed)
         ; Rpc.Rpc.implement
             Jsip_dashboard_protocol.symbol_directory_rpc
-            (* Unlike [Polling_state_rpc.implement], which hides the connection
-               in its state, a plain RPC sees the whole [unit * Connection.t]
-               connection state; we use neither half. *)
+            (* Unlike [Polling_state_rpc.implement], which hides the
+               connection in its state, a plain RPC sees the whole
+               [unit * Connection.t] connection state; we use neither half. *)
             (fun _ () -> return directory)
         ]
       ~on_unknown_rpc:`Close_connection
@@ -116,8 +116,8 @@ let main ~exchange_host ~exchange_port ~http_port () =
     connect_to_exchange ~host:exchange_host ~port:exchange_port
   in
   (* The tradable set is fixed for the server's lifetime, so fetch the
-     exchange's [(id, name)] directory once here and relay it to browsers over
-     [symbol_directory_rpc]; each browser mirrors it to render names. *)
+     exchange's [(id, name)] directory once here and relay it to browsers
+     over [symbol_directory_rpc]; each browser mirrors it to render names. *)
   let%bind directory =
     Rpc.Rpc.dispatch_exn Rpc_protocol.symbol_directory_rpc connection ()
   in
