@@ -129,3 +129,34 @@ let%expect_test "cached measure matches a brute-force fold under many \
     sorted    = true
     |}]
 ;;
+
+let%expect_test "key_aug_table: max_key stays correct across set/remove" =
+  let t =
+    List.fold
+      [ 3; 1; 4; 1; 5; 9; 2; 6 ]
+      ~init:Key_aug_table.empty
+      ~f:(fun t k -> Key_aug_table.set t ~key:k ~data:k)
+  in
+  printf
+    "length=%d max_key=%d\n"
+    (Key_aug_table.length t)
+    (Key_aug_table.max_key t);
+  print_s [%sexp (Key_aug_table.to_alist t : (int * int) list)];
+  let t = Key_aug_table.remove t 9 in
+  (* the cached max_key must equal the actual maximum key *)
+  let brute_max =
+    List.fold (Key_aug_table.to_alist t) ~init:0 ~f:(fun acc (k, _) ->
+      Int.max acc k)
+  in
+  printf
+    "after remove 9: length=%d max_key=%d brute=%d\n"
+    (Key_aug_table.length t)
+    (Key_aug_table.max_key t)
+    brute_max;
+  [%expect
+    {|
+    length=7 max_key=9
+    ((1 1) (2 2) (3 3) (4 4) (5 5) (6 6) (9 9))
+    after remove 9: length=6 max_key=6 brute=6
+    |}]
+;;

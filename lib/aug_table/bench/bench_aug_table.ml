@@ -1,16 +1,20 @@
-(** Benchmark: [Aug_table] vs [Core.Map], via [core_bench].
+(** Benchmark: [Aug_table] vs [Key_aug_table] vs [Core.Map], via
+    [core_bench].
 
     Keys are ints, values orders, and the measure is the largest key
-    ([combine = max], [identity = 0]). We compare creation, add, remove,
-    find, fold, and measure/reduce. The operation of interest is [measure]:
-    aug_table returns the cached root measure in O(1), whereas Core.Map has
-    no cached reduce and must fold in O(n) to recompute the same value. For
-    this particular measure (max key) Map also has the specialized O(log n)
-    [max_elt], benched as an honest reference.
+    ([combine = max], [identity = 0]). Three contenders:
 
-    Because both structures are persistent, repeating a single [add]/[remove]
-    on a fixed base is a clean microbenchmark (the base is never mutated), so
-    core_bench can time every operation directly.
+    - [aug]: the generic {!Aug_table}, ordering + monoid supplied as
+      closures.
+    - [key]: {!Key_aug_table} — the same tree and the same 6-field node, but
+      monomorphized: [Int.compare] and [Int.max] are inlined, not called
+      through closures. So [aug] vs [key] isolates the cost of genericity
+      with node size held fixed; [key] vs [map] is then node size (Leaf) +
+      Map's tuning.
+    - [map]: {!Core.Map}.
+
+    Both aug structures are persistent, so repeating a single [add]/[remove]
+    on a fixed base is a clean microbenchmark (the base is never mutated).
 
     Run:
     {v
@@ -36,6 +40,7 @@ module By_max_key = struct
 end
 
 type aug = (int, Order.t, int) Aug_table.t
+type key = Order.t Key_aug_table.t
 type map = (int, Order.t, Int.comparator_witness) Map.t
 
 (* Values are irrelevant to the measure and to tree shape (keyed by int), so
@@ -66,6 +71,10 @@ let tests_for_size n =
       ~init:(Aug_table.empty (module By_max_key))
       ~f:(fun t k -> Aug_table.set t ~key:k ~data:order)
   in
+  let build_key () =
+    Array.fold keys ~init:Key_aug_table.empty ~f:(fun t k ->
+      Key_aug_table.set t ~key:k ~data:order)
+  in
   let build_map () =
     Array.fold
       keys
@@ -73,30 +82,45 @@ let tests_for_size n =
       ~f:(fun t k -> Map.set t ~key:k ~data:order)
   in
   let aug = build_aug () in
+  let key = build_key () in
   let map = build_map () in
   let test label f =
     Bench.Test.create ~name:[%string "%{label} n=%{n#Int}"] f
   in
   [ test "aug creation" (fun () -> ignore (build_aug () : aug))
+  ; test "key creation" (fun () -> ignore (build_key () : key))
   ; test "map creation" (fun () -> ignore (build_map () : map))
   ; test "aug add" (fun () ->
       ignore (Aug_table.set aug ~key:absent ~data:order : aug))
+  ; test "key add" (fun () ->
+      ignore (Key_aug_table.set key ~key:absent ~data:order : key))
   ; test "map add" (fun () ->
       ignore (Map.set map ~key:absent ~data:order : map))
   ; test "aug remove" (fun () -> ignore (Aug_table.remove aug present : aug))
+  ; test "key remove" (fun () ->
+      ignore (Key_aug_table.remove key present : key))
   ; test "map remove" (fun () -> ignore (Map.remove map present : map))
   ; test "aug find" (fun () ->
       ignore (Aug_table.find aug present : Order.t option))
+  ; test "key find" (fun () ->
+      ignore (Key_aug_table.find key present : Order.t option))
   ; test "map find" (fun () ->
       ignore (Map.find map present : Order.t option))
   ; test "aug fold" (fun () ->
       ignore
         (Aug_table.fold aug ~init:0 ~f:(fun ~key ~data:_ acc -> acc + key)
          : int))
+  ; test "key fold" (fun () ->
+      ignore
+        (Key_aug_table.fold key ~init:0 ~f:(fun ~key ~data:_ acc ->
+           acc + key)
+         : int))
   ; test "map fold" (fun () ->
       ignore
         (Map.fold map ~init:0 ~f:(fun ~key ~data:_ acc -> acc + key) : int))
   ; test "aug measure O(1)" (fun () -> ignore (Aug_table.measure aug : int))
+  ; test "key measure O(1)" (fun () ->
+      ignore (Key_aug_table.max_key key : int))
   ; test "map measure O(n) fold" (fun () ->
       ignore
         (Map.fold map ~init:0 ~f:(fun ~key ~data:_ acc -> Int.max acc key)
