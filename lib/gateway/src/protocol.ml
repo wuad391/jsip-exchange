@@ -1,5 +1,6 @@
 open! Core
 open Jsip_types
+open Jsip_symbol_directory
 
 (* Render side of the readability layer: given the [directory] the client
    fetched at connect, an id prints as its human name; without one (or for an

@@ -6,6 +6,7 @@
 
 open! Core
 open! Async
+open Jsip_symbol_directory
 
 type t
 

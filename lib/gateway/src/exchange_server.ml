@@ -2,6 +2,7 @@ open! Core
 open! Async
 open Jsip_types
 open Jsip_order_book
+open Jsip_symbol_directory
 
 module Connection_state = struct
   type t = { mutable session : Session.t option }

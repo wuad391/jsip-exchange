@@ -26,6 +26,7 @@
 
 open! Core
 open Jsip_types
+open Jsip_symbol_directory
 
 (** Format an exchange event as a single line of human-readable text. When a
     [directory] is supplied (the client fetches it at connect via

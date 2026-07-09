@@ -5,12 +5,16 @@
     {!Jsip_types.Symbol_id} and the phase-1 work); this directory is the one
     place names and ids meet. It is authoritative in the server's [main]
     (built from the ordered symbol set the server trades, so a symbol's
-    position in that list is its id, matching
-    {!Jsip_order_book.Matching_engine.create}), and served to clients over
-    {!Rpc_protocol.symbol_directory_rpc}. Each client mirrors it locally to
-    resolve names at parse time and ids at render time. [lib/types] stays
-    int-only; names live only here, at the edges — which is why this lives in
-    the gateway, not in [lib/types]. *)
+    position in that list is its id, matching the matching engine's book
+    order), and served to clients over the exchange's [symbol-directory] RPC.
+    Each client mirrors it locally to resolve names at parse time and ids at
+    render time.
+
+    Names live only here, at the edges — never in [lib/types], which stays
+    int-only. This is its own Async-free library (rather than part of the
+    gateway) so every edge can link it: the native server, client, and
+    terminal monitor, and the [js_of_ocaml] web dashboard, which cannot link
+    the Async-bearing gateway. *)
 
 open! Core
 open Jsip_types
@@ -28,8 +32,8 @@ val of_names : Symbol.t list -> t
     needing one. *)
 val empty : t
 
-(** The [(id, name)] pairs in id order — what
-    {!Rpc_protocol.symbol_directory_rpc} serves. *)
+(** The [(id, name)] pairs in id order — what the [symbol-directory] RPC
+    serves. *)
 val to_alist : t -> (Symbol_id.t * Symbol.t) list
 
 (** The names in id order (the [name]s of {!to_alist}). Useful for showing

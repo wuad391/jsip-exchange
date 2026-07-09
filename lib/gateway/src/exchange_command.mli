@@ -1,5 +1,6 @@
 open! Core
 open Jsip_types
+open Jsip_symbol_directory
 
 type t =
   | Submit of Order.Request.t
