@@ -1,0 +1,17 @@
+JSIP scenario order-flow counts
+Each scenario ran 15s of wall-clock with -count-orders -seed 0, then SIGINT (graceful shutdown).
+submits/cancels = total submit_order / cancel_order calls made by all bots over the run
+(the 'frequency' half of the order-book cost x frequency analysis).
+
+scenario              submits      cancels
+---------------- ------------ ------------
+calm-day               155816       155794
+active-day             197573       197437
+earnings-shock         165428       165350
+flash-crash             88040        87300
+cancel-storm           173479       173410
+book-filler              6150            0
+spam-storm              37643          531
+momentum-day           177949       177870
+pump-and-dump          167924       167804
+slow-consumer             398          276
