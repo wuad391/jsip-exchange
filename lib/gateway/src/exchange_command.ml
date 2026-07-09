@@ -50,8 +50,8 @@ let parse
        Without one (in-process callers that already speak ids), the token is
        the id itself. *)
     let known_symbols directory =
-      Symbol_directory.to_alist directory
-      |> List.map ~f:(fun (_id, name) -> Symbol.to_string name)
+      Symbol_directory.names directory
+      |> List.map ~f:Symbol.to_string
       |> String.concat ~sep:", "
     in
     let resolve_symbol symbol_str =

@@ -49,6 +49,8 @@ let to_alist t =
   |> List.mapi ~f:(fun i name -> Symbol_id.of_int i, name)
 ;;
 
+let names t = Array.to_list t.id_to_name
+
 let of_alist pairs =
   pairs
   |> List.sort ~compare:(fun (a, _) (b, _) -> Symbol_id.compare a b)

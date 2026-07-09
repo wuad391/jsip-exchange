@@ -36,8 +36,8 @@ let run_client ~host ~port ~participant_name =
       Symbol_directory.name_or_id directory symbol
     in
     let symbol_names =
-      Symbol_directory.to_alist directory
-      |> List.map ~f:(fun (_id, name) -> Symbol.to_string name)
+      Symbol_directory.names directory
+      |> List.map ~f:Symbol.to_string
       |> String.concat ~sep:", "
     in
     print_endline

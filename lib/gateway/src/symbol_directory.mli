@@ -32,6 +32,10 @@ val empty : t
     {!Rpc_protocol.symbol_directory_rpc} serves. *)
 val to_alist : t -> (Symbol_id.t * Symbol.t) list
 
+(** The names in id order (the [name]s of {!to_alist}). Useful for showing
+    the tradable set to a human (e.g. a client help banner, a parser error). *)
+val names : t -> Symbol.t list
+
 (** Rebuild a directory from the pairs served over the wire — the inverse of
     {!to_alist}, used by a client mirroring the server's registry. *)
 val of_alist : (Symbol_id.t * Symbol.t) list -> t
