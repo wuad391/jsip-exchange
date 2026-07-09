@@ -3,6 +3,7 @@
  (public_name jsip-exchange.jsip_dashboard_protocol)
  (libraries
   core
+  async_rpc_kernel
   polling_state_rpc
   jsip_types
   jsip_exchange_stats
