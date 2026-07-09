@@ -8,7 +8,7 @@ module type Arg = sig
   val compare_key : key -> key -> int
   val identity : measure
   val combine : measure -> measure -> measure
-  val of_entry : key -> data -> measure
+  val measure_of_entry : key:key -> data:data -> measure
 end
 
 (* A weight-balanced binary search tree. Every [Node] caches two aggregates
@@ -43,7 +43,7 @@ type ('key, 'data, 'measure) t =
   ; compare_key : 'key -> 'key -> int
   ; identity : 'measure
   ; combine : 'measure -> 'measure -> 'measure
-  ; of_entry : 'key -> 'data -> 'measure
+  ; measure_of_entry : key:'key -> data:'data -> 'measure
   }
 
 let size : _ node -> int = function Empty -> 0 | Node { size; _ } -> size
@@ -63,7 +63,7 @@ let measure_of_node ~identity : _ node -> _ = function
    operation (rotations, [set], [remove]) builds nodes through here, so
    getting the cached values right here keeps them right everywhere. *)
 let create
-  ~(of_entry : 'key -> 'data -> 'measure)
+  ~(measure_of_entry : key:'key -> data:'data -> 'measure)
   ~(combine : 'measure -> 'measure -> 'measure)
   ~(identity : 'measure)
   (left : ('key, 'data, 'measure) node)
@@ -73,19 +73,15 @@ let create
   : ('key, 'data, 'measure) node
   =
   let size = size left + 1 + size right in
-  (* The cached [size] above is a function of the children's sizes plus this
-     one entry. [measure] has the very same shape, but combined with the
-     user's monoid instead of [+].
-
-     TODO(human): replace the [ignore]/[failwith] below so that [measure] is
-     the [combine] of three things, in left-to-right key order: the left
-     subtree's measure, this entry's measure ([of_entry key data]), and the
-     right subtree's measure. Read a child's cached measure with
-     [measure_of_node ~identity]. ([combine] need not be commutative, so the
-     order matters.) *)
+  (* [measure] mirrors [size]: a node's cached value is a function of its
+     children's cached values plus its own entry. Combine in left-to-right
+     key order — left subtree, this entry, right subtree — because [combine]
+     need not be commutative. *)
   let measure =
     combine
-      (combine (measure_of_node ~identity left) (of_entry key data))
+      (combine
+         (measure_of_node ~identity left)
+         (measure_of_entry ~key ~data))
       (measure_of_node ~identity right)
   in
   Node { left; key; data; right; size; measure }
@@ -183,7 +179,7 @@ let empty
   ; compare_key = A.compare_key
   ; identity = A.identity
   ; combine = A.combine
-  ; of_entry = A.of_entry
+  ; measure_of_entry = A.measure_of_entry
   }
 ;;
 
@@ -193,7 +189,10 @@ let measure t = measure_of_node ~identity:t.identity t.root
 
 let set t ~key ~data =
   let create =
-    create ~of_entry:t.of_entry ~combine:t.combine ~identity:t.identity
+    create
+      ~measure_of_entry:t.measure_of_entry
+      ~combine:t.combine
+      ~identity:t.identity
   in
   let rec go = function
     | Empty -> create Empty key data Empty
@@ -208,7 +207,10 @@ let set t ~key ~data =
 
 let remove t key =
   let create =
-    create ~of_entry:t.of_entry ~combine:t.combine ~identity:t.identity
+    create
+      ~measure_of_entry:t.measure_of_entry
+      ~combine:t.combine
+      ~identity:t.identity
   in
   let balance = balance ~create in
   (* Detach the leftmost entry of a non-empty subtree. *)

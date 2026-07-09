@@ -10,7 +10,7 @@ module Sum = struct
   let compare_key = Int.compare
   let identity = 0
   let combine = ( + )
-  let of_entry _key data = data
+  let measure_of_entry ~key:_ ~data = data
 end
 
 (* A non-commutative monoid: measure = the data concatenated in key order. A
@@ -24,7 +24,7 @@ module Concat = struct
   let compare_key = Int.compare
   let identity = ""
   let combine = ( ^ )
-  let of_entry _key data = data
+  let measure_of_entry ~key:_ ~data = data
 end
 
 let sum_of entries =

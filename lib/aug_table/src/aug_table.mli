@@ -31,7 +31,7 @@ open! Core
         let compare_key = Price.compare
         let identity = Size.zero
         let combine = Size.( + )
-        let of_entry _price (order : Order.t) = order.size
+        let measure_of_entry ~key:_ ~data:(order : Order.t) = order.size
       end
 
       let book = Aug_table.empty (module By_size)
@@ -58,8 +58,9 @@ module type Arg = sig
   val identity : measure
   val combine : measure -> measure -> measure
 
-  (** [of_entry key data] is the measure of the single entry [key -> data]. *)
-  val of_entry : key -> data -> measure
+  (** [measure_of_entry ~key ~data] is the measure of the single entry
+      [key -> data]. *)
+  val measure_of_entry : key:key -> data:data -> measure
 end
 
 type ('key, 'data, 'measure) t
