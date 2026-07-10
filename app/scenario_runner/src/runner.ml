@@ -122,7 +122,13 @@ let start_bot ?counts ~where_to_connect ~oracle (Bot_spec.T spec) =
          })
 ;;
 
-let run ?(count_orders = false) (config : Scenario_config.t) ~port ~seed =
+let run
+  ?(count_orders = false)
+  ?interactive
+  (config : Scenario_config.t)
+  ~port
+  ~seed
+  =
   print_endline
     [%string
       "[scenario] starting %{config.name} on port %{port#Int} \
@@ -163,5 +169,16 @@ let run ?(count_orders = false) (config : Scenario_config.t) ~port ~seed =
          | Error error -> print_s [%sexp (error : Error.t)])
       | Error error -> print_s [%sexp (error : Error.t)])
   in
+  (* The console comes up only after every scenario bot has registered, so
+     its very first [list] already shows them. *)
+  Option.iter interactive ~f:(fun menu ->
+    don't_wait_for
+      (Console.start
+         ~registry
+         ~menu
+         ~directory:config.directory
+         ~spawn:(fun spec ->
+           start_bot ?counts ~where_to_connect ~oracle spec)
+         ~shutdown:(fun () -> Exchange_server.close server)));
   Exchange_server.close_finished server
 ;;

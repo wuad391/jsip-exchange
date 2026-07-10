@@ -38,9 +38,15 @@ val start_bot
 
     When [count_orders] is [true] (wired to the [-count-orders] flag), the
     runner tallies how many times bots call [submit] and [cancel] over the
-    whole run and prints the totals at shutdown. *)
+    whole run and prints the totals at shutdown.
+
+    When [interactive] is given (the [-interactive] flag), a {!Console} on
+    stdin can spawn bots from that menu and kill or crash any running bot —
+    including the scenario's own. The console's [quit] closes the server,
+    which resolves the returned deferred. *)
 val run
   :  ?count_orders:bool
+  -> ?interactive:Bot_menu.Entry.t list
   -> Scenario_config.t
   -> port:int
   -> seed:int
