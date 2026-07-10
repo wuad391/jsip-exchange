@@ -33,6 +33,21 @@ val submit
     followed by any BBO updates *)
 val cancel : t -> Order.Cancel.t -> Exchange_event.t list
 
+(** Cancel every resting order [participant] has on the book, across all
+    symbols, in one sweep — the engine half of the gateway's cancel-all RPC
+    (e.g. an interactive bot being killed pulls its whole ladder at once).
+
+    Returns the number of orders cancelled and the events produced: one
+    [Order_cancel] with reason {!Cancel_reason.Mass_cancel} per resting
+    order, in submission ([Order_id.t]) order, followed by at most one
+    [Best_bid_offer_update] per symbol whose best bid or offer the sweep
+    changed — never one per cancel. [(0, [])] if the participant has
+    nothing resting. *)
+val cancel_all_for_participant
+  :  t
+  -> Participant.t
+  -> int * Exchange_event.t list
+
 (** {2 Queries} *)
 
 (** The order book for a given symbol id, or [None] if the id is out of range
