@@ -1,4 +1,5 @@
 open! Core
+module Default_bot_menu = Default_bot_menu
 module Scenario = Scenario
 
 let all : (module Scenario.S) list =

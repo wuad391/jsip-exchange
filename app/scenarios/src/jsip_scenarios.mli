@@ -9,6 +9,12 @@
     dispatch to the chosen scenario's [configure]. *)
 
 open! Core
+
+(** The interactive console's menu of spawnable bot kinds; the
+    scenario-runner binary injects {!Default_bot_menu.all} when
+    [-interactive] is set. *)
+module Default_bot_menu = Default_bot_menu
+
 module Scenario = Scenario
 
 (** All scenarios known to the runner, in the order they should appear in
