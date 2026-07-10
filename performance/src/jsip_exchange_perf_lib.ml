@@ -183,5 +183,6 @@ let command =
     ; "sequential", Bench.make_command bench_sequential
     ; "associative", Bench.make_command bench_associative
     ; "allocation", Bench.make_command bench_allocation
+    ; "replay", Replay.command
     ]
 ;;
