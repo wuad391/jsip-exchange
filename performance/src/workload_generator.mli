@@ -78,6 +78,7 @@ type t
 type action =
   | Submit of Order.Request.t
   | Cancel of Order.Cancel.t
+[@@deriving sexp_of]
 
 (** Build a generator. All state (per-participant id generators, per-symbol
     fair values, the cancel ring) is preallocated here, so {!next_action}

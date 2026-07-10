@@ -54,6 +54,7 @@ end
 type action =
   | Submit of Order.Request.t
   | Cancel of Order.Cancel.t
+[@@deriving sexp_of]
 
 type t =
   { config : Config.t
@@ -207,4 +208,51 @@ let next_action t =
        breed Cancel_rejects. *)
     if not marketable then push_pool t ~participant ~client_order_id;
     Submit request)
+;;
+
+let%expect_test "deterministic, seed-sensitive, prices bracket the mid" =
+  let stream ~seed ~n =
+    let g = create ~config:Config.balanced ~seed in
+    (* Not [List.init]: it applies [f] from [n-1] downto [0], which reverses
+       a stateful generator's output. Build the list front-to-back instead. *)
+    let rec take i acc =
+      if i <= 0 then List.rev acc else take (i - 1) (next_action g :: acc)
+    in
+    take n []
+  in
+  (* The exact head of the stream locks sequencing and pricing, not just
+     reproducibility: any change to next_action or choose_price surfaces
+     here. Balanced starts every mid at 10000c; resting orders sit 5c off it,
+     and marketable orders cross to the far side. *)
+  List.iter (stream ~seed:0 ~n:6) ~f:(fun a -> print_s [%sexp (a : action)]);
+  [%expect
+    {|
+    (Submit
+     ((symbol 7) (participant participant-2) (side Sell) (price 9994) (size 5)
+      (time_in_force Ioc) (client_order_id 1)))
+    (Submit
+     ((symbol 6) (participant participant-2) (side Sell) (price 10006) (size 2)
+      (time_in_force Day) (client_order_id 2)))
+    (Cancel ((participant participant-2) (client_order_id 2)))
+    (Submit
+     ((symbol 14) (participant participant-2) (side Sell) (price 9994) (size 10)
+      (time_in_force Ioc) (client_order_id 3)))
+    (Submit
+     ((symbol 10) (participant participant-4) (side Sell) (price 10005) (size 7)
+      (time_in_force Day) (client_order_id 1)))
+    (Cancel ((participant participant-4) (client_order_id 1)))
+    |}];
+  (* Two independent generators built from the same seed emit the same
+     stream; a different seed diverges. Compared over a long horizon, not
+     just the head. *)
+  let digest ~seed =
+    stream ~seed ~n:2000
+    |> List.map ~f:(fun a -> Sexp.to_string [%sexp (a : action)])
+    |> String.concat ~sep:"|"
+  in
+  printf
+    "same_seed=%b diff_seed=%b\n"
+    (String.equal (digest ~seed:0) (digest ~seed:0))
+    (not (String.equal (digest ~seed:0) (digest ~seed:1)));
+  [%expect {| same_seed=true diff_seed=true |}]
 ;;
