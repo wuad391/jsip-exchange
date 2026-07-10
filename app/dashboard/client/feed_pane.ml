@@ -1,5 +1,6 @@
 open! Core
 open Jsip_types
+open Jsip_symbol_directory
 module Vdom = Virtual_dom.Vdom
 module Event_feed = Jsip_dashboard.Event_feed
 
@@ -26,20 +27,20 @@ module Selection = struct
      the (symbol-less) cancel rejects. *)
   type t =
     | All
-    | Symbol of Symbol.t
+    | Symbol of Symbol_id.t
   [@@deriving equal, sexp_of]
 
-  let label = function
+  let label ~directory = function
     | All -> "All"
-    | Symbol symbol -> Symbol.to_string symbol
+    | Symbol symbol -> Symbol_directory.name_or_id directory symbol
   ;;
 
   (* Does an event with this [row_symbol] belong under the current tab? *)
-  let shows t (row_symbol : Symbol.t option) =
+  let shows t (row_symbol : Symbol_id.t option) =
     match t, row_symbol with
     | All, _ -> true
     | Symbol _, None -> false
-    | Symbol selected, Some symbol -> Symbol.equal selected symbol
+    | Symbol selected, Some symbol -> Symbol_id.equal selected symbol
   ;;
 end
 
@@ -47,11 +48,11 @@ end
 let symbols_present events =
   List.filter_map events ~f:(fun (_id, event) ->
     Event_feed.symbol_of_event event)
-  |> Symbol.Set.of_list
+  |> Symbol_id.Set.of_list
   |> Set.to_list
 ;;
 
-let tab ~selected ~on_select selection =
+let tab ~directory ~selected ~on_select selection =
   let base =
     "cursor:pointer;font-size:12px;padding:2px \
      10px;border-radius:6px;user-select:none"
@@ -71,14 +72,14 @@ let tab ~selected ~on_select selection =
       [ style [%string "%{base};%{skin}"]
       ; Vdom.Attr.on_click (fun _ev -> on_select selection)
       ]
-    [ Vdom.Node.text (Selection.label selection) ]
+    [ Vdom.Node.text (Selection.label ~directory selection) ]
 ;;
 
-let tab_row ~selected ~on_select events =
+let tab_row ~directory ~selected ~on_select events =
   let tabs =
-    tab ~selected ~on_select Selection.All
+    tab ~directory ~selected ~on_select Selection.All
     :: List.map (symbols_present events) ~f:(fun symbol ->
-      tab ~selected ~on_select (Selection.Symbol symbol))
+      tab ~directory ~selected ~on_select (Selection.Symbol symbol))
   in
   Vdom.Node.div
     ~attrs:[ style "display:flex;gap:6px;flex-wrap:wrap;align-items:center" ]
@@ -95,13 +96,13 @@ let event_row (row : Event_feed.feed_row) =
     [ Vdom.Node.text row.text ]
 ;;
 
-let event_list ~selected events =
+let event_list ~directory ~selected events =
   let rows =
     (* Newest first. The buffer is oldest-first, so reverse. *)
     List.rev events
     |> List.filter_map ~f:(fun (_id, event) ->
       if Selection.shows selected (Event_feed.symbol_of_event event)
-      then Some (event_row (Event_feed.format event))
+      then Some (event_row (Event_feed.format ~directory event))
       else None)
   in
   Vdom.Node.div
@@ -138,7 +139,7 @@ let collapse_button ~on_collapse =
 
 (* [events] is the polled buffer (oldest first). [selected] is the active
    tab; clicking a tab runs [on_select]; [on_collapse] hides the pane. *)
-let view ~events ~selected ~on_select ~on_collapse =
+let view ~directory ~events ~selected ~on_select ~on_collapse =
   Vdom.Node.div
     ~attrs:
       [ style
@@ -157,9 +158,9 @@ let view ~events ~selected ~on_select ~on_collapse =
                   [%string "color:%{accent};font-size:13px;font-weight:700"]
               ]
             [ Vdom.Node.text "Live events" ]
-        ; tab_row ~selected ~on_select events
+        ; tab_row ~directory ~selected ~on_select events
         ; collapse_button ~on_collapse
         ]
-    ; event_list ~selected events
+    ; event_list ~directory ~selected events
     ]
 ;;

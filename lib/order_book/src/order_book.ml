@@ -22,7 +22,7 @@ end
 type order_book_map = Order.t Map.M(Order_Key).t [@@deriving sexp]
 
 type t =
-  { symbol : Symbol.t
+  { symbol : Symbol_id.t
   ; mutable bids : order_book_map
   ; mutable asks : order_book_map
   ; mutable id_hash : (Order_id.t, Order.t) Hashtbl.t
@@ -58,12 +58,12 @@ let side_map t side =
 ;;
 
 let add t order =
-  if not (Symbol.equal (Order.symbol order) t.symbol)
+  if not (Symbol_id.equal (Order.symbol order) t.symbol)
   then
     raise_s
       [%message
         "Order_book.add: order symbol does not match this book"
-          ~book_symbol:(t.symbol : Symbol.t)
+          ~book_symbol:(t.symbol : Symbol_id.t)
           (order : Order.t)]
   else if Size.( <= ) (Order.remaining_size order) Size.zero
   then

@@ -1,6 +1,7 @@
 open! Core
 open Jsip_types
 open Jsip_scenario_runner
+open Jsip_symbol_directory
 module Fundamental_oracle = Jsip_fundamental.Fundamental_oracle
 module Noise_trader = Jsip_bots.Noise_trader
 module Market_maker_bot = Jsip_market_maker.Market_maker_bot
@@ -14,10 +15,10 @@ let description =
 
 (* The whole scenario is driven off this one table: each row is a symbol, its
    starting/mean price, and the RNG seed for that symbol's market maker.
-   Every derived structure below (the symbol list, the oracle config, the
-   per-symbol market makers) is a [List.map] over it, so adding a fourth
-   symbol is a single new row -- it automatically gets an oracle entry, its
-   own market maker, and market data for the shared noise trader. *)
+   Every derived structure below (the oracle config, the per-symbol market
+   makers) is a [List.map] over it, so adding a fourth symbol is a single new
+   row -- it automatically gets an oracle entry, its own market maker, and
+   market data for the shared noise trader. *)
 let symbol_table =
   [ Symbol.of_string "AAPL", 15000, 2001
   ; Symbol.of_string "GOOG", 28000, 2002
@@ -25,37 +26,31 @@ let symbol_table =
   ]
 ;;
 
-let symbols = List.map symbol_table ~f:(fun (symbol, _, _) -> symbol)
+let symbol_names = List.map symbol_table ~f:(fun (symbol, _, _) -> symbol)
 
 (* Moderate volatility on every symbol so all three books stay lively at once
    -- an "active" day is one where there is always something happening
    somewhere. *)
-let oracle_config : Fundamental_oracle.Config.t =
+let oracle_config ~directory : Fundamental_oracle.Config.t =
   List.map symbol_table ~f:(fun (symbol, initial_price_cents, _) ->
-    ( symbol
+    ( Symbol_directory.id_exn directory symbol
     , { Fundamental_oracle.Config.initial_price_cents
       ; volatility_cents_per_sec = 4.0
       ; mean_reversion_strength = 0.05
       ; tick_interval = Time_ns.Span.of_sec 1.0
       } ))
-  |> Symbol.Map.of_alist_exn
-;;
-
-(* A time-in-force distribution: [day_pct]% resting [Day] orders, the balance
-   [Ioc]. Written as a distribution (rather than a single Ioc probability) so
-   a new order type is mixed in by adding an entry, not by changing a bot. *)
-let day_ioc_mix ~day_pct =
-  [ Time_in_force.Day, Percent.of_percentage day_pct
-  ; Ioc, Percent.of_percentage (100. -. day_pct)
-  ]
+  |> Symbol_id.Map.of_alist_exn
 ;;
 
 (* One dedicated market maker per symbol, each quoting (and consuming market
    data for) only its own symbol. Distinct participant names and seeds keep
    them independent, and a self-trade-preventing engine means a maker never
-   fills against itself -- the crossing flow comes from the noise trader. *)
-let market_maker_specs =
+   fills against itself -- the crossing flow comes from the noise trader. The
+   participant name keeps the human ticker (e.g. [market-maker-AAPL]), read
+   from the table's [Symbol.t] before it is resolved to an id. *)
+let market_maker_specs ~directory =
   List.map symbol_table ~f:(fun (symbol, _, seed) ->
+    let symbol_id = Symbol_directory.id_exn directory symbol in
     Bot_spec.T
       { bot = (module Market_maker_bot)
       ; config =
@@ -64,10 +59,10 @@ let market_maker_specs =
             ~size_per_level:10
             ~num_levels:5
             ~inventory_skew_cents_per_share:1
-            ~symbols:[ symbol ]
+            ~symbols:[ symbol_id ]
       ; participant =
           Participant.of_string [%string "market-maker-%{symbol#Symbol}"]
-      ; symbols = [ symbol ]
+      ; symbols = [ symbol_id ]
       ; rng_seed = seed
       ; tick_interval = Time_ns.Span.of_sec 1.0
       ; is_marketdata_consumer = true
@@ -79,7 +74,7 @@ let market_maker_specs =
    three books see heavy two-sided flow from one bot. Because it subscribes
    to every symbol's market data, its internal BBO cache stays fresh across
    the board. *)
-let noise_trader_spec =
+let noise_trader_spec ~symbols =
   Bot_spec.T
     { bot = (module Noise_trader)
     ; config =
@@ -98,10 +93,15 @@ let noise_trader_spec =
 ;;
 
 let configure () : Scenario_config.t =
+  let directory = Symbol_directory.of_names symbol_names in
+  let symbols =
+    List.map symbol_table ~f:(fun (symbol, _, _) ->
+      Symbol_directory.id_exn directory symbol)
+  in
   { name
-  ; symbols
-  ; oracle_config
+  ; directory
+  ; oracle_config = oracle_config ~directory
   ; news = []
-  ; bots = market_maker_specs @ [ noise_trader_spec ]
+  ; bots = market_maker_specs ~directory @ [ noise_trader_spec ~symbols ]
   }
 ;;

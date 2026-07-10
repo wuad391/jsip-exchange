@@ -1,6 +1,7 @@
 open! Core
 open Jsip_types
 open Jsip_exchange_stats
+open Async_rpc_kernel
 
 (** Wire protocol between the dashboard's native server and the browser.
 
@@ -19,3 +20,11 @@ val stats_rpc : (unit, Exchange_stats.t list) Polling_state_rpc.t
     client holds every symbol's events and filters by tab locally, so
     switching symbols is instant. *)
 val feed_rpc : (unit, (int * Exchange_event.t) list) Polling_state_rpc.t
+
+(** The exchange's symbol directory: the [(id, name)] pairs mapping each wire
+    {!Jsip_types.Symbol_id.t} to its human-readable {!Jsip_types.Symbol.t}.
+    Fetched once at startup (the tradable set is fixed for the server's
+    lifetime), the browser mirrors it locally to render names instead of ids
+    in the books pane and event feed. The dashboard server relays it straight
+    from the exchange; the wire otherwise stays int-only. *)
+val symbol_directory_rpc : (unit, (Symbol_id.t * Symbol.t) list) Rpc.Rpc.t

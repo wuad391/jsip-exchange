@@ -16,16 +16,24 @@
 open! Core
 open Jsip_types
 open Jsip_order_book
+open Jsip_gateway
 
 (** {2 Constants}
 
-    Pre-registered symbols and participants for use in tests. Using
-    consistent names across all tests makes expect output easy to read and
-    compare. *)
+    Symbol ids and participants for use in tests. [aapl]/[tsla]/[goog] are
+    just ids 0/1/2 (the names are a mnemonic for the reader — Ex4 phase 1
+    took symbol names off the live path); using consistent ones across all
+    tests keeps expect output easy to read and compare. *)
 
-val aapl : Symbol.t
-val tsla : Symbol.t
-val goog : Symbol.t
+val aapl : Symbol_id.t
+val tsla : Symbol_id.t
+val goog : Symbol_id.t
+
+(** A directory naming [aapl]/[tsla]/[goog] as "AAPL"/"TSLA"/"GOOG", for
+    tests that exercise the phase-2 render path (ids rendered back as names)
+    rather than the raw-id fallback. *)
+val directory : Symbol_directory.t
+
 val alice : Participant.t
 val bob : Participant.t
 val charlie : Participant.t
@@ -36,10 +44,10 @@ val market_maker' : Participant.t
 
 type t
 
-(** Create a fresh exchange harness with the given symbols. Defaults to
-    [[aapl; tsla; goog]]. All symbols and participants are automatically
-    registered. *)
-val create : ?symbols:Symbol.t list -> unit -> t
+(** Create a fresh exchange harness trading [num_symbols] symbols (ids
+    [0, 1, ..., num_symbols - 1]). Defaults to 3, so [aapl]/[tsla]/[goog]
+    (ids 0/1/2) are always valid. *)
+val create : ?num_symbols:int -> unit -> t
 
 (** The underlying matching engine. *)
 val engine : t -> Matching_engine.t
@@ -47,7 +55,7 @@ val engine : t -> Matching_engine.t
 (** {2 Order request builders}
 
     These build [Order.Request.t] values with sensible defaults:
-    - symbol: AAPL
+    - symbol: [aapl] (id 0)
     - participant: Alice
     - size: 100
     - time_in_force: Day
@@ -61,7 +69,7 @@ val engine : t -> Matching_engine.t
 val buy
   :  price_cents:int
   -> ?size:int
-  -> ?symbol:Symbol.t
+  -> ?symbol:Symbol_id.t
   -> ?participant:Participant.t
   -> ?time_in_force:Time_in_force.t
   -> ?client_order_id:int
@@ -71,7 +79,7 @@ val buy
 val sell
   :  price_cents:int
   -> ?size:int
-  -> ?symbol:Symbol.t
+  -> ?symbol:Symbol_id.t
   -> ?participant:Participant.t
   -> ?time_in_force:Time_in_force.t
   -> ?client_order_id:int
@@ -151,7 +159,7 @@ val print_events : ?show:Show.t -> Exchange_event.t list -> unit
 val print_event : Exchange_event.t -> unit
 
 (** Print the current order book for a symbol. Shows bids, asks, and the BBO. *)
-val print_book : t -> Symbol.t -> unit
+val print_book : t -> Symbol_id.t -> unit
 
 (** Print a concise BBO summary for a symbol. *)
-val print_bbo : t -> Symbol.t -> unit
+val print_bbo : t -> Symbol_id.t -> unit

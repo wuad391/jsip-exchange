@@ -26,15 +26,22 @@
 
 open! Core
 open Jsip_types
+open Jsip_symbol_directory
 
-(** Format an exchange event as a single line of human-readable text. *)
+(** Format an exchange event as a single line of human-readable text. When a
+    [directory] is supplied (the client fetches it at connect via
+    {!Rpc_protocol.symbol_directory_rpc}), symbol ids render as their human
+    names; otherwise they render as the numeric id. *)
 val format_event
-  :  ?participant:Participant.t Option.t
+  :  ?directory:Symbol_directory.t
+  -> ?participant:Participant.t Option.t
   -> Exchange_event.t
   -> string
 
-(** Format a list of events, one per line. *)
+(** Format a list of events, one per line. See {!format_event} for
+    [directory]. *)
 val format_events
-  :  ?participant:Participant.t Option.t
+  :  ?directory:Symbol_directory.t
+  -> ?participant:Participant.t Option.t
   -> Exchange_event.t list
   -> string

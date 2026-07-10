@@ -8,6 +8,7 @@
 
 open! Core
 open Jsip_exchange_stats
+module Symbol_directory = Jsip_symbol_directory.Symbol_directory
 
 (** Length of the retained window, in snapshots (one per second). *)
 val max_window : int
@@ -120,5 +121,8 @@ module Display : sig
   [@@deriving sexp_of, equal]
 end
 
-(** Project the current window into render-ready pane data. *)
-val display : t -> Display.t
+(** Project the current window into render-ready pane data. With a
+    [directory] (the browser fetches one at startup) each book's symbol
+    renders as its name; the default empty directory falls back to the
+    numeric id. *)
+val display : ?directory:Symbol_directory.t -> t -> Display.t

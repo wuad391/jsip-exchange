@@ -3,6 +3,7 @@ open Bonsai_web
 open Bonsai.Let_syntax
 module Dashboard_state = Jsip_dashboard.Dashboard_state
 module Exchange_stats = Jsip_exchange_stats.Exchange_stats
+module Symbol_directory = Jsip_symbol_directory.Symbol_directory
 
 (* The dashboard's browser half. It polls the native server's window RPCs on
    a short interval, reconstructs the render state from the polled windows,
@@ -63,6 +64,33 @@ let poll rpc (local_ graph) =
 
 let app (local_ graph) =
   let window = poll Jsip_dashboard_protocol.stats_rpc graph in
+  (* Fetch the id<->name directory once at startup and mirror it locally.
+     Until it lands (or if the fetch fails) the alist is empty, so names fall
+     back to raw ids — the same graceful degradation as the terminal monitor. *)
+  let directory_alist, set_directory_alist =
+    Bonsai.state
+      []
+      ~sexp_of_model:
+        [%sexp_of: (Jsip_types.Symbol_id.t * Jsip_types.Symbol.t) list]
+      ~equal:[%equal: (Jsip_types.Symbol_id.t * Jsip_types.Symbol.t) list]
+      graph
+  in
+  let dispatch_directory =
+    Rpc_effect.Rpc.dispatcher
+      Jsip_dashboard_protocol.symbol_directory_rpc
+      graph
+  in
+  Bonsai.Edge.lifecycle
+    ~on_activate:
+      (let%arr dispatch_directory and set_directory_alist in
+       match%bind.Effect dispatch_directory () with
+       | Ok alist -> set_directory_alist alist
+       | Error _ -> Effect.return ())
+    graph;
+  let directory =
+    let%arr directory_alist in
+    Symbol_directory.of_alist directory_alist
+  in
   (* Feed one [now] into [Refresh_latency] each time a fresh snapshot lands
      ([seq] bumps), so the header shows the live refresh latency. *)
   let refresh, observe_arrival =
@@ -111,10 +139,13 @@ let app (local_ graph) =
   and set_feed_visible
   and selected
   and set_selected
-  and refresh in
+  and refresh
+  and directory in
   let display =
     Option.map window ~f:(fun snapshots ->
-      Dashboard_state.display (Dashboard_state.of_snapshots snapshots))
+      Dashboard_state.display
+        ~directory
+        (Dashboard_state.of_snapshots snapshots))
   in
   let monitor_latency_ms =
     Float.iround_nearest_exn refresh.Refresh_latency.ms
@@ -122,6 +153,7 @@ let app (local_ graph) =
   let on_toggle_feed = set_feed_visible not in
   let feed_view =
     Feed_pane.view
+      ~directory
       ~events:(Option.value feed ~default:[])
       ~selected
       ~on_select:set_selected

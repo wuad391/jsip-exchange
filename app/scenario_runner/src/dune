@@ -3,12 +3,11 @@
  (public_name jsip-exchange.jsip_scenario_runner)
  (libraries
   jsip_types
+  jsip_symbol_directory
   jsip_gateway
   jsip_fundamental
   jsip_news_injector
   jsip_bot_runtime
-  jsip_bots
-  jsip_market_maker
   core
   async)
  (preprocess

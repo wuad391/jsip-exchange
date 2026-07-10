@@ -2,6 +2,7 @@ open! Core
 open! Async
 open Jsip_types
 open Jsip_order_book
+open Jsip_symbol_directory
 
 module Connection_state = struct
   type t = { mutable session : Session.t option }
@@ -87,8 +88,9 @@ let start_matching_loop ~engine ~dispatcher ~metrics message_reader =
            ~busy:(Time_ns.diff done_at before)))
 ;;
 
-let start ~symbols ~port () =
-  let engine = Matching_engine.create symbols in
+let start ~directory ~port () =
+  let num_symbols = Symbol_directory.num_symbols directory in
+  let engine = Matching_engine.create num_symbols in
   let dispatcher = Dispatcher.create () in
   let message_reader, message_writer = Pipe.create () in
   Pipe.set_size_budget message_writer message_queue_size_budget;
@@ -96,7 +98,7 @@ let start ~symbols ~port () =
     Metrics.create
       ~dispatcher
       ~matching_engine:engine
-      ~symbols
+      ~num_symbols
       ~request_queue_length:(fun () -> Pipe.length message_reader)
   in
   start_matching_loop ~engine ~dispatcher ~metrics message_reader;
@@ -134,6 +136,11 @@ let start ~symbols ~port () =
             ignore state;
             Matching_engine.book engine symbol
             |> Option.map ~f:Order_book.snapshot)
+        ; Rpc.Rpc.implement'
+            Rpc_protocol.symbol_directory_rpc
+            (fun state () ->
+               ignore state;
+               Symbol_directory.to_alist directory)
         ; Rpc.Rpc.implement
             Rpc_protocol.cancel_order_rpc
             (fun state client_order_id ->

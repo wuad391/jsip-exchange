@@ -1,5 +1,6 @@
 open! Core
 open Jsip_types
+open Jsip_symbol_directory
 
 (* JS-safe formatting for the live event feed. The browser feed pane and its
    tests share this so the wording and colors are identical everywhere, and
@@ -18,7 +19,7 @@ let color_cancel_reject = "#f0883e"
 let color_bbo = "#58a6ff"
 let color_trade = "#bc8cff"
 
-let symbol_of_event : Exchange_event.t -> Symbol.t option = function
+let symbol_of_event : Exchange_event.t -> Symbol_id.t option = function
   | Order_accept { order_id = _; participant = _; request } ->
     Some request.symbol
   | Fill fill -> Some fill.symbol
@@ -40,26 +41,51 @@ let symbol_of_event : Exchange_event.t -> Symbol.t option = function
 ;;
 
 type feed_row =
-  { symbol : Symbol.t option
+  { symbol : Symbol_id.t option
   ; text : string
   ; color : string
   }
 [@@deriving sexp_of]
 
-let format (event : Exchange_event.t) : feed_row =
+let format ?(directory = Symbol_directory.empty) (event : Exchange_event.t)
+  : feed_row
+  =
+  (* Resolve ids to names via the mirrored directory; an empty directory (the
+     default, and what a caller passes before the fetch lands) falls back to
+     the numeric id. *)
+  let render_symbol id = Symbol_directory.name_or_id directory id in
   let text, color =
     match event with
     | Order_accept { order_id; participant = _; request } ->
-      let symbol = request.symbol in
+      let symbol = render_symbol request.symbol in
       let side = request.side in
       let size = Size.to_int request.size in
       let price = Price.to_string_dollar request.price in
       let tif = request.time_in_force in
       ( [%string
-          "ACCEPTED id=%{order_id#Order_id} %{symbol#Symbol} %{side#Side} \
+          "ACCEPTED id=%{order_id#Order_id} %{symbol} %{side#Side} \
            %{size#Int}@%{price} %{tif#Time_in_force}"]
       , color_accept )
-    | Fill fill -> [%string "FILL %{fill#Fill}"], color_fill
+    | Fill fill ->
+      (* Mirror [Fill.to_string]'s layout but render the symbol as a name via
+         the directory — the same thing [Jsip_gateway.Protocol.format_event]
+         does for the native consumers, reproduced here because that
+         formatter lives behind Async and cannot cross into js_of_ocaml. *)
+      ( sprintf
+          "FILL fill_id=%d %s %s x%d aggressor=%s(%s w/ client order ID = \
+           %s) %s resting=%s(%s w/ client order ID = %s)"
+          fill.fill_id
+          (render_symbol fill.symbol)
+          (Price.to_string_dollar fill.price)
+          (Size.to_int fill.size)
+          (Order_id.to_string fill.aggressor_order_id)
+          (Participant.to_string fill.aggressor_participant)
+          (Client_order_id.to_string fill.aggressor_client_order_id)
+          (Side.to_string fill.aggressor_side)
+          (Order_id.to_string fill.resting_order_id)
+          (Participant.to_string fill.resting_participant)
+          (Client_order_id.to_string fill.resting_client_order_id)
+      , color_fill )
     | Order_cancel
         { order_id
         ; client_order_id = _
@@ -68,30 +94,32 @@ let format (event : Exchange_event.t) : feed_row =
         ; remaining_size
         ; reason
         } ->
+      let symbol = render_symbol symbol in
       let remaining = Size.to_int remaining_size in
       ( [%string
-          "CANCELLED id=%{order_id#Order_id} %{symbol#Symbol} \
+          "CANCELLED id=%{order_id#Order_id} %{symbol} \
            remaining=%{remaining#Int} reason=%{reason#Cancel_reason}"]
       , color_cancel )
     | Order_reject { participant = _; request; reason } ->
-      let symbol = request.symbol in
+      let symbol = render_symbol request.symbol in
       let side = request.side in
       let size = Size.to_int request.size in
       let price = Price.to_string_dollar request.price in
       ( [%string
-          "REJECTED %{symbol#Symbol} %{side#Side} %{size#Int}@%{price} \
+          "REJECTED %{symbol} %{side#Side} %{size#Int}@%{price} \
            reason=%{reason}"]
       , color_reject )
     | Cancel_reject { participant = _; client_order_id = _; reason } ->
       [%string "REJECTED CANCEL because %{reason}"], color_cancel_reject
     | Best_bid_offer_update { symbol; bbo } ->
+      let symbol = render_symbol symbol in
       let bid = Level.opt_to_string bbo.bid in
       let ask = Level.opt_to_string bbo.ask in
-      [%string "BBO %{symbol#Symbol} bid=%{bid} ask=%{ask}"], color_bbo
+      [%string "BBO %{symbol} bid=%{bid} ask=%{ask}"], color_bbo
     | Trade_report { symbol; price; size } ->
+      let symbol = render_symbol symbol in
       let size = Size.to_int size in
-      ( [%string "TRADE %{symbol#Symbol} %{price#Price} x%{size#Int}"]
-      , color_trade )
+      [%string "TRADE %{symbol} %{price#Price} x%{size#Int}"], color_trade
   in
   { symbol = symbol_of_event event; text; color }
 ;;

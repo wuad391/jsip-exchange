@@ -1,5 +1,6 @@
 open! Core
 open Jsip_types
+open Jsip_symbol_directory
 
 module Verb = struct
   type t =
@@ -15,22 +16,26 @@ end
 
 type t =
   | Submit of Order.Request.t
-  | Book of Symbol.t
-  | Subscribe of Symbol.t
+  | Book of Symbol_id.t
+  | Subscribe of Symbol_id.t
   | Cancel of Order.Cancel.t
 [@@deriving sexp]
 
 let to_string t =
   match t with
   | Submit request -> [%string "%{request#Order.Request}"]
-  | Book symbol -> [%string "BOOK %{symbol#Symbol}"]
-  | Subscribe symbol -> [%string "SUBSCRIBE %{symbol#Symbol}"]
+  | Book symbol -> [%string "BOOK %{symbol#Symbol_id}"]
+  | Subscribe symbol -> [%string "SUBSCRIBE %{symbol#Symbol_id}"]
   | Cancel cancel -> [%string "%{(cancel)#Order.Cancel}"]
 ;;
 
 (* This function is a more robust parser than the old parser previously found
    in protocol.ml. When callled, should be wrapped in a try catch *)
-let parse ?(default_participant = Participant.of_string "anonymous") line =
+let parse
+  ?directory
+  ?(default_participant = Participant.of_string "anonymous")
+  line
+  =
   let line = String.strip line in
   if String.is_empty line
   then Or_error.error_string [%string "empty command"]
@@ -39,6 +44,37 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
       String.split line ~on:' '
       |> List.map ~f:String.strip
       |> List.filter ~f:(Fn.non String.is_empty)
+    in
+    (* Symbol tokens arrive two ways. With a [directory] (the interactive
+       client, which fetched it at connect), the token is a human name like
+       [AAPL] and we resolve it to its id — the wire never sees the name.
+       Without one (in-process callers that already speak ids), the token is
+       the id itself. *)
+    let known_symbols directory =
+      Symbol_directory.names directory
+      |> List.map ~f:Symbol.to_string
+      |> String.concat ~sep:", "
+    in
+    let resolve_symbol symbol_str =
+      match directory with
+      | None ->
+        (try Ok (Symbol_id.of_string symbol_str) with
+         | exn ->
+           let exn_str = Exn.to_string exn in
+           Or_error.error_string
+             [%string "invalid symbol: %{symbol_str}\nexception: %{exn_str}"])
+      | Some directory ->
+        (match Or_error.try_with (fun () -> Symbol.of_string symbol_str) with
+         | Error _ ->
+           Or_error.error_string [%string "invalid symbol: %{symbol_str}"]
+         | Ok name ->
+           (match Symbol_directory.id directory name with
+            | Some id -> Ok id
+            | None ->
+              Or_error.error_string
+                [%string
+                  "unknown symbol %{symbol_str} (known: %{known_symbols \
+                   directory})"]))
     in
     let submit_parse verb rest =
       let open Result.Let_syntax in
@@ -72,14 +108,7 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
             Or_error.error_string
               [%string "invalid price: %{price_str}\nexception: %{exn_str}"]
         in
-        let%bind symbol =
-          try Ok (Symbol.of_string symbol_str) with
-          | exn ->
-            let exn_str = Exn.to_string exn in
-            Or_error.error_string
-              [%string
-                "invalid symbol: %{symbol_str}\nexception: %{exn_str}"]
-        in
+        let%bind symbol = resolve_symbol symbol_str in
         let%bind time_in_force =
           match rest with
           | tif_str :: _ ->
@@ -114,13 +143,6 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
             "expected: BUY|SELL <client order id> <symbol> <size> <price> \
              [%{Time_in_force.all_str#String}]"]
     in
-    let parse_symbol symbol_str =
-      try Ok (Symbol.of_string symbol_str) with
-      | exn ->
-        let exn_str = Exn.to_string exn in
-        Or_error.error_string
-          [%string "invalid symbol: %{symbol_str}\nexception: %{exn_str}"]
-    in
     let parse_client_order_id client_order_id_str =
       try Ok (Client_order_id.of_string client_order_id_str) with
       | exn ->
@@ -142,9 +164,9 @@ let parse ?(default_participant = Participant.of_string "anonymous") line =
       (match verb_type with
        | Ok Verb.Buy | Ok Sell -> submit_parse verb_type (second :: rest)
        | Ok Verb.Book ->
-         Result.map (parse_symbol second) ~f:(fun s -> Book s)
+         Result.map (resolve_symbol second) ~f:(fun s -> Book s)
        | Ok Verb.Subscribe ->
-         Result.map (parse_symbol second) ~f:(fun s -> Subscribe s)
+         Result.map (resolve_symbol second) ~f:(fun s -> Subscribe s)
        | Ok Verb.Cancel -> cancel_parse second
        | Error _ ->
          Or_error.error_string

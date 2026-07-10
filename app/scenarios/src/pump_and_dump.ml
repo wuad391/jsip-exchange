@@ -1,6 +1,7 @@
 open! Core
 open Jsip_types
 open Jsip_scenario_runner
+open Jsip_symbol_directory
 module Fundamental_oracle = Jsip_fundamental.Fundamental_oracle
 module Spammer = Jsip_bots.Spammer
 module Noise_trader = Jsip_bots.Noise_trader
@@ -43,21 +44,15 @@ let initial_price_cents = 15000
 (* Low volatility and weak mean reversion so the pump's signal stands out and
    the manipulated price is allowed to drift rather than snapping straight
    back to fundamental against the scheme. *)
-let oracle_config : Fundamental_oracle.Config.t =
-  Symbol.Map.of_alist_exn
-    [ ( symbol
+let oracle_config ~symbol_id : Fundamental_oracle.Config.t =
+  Symbol_id.Map.of_alist_exn
+    [ ( symbol_id
       , { Fundamental_oracle.Config.initial_price_cents
         ; volatility_cents_per_sec = 1.5
         ; mean_reversion_strength = 0.02
         ; tick_interval = Time_ns.Span.of_sec 1.0
         } )
     ]
-;;
-
-let day_ioc_mix ~day_pct =
-  [ Time_in_force.Day, Percent.of_percentage day_pct
-  ; Ioc, Percent.of_percentage (100. -. day_pct)
-  ]
 ;;
 
 (* The manipulator. Every knob is chosen relative to the other bots below:
@@ -68,10 +63,10 @@ let day_ioc_mix ~day_pct =
    momentum trader (max_position 250) plus the noise-trader bids can
    plausibly absorb on the dump; [give_up_ticks] of 40 (~10s at this tick
    rate) gives the pump time to work but guarantees an unwind if it stalls. *)
-let pump_and_dump_spec =
+let pump_and_dump_spec ~symbol_id =
   let params =
     Spammer.Config.pump_and_dump_params
-      ~target_symbol:symbol
+      ~target_symbol:symbol_id
       ~pump_target_pct:(Percent.of_percentage 1.0)
       ~clip_size:30
       ~max_inventory:150
@@ -83,10 +78,10 @@ let pump_and_dump_spec =
     { bot = (module Spammer)
     ; config =
         Spammer.Config.create
-          ~symbols:[ symbol ]
+          ~symbols:[ symbol_id ]
           ~behavior:(Pump_and_dump params)
     ; participant = Participant.of_string "pump-and-dumper"
-    ; symbols = [ symbol ]
+    ; symbols = [ symbol_id ]
     ; rng_seed = 5001
     ; tick_interval = Time_ns.Span.of_ms 250.0
     ; is_marketdata_consumer = true
@@ -96,12 +91,12 @@ let pump_and_dump_spec =
 (* The victim: a short window and a low threshold make it eager to chase the
    pump's rising prints, and a large [max_position] lets it keep buying into
    the top -- exactly the counterparty the dump needs. *)
-let momentum_trader_spec =
+let momentum_trader_spec ~symbol_id =
   Bot_spec.T
     { bot = (module Momentum_trader)
     ; config =
         Momentum_trader.Config.create_exn
-          ~symbol
+          ~symbol:symbol_id
           ~window_capacity:4
           ~threshold_cents:10
           ~max_order_size:30
@@ -109,7 +104,7 @@ let momentum_trader_spec =
           ~cooldown_ticks:0
           ()
     ; participant = Participant.of_string "momentum-trader"
-    ; symbols = [ symbol ]
+    ; symbols = [ symbol_id ]
     ; rng_seed = 4001
     ; tick_interval = Time_ns.Span.of_ms 300.0
     ; is_marketdata_consumer = true
@@ -119,7 +114,7 @@ let momentum_trader_spec =
 (* The control: a fundamental-anchored ladder. It supplies the offers the
    pump lifts and the bids the dump hits, but reprices off the oracle, not
    the last trade, so it does not chase the manipulated price. *)
-let market_maker_spec =
+let market_maker_spec ~symbols =
   Bot_spec.T
     { bot = (module Market_maker_bot)
     ; config =
@@ -128,9 +123,9 @@ let market_maker_spec =
           ~size_per_level:10
           ~num_levels:5
           ~inventory_skew_cents_per_share:1
-          ~symbols:[ symbol ]
+          ~symbols
     ; participant = Participant.of_string "market-maker"
-    ; symbols = [ symbol ]
+    ; symbols
     ; rng_seed = 2001
     ; tick_interval = Time_ns.Span.of_sec 1.0
     ; is_marketdata_consumer = true
@@ -139,18 +134,18 @@ let market_maker_spec =
 
 (* Organic two-sided flow so the book has real resting liquidity beyond the
    market maker -- bids for the dump to land in, and cover for the pump. *)
-let noise_trader_spec =
+let noise_trader_spec ~symbols =
   Bot_spec.T
     { bot = (module Noise_trader)
     ; config =
         Noise_trader.create_config
-          ~symbols:[ symbol ]
+          ~symbols
           ~avg_size:8
           ~tick_chance:0.8
           ~aggressiveness_pct:50
           ~ioc_pct:40
     ; participant = Participant.of_string "noise-trader"
-    ; symbols = [ symbol ]
+    ; symbols
     ; rng_seed = 3001
     ; tick_interval = Time_ns.Span.of_ms 200.0
     ; is_marketdata_consumer = true
@@ -158,15 +153,18 @@ let noise_trader_spec =
 ;;
 
 let configure () : Scenario_config.t =
+  let directory = Symbol_directory.of_names [ symbol ] in
+  let symbol_id = Symbol_directory.id_exn directory symbol in
+  let symbols = [ symbol_id ] in
   { name
-  ; symbols = [ symbol ]
-  ; oracle_config
+  ; directory
+  ; oracle_config = oracle_config ~symbol_id
   ; news = []
   ; bots =
-      [ pump_and_dump_spec
-      ; momentum_trader_spec
-      ; market_maker_spec
-      ; noise_trader_spec
+      [ pump_and_dump_spec ~symbol_id
+      ; momentum_trader_spec ~symbol_id
+      ; market_maker_spec ~symbols
+      ; noise_trader_spec ~symbols
       ]
   }
 ;;
