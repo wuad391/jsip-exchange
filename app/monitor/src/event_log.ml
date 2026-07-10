@@ -7,12 +7,14 @@ module Category = struct
     | Order_lifecycle
     | Trade
     | Market_data
+    | Session
   [@@deriving sexp_of, compare, equal, enumerate]
 
   let to_string = function
     | Order_lifecycle -> "order-lifecycle"
     | Trade -> "trade"
     | Market_data -> "market-data"
+    | Session -> "session"
   ;;
 
   let of_event : Exchange_event.t -> t = function
@@ -20,6 +22,7 @@ module Category = struct
       Order_lifecycle
     | Fill _ -> Trade
     | Best_bid_offer_update _ | Trade_report _ -> Market_data
+    | Session_status _ -> Session
   ;;
 end
 
@@ -54,6 +57,7 @@ module Color = struct
     | Best_bid_offer_update _ -> Blue
     | Trade_report _ -> Magenta
     | Cancel_reject _ -> Orange
+    | Session_status _ -> Default
   ;;
 end
 

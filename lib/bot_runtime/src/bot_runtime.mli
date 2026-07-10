@@ -66,7 +66,10 @@ module type Bot = sig
       market-data subscription: [Order_accept], [Order_cancel],
       [Order_reject], and [Fill] events involving the bot, plus [BBO] and
       [Trade_report] events for symbols the runtime subscribes to. Bots that
-      do not need event-level reactivity can return [Deferred.unit]. *)
+      do not need event-level reactivity can return [Deferred.unit].
+
+      [Session_status] events are audit-log telemetry and are never routed to
+      a bot's feeds — an exhaustive [on_event] just ignores them. *)
   val on_event : Config.t -> Context.t -> Exchange_event.t -> unit Deferred.t
 end
 

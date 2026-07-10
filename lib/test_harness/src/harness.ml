@@ -204,6 +204,7 @@ let sample_events : Exchange_event.t list =
       ; price = Price.of_int_cents 15000
       ; size = Size.of_int 100
       }
+  ; Session_status { participant = alice; status = Connected }
   ]
 ;;
 

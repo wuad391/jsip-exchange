@@ -5,8 +5,9 @@ open Jsip_symbol_directory
 
 (* [Event_feed.format] is what the browser feed pane draws, so these pin the
    text and color of every event kind — and, via the [symbol] field,
-   [symbol_of_event] (note [cancel_reject] carries no symbol). One event per
-   variant so a wording or coloring change shows up here as a readable diff. *)
+   [symbol_of_event] (note [cancel_reject] and [session_status] carry no
+   symbol). One event per variant so a wording or coloring change shows up
+   here as a readable diff. *)
 
 let sym = Symbol_id.of_int 0
 let alice = Participant.of_string "alice"
@@ -87,6 +88,9 @@ let events : (string * Exchange_event.t) list =
         ; price = Price.of_int_cents 15005
         ; size = Size.of_int 3
         } )
+  ; ( "session_status"
+    , Session_status
+        { participant = alice; status = Session_status.Connected } )
   ]
 ;;
 
@@ -116,6 +120,8 @@ let%expect_test "format renders each event kind" =
     ((symbol (0)) (text "BBO 0 bid=$149.90 x5 ask=$150.10 x7") (color #58a6ff))
     trade_report
     ((symbol (0)) (text "TRADE 0 $150.05 x3") (color #bc8cff))
+    session_status
+    ((symbol ()) (text "SESSION alice connected") (color #8b949e))
     |}]
 ;;
 

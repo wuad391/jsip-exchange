@@ -460,7 +460,7 @@ let on_event config context event =
        | Buy -> Hash_set.remove bids request.client_order_id
        | Sell -> Hash_set.remove asks request.client_order_id);
       return ()
-    | Trade_report _ | Cancel_reject _ -> return ()
+    | Trade_report _ | Cancel_reject _ | Session_status _ -> return ()
   in
   return ()
 ;;

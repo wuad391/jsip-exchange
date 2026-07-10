@@ -132,6 +132,11 @@ let dispatch_event t (event : Exchange_event.t) =
     push_to_session t resting_participant event
   | Cancel_reject { participant; client_order_id = _; reason = _ } ->
     push_to_session t participant event
+  | Session_status { participant = _; status = _ } ->
+    (* Operator-facing telemetry: already pushed to every audit subscriber
+       above, and deliberately not echoed to the participant's own session
+       feed or to market data. *)
+    ()
 ;;
 
 let dispatch t events = List.iter events ~f:(dispatch_event t)

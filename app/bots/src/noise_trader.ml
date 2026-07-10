@@ -147,7 +147,7 @@ let on_event
    | Best_bid_offer_update { symbol; bbo } ->
      Hashtbl.set config.symbol_state ~key:symbol ~data:bbo
    | Order_accept _ | Order_cancel _ | Order_reject _ | Fill _
-   | Trade_report _ | Cancel_reject _ ->
+   | Trade_report _ | Cancel_reject _ | Session_status _ ->
      ());
   return ()
 ;;

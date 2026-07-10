@@ -95,6 +95,8 @@ let format_event ?directory ?(participant = None) event =
     [%string "TRADE %{symbol} %{price#Price} x%{size#Int}"]
   | Cancel_reject { participant = _; client_order_id = _; reason } ->
     [%string "REJECTED CANCEL because %{reason}"]
+  | Session_status { participant; status } ->
+    [%string "SESSION %{participant#Participant} %{status#Session_status}"]
 ;;
 
 let format_events ?directory ?(participant = None) events =

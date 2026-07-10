@@ -45,6 +45,15 @@ type t =
       }
   (** A public trade print. Unlike [Fill], this contains no information about
       the participants — it is what the broader market sees. *)
+  | Session_status of
+      { participant : Participant.t
+      ; status : Session_status.t
+      }
+  (** A participant's session came up ([Connected]) or went away
+      ([Disconnected]). Emitted by the gateway at login and at session
+      cleanup. Operator-facing telemetry — neither market data nor an order
+      event — so the dispatcher routes it to audit subscribers only, never to
+      session feeds or market-data streams. *)
 [@@deriving sexp, bin_io]
 
 (** Is this a market data event (BBO update or trade report)? *)
