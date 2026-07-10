@@ -8,6 +8,16 @@
   jsip_test_harness
   async
   core)
- (inline_tests)
+ (inline_tests
+  (deps
+   %{workspace_root}/certs/ca.crt
+   %{workspace_root}/certs/server.crt
+   %{workspace_root}/certs/server.key
+   %{workspace_root}/certs/Alice.crt
+   %{workspace_root}/certs/Alice.key
+   %{workspace_root}/certs/Bob.crt
+   %{workspace_root}/certs/Bob.key
+   %{workspace_root}/certs/rogue.crt
+   %{workspace_root}/certs/rogue.key))
  (preprocess
   (pps ppx_jane)))

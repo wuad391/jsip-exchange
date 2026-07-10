@@ -112,6 +112,7 @@ to the right subscribers).
 | `Rpc_protocol`    | Defines the Async RPCs for client-server communication                                                                                                                                                                                          |
 | `Dispatcher`      | Central event router: keeps subscription registries for market data (per symbol), the audit firehose, and per-participant sessions, and routes each event to the right subscribers                                                              |
 | `Session`         | A logged-in client's outbound event channel — a participant identity plus a bounded pipe of events. The session feed RPC that exposes this pipe is a week-2 exercise; for now the dispatcher prints session-bound events on the server's stdout |
+| `Tls_config`      | Builds the TLS server/client configs for the optional mutual-TLS transport (see [Authentication](#authentication) below) and derives a participant's identity from a verified peer certificate's CN                                             |
 
 ### Bot ecosystem (`lib/bot_runtime/`, `lib/fundamental/`, `lib/news_injector/`)
 
@@ -139,8 +140,8 @@ libraries into complete programs.
 
 | Application           | What it does                                                                                                                                                                                                                                |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app/server`          | Exchange server that listens for RPC connections on a TCP port. Supports `-seed-market-maker` (pre-seed the book) and `-trade-back-and-forth` (two MMs trading in a loop to generate sustained traffic).                                    |
-| `app/client`          | Interactive client that connects to the server. Supports `BUY`, `SELL`, `BOOK`, and `SUBSCRIBE` commands.                                                                                                                                   |
+| `app/server`          | Exchange server that listens for RPC connections on a TCP port. Supports `-seed-market-maker` (pre-seed the book), `-trade-back-and-forth` (two MMs trading in a loop to generate sustained traffic), and optional `-cert`/`-key`/`-ca-file` to require mutual TLS instead of plaintext (see [Authentication](#authentication)).      |
+| `app/client`          | Interactive client that connects to the server. Supports `BUY`, `SELL`, `BOOK`, and `SUBSCRIBE` commands, plus the same optional `-cert`/`-key`/`-ca-file` flags to connect over TLS.                                                        |
 | `app/market_maker`    | Library for a bot that seeds the book with resting orders around a fair value.                                                                                                                                                              |
 | `app/bots`            | Library where trading bots live. One module per bot; currently empty — we'll be adding bots as we build out the exchange.                                                                                                                   |
 | `app/scenarios`       | Library where named scenarios live. One module per scenario (`Calm_day`, `Active_day`, `Earnings_shock`, `Flash_crash`); each satisfies `Scenario.S` and is registered in `Jsip_scenarios.all`.                                             |
@@ -165,7 +166,9 @@ Shared infrastructure for all tests:
   events triggered by an `rpc_submit` currently surface as `[for
 <participant>]` lines on stdout, since the session feed RPC isn't
   wired up yet — once it is, `rpc_submit` will drain those events from
-  the session feed and return them.
+  the session feed and return them. `with_server` takes an optional
+  `~transport` (defaults to plaintext) and `connect_as_tls` connects over
+  mutual TLS instead of `login_rpc` — see `lib/gateway/test/test_tls.ml`.
 
 ## Building and running
 
@@ -201,6 +204,41 @@ dune exec app/monitor/bin/main.exe -- -host localhost -port 12345
 # Watch the exchange's web monitor
 dune exec app/dashboard/server/main.exe -- -exchange-port 12345 -http-port 8080
 ```
+
+### Authentication
+
+By default the server accepts plaintext connections and trusts whatever
+name a client passes to `login_rpc` (see [Stretch: real
+authentication](doc/exercises-part-2.md#stretch-real-authentication)).
+Passing `-cert`/`-key`/`-ca-file` to the server switches it to mutual TLS
+instead: every client must present a certificate signed by the given CA,
+and the participant's identity comes directly from that certificate's CN
+— `login_rpc` is never called on a TLS connection. The two modes are
+mutually exclusive per process; there's no way to accept both at once.
+
+```sh
+# One-time setup: a CA, a server cert, and certs for Alice and Bob.
+certs/setup_ca.sh
+certs/new_participant_request.sh Alice && certs/sign_participant.sh Alice
+certs/new_participant_request.sh Bob && certs/sign_participant.sh Bob
+
+# Server with TLS enabled instead of plaintext:
+dune exec app/server/bin/main.exe -- \
+  -port 12345 -cert certs/server.crt -key certs/server.key -ca-file certs/ca.crt
+
+# Client connecting as Alice over TLS (matching flags; -name is display-only
+# here since identity comes from the cert, not from login_rpc):
+dune exec app/client/bin/main.exe -- \
+  -port 12345 -name Alice -cert certs/Alice.crt -key certs/Alice.key -ca-file certs/ca.crt
+```
+
+Onboarding a new participant is a two-step, two-sided process:
+`new_participant_request.sh <name>` (run by the participant — generates
+their own private key and a certificate signing request, so the key never
+has to leave their machine) followed by `sign_participant.sh <name>` (run
+by whoever holds `ca.key` — turns the request into a signed certificate).
+Nothing in the exchange's own code needs updating either way; the entire
+"who's allowed in" list lives in `certs/`, not in exchange state.
 
 ### Client commands
 
@@ -287,6 +325,7 @@ dune promote
 | `lib/order_book/test/test_matching_engine.ml`     | Full matching scenarios, IOC, multi-symbol, market data events                        |
 | `lib/gateway/test/test_protocol.ml`               | Command parsing, error handling, event formatting                                     |
 | `lib/gateway/test/test_end_to_end.ml`             | Async end-to-end: real server, RPC clients, market data subscriptions                 |
+| `lib/gateway/test/test_tls.ml`                    | TLS client-certificate authentication: cert-derived identity, no-cert/wrong-CA/duplicate-login rejections, using the certs in `certs/` |
 | `lib/gateway/test/test_rpc_shapes.ml`             | RPC wire contract: each RPC's name, version, and bin_io shape digests of its types    |
 | `lib/fundamental/test/test_fundamental_oracle.ml` | Oracle determinism from seed, mean reversion, news shocks                             |
 | `lib/news_injector/test/test_news_injector.ml`    | Scheduled shock delivery against a `Fundamental_oracle`                               |
