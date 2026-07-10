@@ -18,10 +18,8 @@ open Jsip_exchange_stats
     as possible. The matching engine processes the queued request on a
     background worker and hands the resulting [Exchange_event.t]s to the
     [Dispatcher], which routes participant-targeted events (acceptance,
-    fills, rejection) to the owning participant's [Session]. The per-session
-    RPC that lets a client read its session feed does not exist yet (planned
-    for week 2); until it does, those events are printed on the server's
-    stdout.
+    fills, rejection) to the owning participant's [Session]; the client reads
+    them from its {!session_feed_rpc} pipe.
 
     The error case covers connection-level failures only — connection closed,
     server shutting down, etc. — not domain errors like unknown symbols
@@ -53,17 +51,37 @@ val market_data_rpc
     This RPC is intended for the exchange operator's monitoring and audit
     tools (e.g. the bonsai_term monitor in [app/monitor]) only. Ordinary
     participants — automated bots, human-driven clients — should use
-    [market_data_rpc] for public events, and (once it exists, week 2) a
-    per-participant session-feed RPC for their own order-lifecycle events. A
-    production exchange would gate this RPC behind operator-level
-    credentials; this simulator does not, but the same intent applies. *)
+    [market_data_rpc] for public events, and {!session_feed_rpc} for their
+    own order-lifecycle events. A production exchange would gate this RPC
+    behind operator-level credentials; this simulator does not, but the same
+    intent applies. *)
 val audit_log_rpc : (unit, Exchange_event.t, Error.t) Rpc.Pipe_rpc.t
 
-(** This RPC lets you log-in :D. *)
+(** Establish the connection's identity: the query is the participant name,
+    and every subsequent order operation on this connection acts as that
+    participant. Rejects empty names and names that already have a live
+    session. Logging in announces a [Session_status Connected] on the audit
+    log; the connection closing announces the [Disconnected] twin. *)
 val login_rpc : (String.t, Participant.t Or_error.t) Rpc.Rpc.t
 
+(** The logged-in participant's own event stream: acceptances, fills,
+    cancellations, and rejections for their orders. One stream per session. *)
 val session_feed_rpc : (unit, Exchange_event.t, Error.t) Rpc.Pipe_rpc.t
+
+(** Cancel one resting order, identified by the client-supplied id the
+    logged-in participant submitted it under. The outcome ([Order_cancel] or
+    [Cancel_reject]) arrives on the session feed. *)
 val cancel_order_rpc : (Client_order_id.t, unit Or_error.t) Rpc.Rpc.t
+
+(** Cancel every resting order the logged-in participant has, in one request.
+    It travels the same ordered request queue as submits and cancels, so it
+    strictly follows anything this session already enqueued; and unlike those
+    one-way RPCs, the response — the number of orders cancelled — is returned
+    only after the engine has processed the sweep and dispatched its events
+    (one [Order_cancel] per order with reason [Mass_cancel], on the session
+    feed). The interactive console uses this to flatten a bot before
+    disconnecting it ([kill]). *)
+val cancel_all_rpc : (unit, int Or_error.t) Rpc.Rpc.t
 
 (** Subscribe to the exchange's per-second health telemetry: memory, submit
     and cancel latency percentiles, pipe occupancy, per-participant order

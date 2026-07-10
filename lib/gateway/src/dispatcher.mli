@@ -47,9 +47,9 @@ val subscribe_audit : t -> Exchange_event.t Pipe.Reader.t
       session of the order's owning participant (if logged in).
     - [Fill] is pushed to both the aggressor's and the resting party's
       session (if either is logged in).
-    - [Session_status] goes to the audit subscribers only (which every
-      event already reaches) — operator telemetry, deliberately not echoed
-      to the participant's own session feed or to market data.
+    - [Session_status] goes to the audit subscribers only (which every event
+      already reaches) — operator telemetry, deliberately not echoed to the
+      participant's own session feed or to market data.
 
     Each session lookup is O(1) and independent of subscriber count. *)
 val dispatch : t -> Exchange_event.t list -> unit

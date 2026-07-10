@@ -24,6 +24,12 @@ module Message = struct
         ; request : Order.Request.t
         }
     | Cancel of Order.Cancel.t
+    | Cancel_all of
+        { participant : Participant.t
+        ; cancelled_count : int Ivar.t
+        (* Filled once the engine has processed the sweep, so the RPC handler
+           can await completion and answer with the count. *)
+        }
 end
 
 (* Each queued message is stamped when it enters the queue so the matching
@@ -57,6 +63,7 @@ let handle_submit ~message_writer ~metrics (message : Message.t) =
     match message with
     | Message.Request { participant; _ } -> participant
     | Message.Cancel { participant; _ } -> participant
+    | Message.Cancel_all { participant; _ } -> participant
   in
   Metrics.record_arrival metrics ~participant;
   let%map () =
@@ -77,6 +84,12 @@ let start_matching_loop ~engine ~dispatcher ~metrics message_reader =
              Matching_engine.submit engine ~participant request, `Submit
            | Message.Cancel cancel ->
              Matching_engine.cancel engine cancel, `Cancel
+           | Message.Cancel_all { participant; cancelled_count } ->
+             let count, events =
+               Matching_engine.cancel_all_for_participant engine participant
+             in
+             Ivar.fill_exn cancelled_count count;
+             events, `Cancel
          in
          let matched_at = Time_ns.now () in
          Dispatcher.dispatch dispatcher events;
@@ -158,6 +171,31 @@ let start ~directory ~port () =
                   | Ok () -> return (Ok ())
                   | Error _ ->
                     return (Or_error.error_string "Cancel submission error")))
+        ; Rpc.Rpc.implement Rpc_protocol.cancel_all_rpc (fun state () ->
+            match Connection_state.participant state with
+            | None -> return (Or_error.error_string "User is not logged in.")
+            | Some participant ->
+              (* Check before enqueueing (there is no intervening await, so
+                 the write cannot race a close): once the queue is closed the
+                 write would be dropped and the ivar would never fill. *)
+              if Pipe.is_closed message_writer
+              then
+                return (Or_error.error_string "Exchange is shutting down.")
+              else (
+                let cancelled_count = Ivar.create () in
+                let%bind result =
+                  handle_submit
+                    ~message_writer
+                    ~metrics
+                    (Cancel_all { participant; cancelled_count })
+                in
+                match result with
+                | Ok () ->
+                  let%map count = Ivar.read cancelled_count in
+                  Ok count
+                | Error _ ->
+                  return
+                    (Or_error.error_string "Cancel-all submission error")))
         ; Rpc.Pipe_rpc.implement
             Rpc_protocol.market_data_rpc
             (fun state symbols ->

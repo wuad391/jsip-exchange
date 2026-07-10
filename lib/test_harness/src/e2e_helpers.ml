@@ -80,6 +80,10 @@ let rpc_cancel client client_order_id =
   >>| ok_str
 ;;
 
+let rpc_cancel_all client =
+  Rpc.Rpc.dispatch_exn Rpc_protocol.cancel_all_rpc client.conn ()
+;;
+
 let rpc_subscribe client symbols participant_name =
   let%bind market_feed, _metadata =
     Rpc.Pipe_rpc.dispatch_exn

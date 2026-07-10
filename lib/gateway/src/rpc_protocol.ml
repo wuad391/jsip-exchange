@@ -78,6 +78,15 @@ let cancel_order_rpc =
     ~include_in_error_count:Only_on_exn
 ;;
 
+let cancel_all_rpc =
+  Rpc.Rpc.create
+    ~name:"cancel-all"
+    ~version:1
+    ~bin_query:Unit.bin_t
+    ~bin_response:[%bin_type_class: int Or_error.t]
+    ~include_in_error_count:Only_on_exn
+;;
+
 let exchange_stats_rpc =
   Rpc.Pipe_rpc.create
     ~name:"exchange-stats"

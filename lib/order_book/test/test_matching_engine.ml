@@ -610,9 +610,7 @@ let%expect_test "resting_order_counts across symbols, a fill, and a cancel" =
 
 let cancel_all ?(participant = Harness.alice) t =
   let count, events =
-    Matching_engine.cancel_all_for_participant
-      (Harness.engine t)
-      participant
+    Matching_engine.cancel_all_for_participant (Harness.engine t) participant
   in
   print_endline [%string "cancelled %{count#Int}"];
   Harness.print_events events
@@ -640,8 +638,7 @@ let%expect_test "cancel-all sweeps every resting order across symbols" =
     |}]
 ;;
 
-let%expect_test "cancel-all reports the unfilled remainder of a partial \
-                 fill"
+let%expect_test "cancel-all reports the unfilled remainder of a partial fill"
   =
   let t = Harness.create () in
   submit_ t (Harness.buy ~price_cents:15000 ());
@@ -666,8 +663,8 @@ let%expect_test "cancel-all touches only the given participant, emits no \
                  on a second sweep"
   =
   let t = Harness.create () in
-  (* alice's bid rests behind bob's better one, so sweeping alice leaves
-     the best bid (and so the BBO) untouched. *)
+  (* alice's bid rests behind bob's better one, so sweeping alice leaves the
+     best bid (and so the BBO) untouched. *)
   submit_ t (Harness.buy ~price_cents:14900 ());
   submit_ ~participant:Harness.bob t (Harness.buy ~price_cents:15000 ());
   cancel_all t;
@@ -700,8 +697,8 @@ let%expect_test "cancel-all finds nothing after IOC remainders and full \
     ~participant:Harness.bob
     t
     (Harness.sell ~price_cents:15000 ~size:30 ());
-  (* alice's IOC fills 30 and its remainder is auto-cancelled at submit,
-     so nothing of hers ever rests. *)
+  (* alice's IOC fills 30 and its remainder is auto-cancelled at submit, so
+     nothing of hers ever rests. *)
   submit_ t (Harness.buy ~price_cents:15000 ~time_in_force:Ioc ());
   cancel_all t;
   [%expect

@@ -41,8 +41,8 @@ val cancel : t -> Order.Cancel.t -> Exchange_event.t list
     [Order_cancel] with reason {!Cancel_reason.Mass_cancel} per resting
     order, in submission ([Order_id.t]) order, followed by at most one
     [Best_bid_offer_update] per symbol whose best bid or offer the sweep
-    changed — never one per cancel. [(0, [])] if the participant has
-    nothing resting. *)
+    changed — never one per cancel. [(0, [])] if the participant has nothing
+    resting. *)
 val cancel_all_for_participant
   :  t
   -> Participant.t

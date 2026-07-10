@@ -223,9 +223,9 @@ let cancel_all_for_participant t participant =
         Order_id.compare (Order.order_id order) (Order.order_id order'))
     in
     (* Record each touched symbol's BBO once, before its first removal, and
-       emit at most one [Best_bid_offer_update] per changed symbol after
-       the whole sweep — pulling a ladder of N orders must not spam N BBO
-       events the way N single [cancel]s would. *)
+       emit at most one [Best_bid_offer_update] per changed symbol after the
+       whole sweep — pulling a ladder of N orders must not spam N BBO events
+       the way N single [cancel]s would. *)
     let pre_bbos = Symbol_id.Table.create () in
     let touched = Queue.create () in
     let record_pre_bbo symbol book =

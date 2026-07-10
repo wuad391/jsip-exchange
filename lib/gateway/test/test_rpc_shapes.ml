@@ -131,3 +131,16 @@ let%expect_test "exchange-stats RPC" =
     |}];
   return ()
 ;;
+
+let%expect_test "cancel-all RPC" =
+  print_s
+    [%sexp
+      (Rpc.Rpc.shapes Rpc_protocol.cancel_all_rpc
+       : Async_rpc_kernel.Rpc_shapes.t)];
+  [%expect
+    {|
+    (Rpc (query 86ba5df747eec837f0b391dd49f33f9e)
+     (response ce7928a05bd6e1c5ac297c653c6aafa2))
+    |}];
+  return ()
+;;
