@@ -7,7 +7,11 @@ open Jsip_types
    avoid printing the nondeterministic GC fields. *)
 
 let%expect_test "window folds counts / per-participant / busy, then resets" =
-  let dispatcher = Dispatcher.create () in
+  let dispatcher =
+    Dispatcher.create
+      (Dispatcher.Config.uniform
+         { max_length = 8; policy = Bounded_pipe.Policy.Drop_newest })
+  in
   let engine = Jsip_order_book.Matching_engine.create 1 in
   let metrics =
     Metrics.create

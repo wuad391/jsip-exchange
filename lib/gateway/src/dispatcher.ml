@@ -2,17 +2,70 @@ open! Core
 open! Async
 open Jsip_types
 
+module Config = struct
+  type t =
+    { market_data : Bounded_pipe.Limit.t
+    ; audit : Bounded_pipe.Limit.t
+    ; session : Bounded_pipe.Limit.t
+    }
+  [@@deriving sexp_of]
+
+  let uniform (limit : Bounded_pipe.Limit.t) : t =
+    { market_data = limit; audit = limit; session = limit }
+  ;;
+
+  (* Two shapes of stream, two policies.
+
+     Market data is a best-effort public feed of *supersedable* values — a
+     newer BBO or trade print obsoletes an older one — so a consumer that
+     briefly stalls can miss ticks without real harm. Drop the newest events
+     once it is behind, exactly as {!Metrics} does for its stats feed.
+     (Dropping the *oldest* would suit market data even better, but the
+     writer side of an {!Async.Pipe} cannot pop its buffer — see
+     {!Bounded_pipe}.)
+
+     Session and audit feeds are *ledgers*: a client's own order/fill
+     acknowledgements, and the operator's complete event record. Silently
+     dropping from either misleads the reader about what actually happened,
+     so when a consumer falls hopelessly behind we disconnect it and let it
+     reconnect and resync rather than lie by omission.
+
+     Caps are per-consumer buffer ceilings, sized so a healthy client never
+     reaches them; the audit firehose (every event) gets the most headroom. *)
+  let market_data_max_length = 256
+  let session_max_length = 256
+  let audit_max_length = 1024
+
+  let default : t =
+    { market_data =
+        { max_length = market_data_max_length
+        ; policy = Bounded_pipe.Policy.Drop_newest
+        }
+    ; audit =
+        { max_length = audit_max_length
+        ; policy = Bounded_pipe.Policy.Disconnect
+        }
+    ; session =
+        { max_length = session_max_length
+        ; policy = Bounded_pipe.Policy.Disconnect
+        }
+    }
+  ;;
+end
+
 type t =
   { market_data_subscribers_by_symbol :
       Exchange_event.t Pipe.Writer.t Bag.t Symbol_id.Table.t
   ; audit_subscribers : Exchange_event.t Pipe.Writer.t Bag.t
   ; sessions : Session.t Participant.Table.t
+  ; config : Config.t
   }
 
-let create () =
+let create config =
   { market_data_subscribers_by_symbol = Symbol_id.Table.create ()
   ; audit_subscribers = Bag.create ()
   ; sessions = Participant.Table.create ()
+  ; config
   }
 ;;
 
@@ -29,7 +82,7 @@ let set_up_session t participant =
     | None -> return ()
     | Some old_session -> clean_up_session t old_session
   in
-  let new_session = Session.create participant in
+  let new_session = Session.create participant ~limit:t.config.session in
   let () = Hashtbl.add_exn t.sessions ~key:participant ~data:new_session in
   return ()
 ;;
@@ -73,12 +126,12 @@ let push_market_data t event symbol =
   | None -> ()
   | Some subscribers ->
     Bag.iter subscribers ~f:(fun writer ->
-      Pipe.write_without_pushback_if_open writer event)
+      Bounded_pipe.push writer ~limit:t.config.market_data event)
 ;;
 
 let push_audit t event =
   Bag.iter t.audit_subscribers ~f:(fun writer ->
-    Pipe.write_without_pushback_if_open writer event)
+    Bounded_pipe.push writer ~limit:t.config.audit event)
 ;;
 
 let is_active t participant =

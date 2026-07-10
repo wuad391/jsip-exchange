@@ -15,7 +15,11 @@ open Jsip_types
 
 type t
 
-val create : Participant.t -> t
+(** [create participant ~limit] makes a session whose outbound pipe is
+    bounded by [limit]: once [limit.max_length] events are buffered, [push]
+    applies [limit.policy] (see {!Bounded_pipe}) rather than growing without
+    bound. *)
+val create : Participant.t -> limit:Bounded_pipe.Limit.t -> t
 
 (** The participant this session belongs to. *)
 val participant : t -> Participant.t
@@ -25,7 +29,10 @@ val participant : t -> Participant.t
     session. *)
 val reader : t -> Exchange_event.t Pipe.Reader.t
 
-(** Push an event onto the session's outbound pipe. *)
+(** Push an event onto the session's outbound pipe, honoring the [limit] the
+    session was created with. At capacity the configured policy decides
+    whether the event is dropped or the session is disconnected; it never
+    blocks the caller (the shared matching-engine loop). *)
 val push : t -> Exchange_event.t -> unit
 
 (** Close the outbound pipe. Subsequent reads on [reader t] will drain any

@@ -205,7 +205,13 @@ let trade_back_and_forth ~where_to_connect =
 ;;
 
 let start ~port ~market_maker_behavior =
-  let%bind server = Exchange_server.start ~directory ~port () in
+  let%bind server =
+    Exchange_server.start
+      ~directory
+      ~dispatcher_config:Dispatcher.Config.default
+      ~port
+      ()
+  in
   let where_to_connect =
     Tcp.Where_to_connect.of_host_and_port { host = "localhost"; port }
   in

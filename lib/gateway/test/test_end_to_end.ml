@@ -416,7 +416,11 @@ let%expect_test "e2e: audit log subscriber sees full unfiltered stream \
 let%expect_test "dispatcher: closing a subscriber's reader removes the \
                  writer"
   =
-  let dispatcher = Dispatcher.create () in
+  let dispatcher =
+    Dispatcher.create
+      (Dispatcher.Config.uniform
+         { max_length = 8; policy = Bounded_pipe.Policy.Drop_newest })
+  in
   print_s
     [%message
       "initial"

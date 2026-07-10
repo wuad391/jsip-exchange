@@ -110,7 +110,11 @@ let run ?(count_orders = false) (config : Scenario_config.t) ~port ~seed =
   (* The scenario's own directory fixes the exchange's symbol universe, so a
      client connecting to this run resolves the same ids back to names. *)
   let%bind server =
-    Exchange_server.start ~directory:config.directory ~port ()
+    Exchange_server.start
+      ~directory:config.directory
+      ~dispatcher_config:Dispatcher.Config.default
+      ~port
+      ()
   in
   let where_to_connect =
     Tcp.Where_to_connect.of_host_and_port
