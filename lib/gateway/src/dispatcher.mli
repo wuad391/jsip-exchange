@@ -21,12 +21,7 @@ open Jsip_types
 
 type t
 
-(** Create a dispatcher.
-
-    Events whose audience is a single participant (order-lifecycle responses
-    and [Fill] events) are currently handed to a stub [push_to_session] that
-    prints them on stdout, prefixed with the target participant. Wiring this
-    up to real [Session] outbound pipes is a week-2 exercise. *)
+(** Create a dispatcher with no subscribers and no sessions. *)
 val create : unit -> t
 
 (** Subscribe to public market data for one or more [symbols]. The same pipe
@@ -52,13 +47,27 @@ val subscribe_audit : t -> Exchange_event.t Pipe.Reader.t
       session of the order's owning participant (if logged in).
     - [Fill] is pushed to both the aggressor's and the resting party's
       session (if either is logged in).
+    - [Session_status] goes to the audit subscribers only (which every
+      event already reaches) — operator telemetry, deliberately not echoed
+      to the participant's own session feed or to market data.
 
     Each session lookup is O(1) and independent of subscriber count. *)
 val dispatch : t -> Exchange_event.t list -> unit
 
+(** Whether [participant] currently has a live session. *)
 val is_active : t -> Participant.t -> Bool.t
+
+(** Register a session for [participant] (cleaning up any stale one first)
+    and announce it: a [Session_status Connected] event reaches the audit
+    subscribers. The gateway calls this from [login_rpc]. *)
 val set_up_session : t -> Participant.t -> unit Deferred.t
+
+(** The live session for [participant], if any. *)
 val lookup_session : t -> Participant.t -> Session.t Option.t
+
+(** Remove [session] from the registry and close its outbound pipe, then
+    announce a [Session_status Disconnected] to the audit subscribers. The
+    gateway calls this when a logged-in connection closes. *)
 val clean_up_session : t -> Session.t -> unit Deferred.t
 
 (** Current queue length of every audit-subscriber pipe. Used by {!Metrics}

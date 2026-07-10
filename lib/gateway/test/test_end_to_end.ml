@@ -413,6 +413,52 @@ let%expect_test "e2e: audit log subscriber sees full unfiltered stream \
     return ())
 ;;
 
+(* ---------------------------------------------------------------- *)
+(* Session-status (presence) tests *)
+(* ---------------------------------------------------------------- *)
+
+(* Await exactly one audit event and print it. Blocking on the pipe (rather
+   than yielding and hoping) makes the test deterministic: the login /
+   disconnect happened on the server across a real network round-trip, and
+   this rendezvouses with its announcement. *)
+let read_one_audit_event reader =
+  match%bind Pipe.read_exactly reader ~num_values:1 with
+  | `Exactly events ->
+    Queue.iter events ~f:(fun event ->
+      print_endline [%string "[AUDIT] %{Protocol.format_event event}"]);
+    return ()
+  | `Eof | `Fewer _ ->
+    print_endline "[AUDIT] unexpected end of stream";
+    return ()
+;;
+
+let%expect_test "e2e: audit log announces logins and disconnects" =
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
+    let%bind auditor =
+      connect_as ~port ~login:false (Participant.of_string "Auditor")
+    in
+    let%bind result =
+      Rpc.Pipe_rpc.dispatch
+        Rpc_protocol.audit_log_rpc
+        (connection auditor)
+        ()
+    in
+    let reader =
+      match result with
+      | Ok (Ok (reader, _id)) -> reader
+      | _ -> failwith "subscribe failed"
+    in
+    let%bind alice = connect_as ~port Harness.alice in
+    let%bind () = read_one_audit_event reader in
+    [%expect {| [AUDIT] SESSION Alice connected |}];
+    let%bind () = Rpc.Connection.close (connection alice) in
+    let%bind () = read_one_audit_event reader in
+    [%expect {| [AUDIT] SESSION Alice disconnected |}];
+    (* Stop reading before teardown so nothing races the test's end. *)
+    Pipe.close_read reader;
+    return ())
+;;
+
 let%expect_test "dispatcher: closing a subscriber's reader removes the \
                  writer"
   =
