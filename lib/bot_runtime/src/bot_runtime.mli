@@ -96,9 +96,24 @@ val feed_event : t -> Exchange_event.t -> unit Deferred.t
 (** The bot's identity (for routing/debugging). *)
 val participant : t -> Participant.t
 
-(** Run [on_tick] in a forever-loop on the configured interval. Returns a
-    never-determined [Deferred.t]. *)
+(** The packed strategy module's [name] — its kind label (e.g.
+    ["Market Maker"]), as opposed to {!participant}, the identity it logs in
+    with. The interactive console's [list] output shows both. *)
+val bot_name : t -> string
+
+(** Run [on_start], then [on_tick] in a loop on the configured interval,
+    until {!stop} — the returned deferred is never determined otherwise. *)
 val start : t -> unit Deferred.t
+
+(** Ask the tick loop to stop. Idempotent, and fine to call before {!start}:
+    a stopped bot's [start] returns immediately without running [on_start].
+    After [stop], the deferred returned by an in-flight {!start} becomes
+    determined once any in-progress [on_tick] completes — the inter-tick
+    sleep races the stop signal, so a sleeping loop wakes at once rather than
+    waiting out its interval. [stop] does not touch event delivery: the
+    caller owns the feed pipe and closes it separately (see
+    [Jsip_scenario_runner.Bot_handle]). *)
+val stop : t -> unit
 
 module For_testing : sig
   val context_of : t -> Context.t
