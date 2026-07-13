@@ -36,8 +36,14 @@ val find : t -> Order_id.t -> Order.t option
 
     "Best" means the most aggressively priced resting order: the lowest ask
     for an incoming buy, or the highest bid for an incoming sell. Among
-    orders at the same price, the one that arrived first should be preferred
-    (price-time priority). *)
+    orders at the same price, the one that arrived first is preferred
+    (price-time priority).
+
+    Self-trade prevention: an order never matches its own participant's
+    resting orders. Those are skipped in favor of the next eligible
+    counterparty; if the only marketable orders belong to the incoming
+    participant, the result is [None] and the order rests rather than trading
+    with itself. *)
 val find_match : t -> Order.t -> Order.t option
 
 (** {2 Book queries} *)

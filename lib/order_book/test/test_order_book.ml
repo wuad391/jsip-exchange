@@ -188,6 +188,7 @@ let%expect_test "find_match finds a tradable resting order" =
       ~price_cents:15000
       ~order_id:1
       ~client_order_id:1
+      ~participant:Harness.bob
       ()
   in
   Order_book.add book resting;
@@ -241,6 +242,7 @@ let%expect_test "find_match: buy matches against asks, not bids" =
       ~price_cents:15000
       ~order_id:2
       ~client_order_id:2
+      ~participant:Harness.bob
       ()
   in
   Order_book.add book ask;
@@ -251,6 +253,75 @@ let%expect_test "find_match: buy matches against asks, not bids" =
   [%test_result: Order_id.t]
     (Order.order_id (Option.value_exn matched))
     ~expect:(Order.order_id ask)
+;;
+
+(* Self-trade prevention at the [find_match] level: a participant's own
+   resting order is skipped even when it is the best-priced marketable order,
+   and matching falls through to the next eligible counterparty. *)
+let%expect_test "find_match skips own orders and matches another participant"
+  =
+  let book = Order_book.create Harness.aapl in
+  (* Alice's own ask sits in front (best price); Bob's ask is one tick worse. *)
+  Order_book.add
+    book
+    (make_order
+       ~side:Sell
+       ~price_cents:15000
+       ~order_id:1
+       ~client_order_id:1
+       ~participant:Harness.alice
+       ());
+  Order_book.add
+    book
+    (make_order
+       ~side:Sell
+       ~price_cents:15010
+       ~order_id:2
+       ~client_order_id:2
+       ~participant:Harness.bob
+       ());
+  let incoming =
+    make_order
+      ~side:Buy
+      ~price_cents:15010
+      ~order_id:3
+      ~client_order_id:3
+      ~participant:Harness.alice
+      ()
+  in
+  (* Alice's $150.00 ask is better, but it is her own, so the match is Bob's
+     $150.10 ask (order_id 2), not hers (order_id 1). *)
+  [%test_result: Order_id.t]
+    (Order.order_id (Option.value_exn (Order_book.find_match book incoming)))
+    ~expect:(Order_id.For_testing.of_int 2)
+;;
+
+(* When the only marketable order is the incoming participant's own, there is
+   no match at all -- the order will rest rather than trade with itself. *)
+let%expect_test "find_match returns None when only own orders are marketable"
+  =
+  let book = Order_book.create Harness.aapl in
+  Order_book.add
+    book
+    (make_order
+       ~side:Sell
+       ~price_cents:15000
+       ~order_id:1
+       ~client_order_id:1
+       ~participant:Harness.alice
+       ());
+  let incoming =
+    make_order
+      ~side:Buy
+      ~price_cents:15000
+      ~order_id:2
+      ~client_order_id:2
+      ~participant:Harness.alice
+      ()
+  in
+  [%test_result: Order.t option]
+    (Order_book.find_match book incoming)
+    ~expect:None
 ;;
 
 (* --- best_bid_offer --- *)

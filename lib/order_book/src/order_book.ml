@@ -106,23 +106,54 @@ let best_level_entry t side : (Price.t * Order.t Order_queue.t) option =
   match (side : Side.t) with Buy -> Map.max_elt m | Sell -> Map.min_elt m
 ;;
 
-(* The most aggressively priced marketable order on the opposite side: best
-   price, then the oldest resting order at that price (the queue front). *)
+(* The most aggressively priced marketable order on the opposite side that
+   the [incoming] order is allowed to trade against. Two rules combine:
+
+   - price-time priority: best price first, then oldest at that price;
+   - self-trade prevention: a participant never matches its own resting
+     orders. We skip the incoming participant's own orders and match the next
+     eligible counterparty; if the only marketable orders are its own, there
+     is no match and the incoming order rests (possibly locking its own book)
+     rather than trading with itself.
+
+   Policy note: this is "cancel neither" self-trade prevention. Real venues
+   also offer cancel-newest / cancel-oldest / cancel-both, which remove one
+   or both orders outright; we pick the least destructive rule here.
+
+   Levels are walked best-price-first, so the first non-marketable level ends
+   the search -- nothing worse-priced can be marketable. *)
 let find_match t incoming =
   let incoming_side = Order.side incoming in
+  let incoming_participant = Order.participant incoming in
   let opposite_side = Side.flip incoming_side in
-  match best_level_entry t opposite_side with
-  | None -> None
-  | Some (_price, q) ->
-    (match Order_queue.first q with
-     | None -> None
-     | Some resting ->
-       if Price.is_marketable
-            incoming_side
-            ~price:(Order.price incoming)
-            ~resting_price:(Order.price resting)
-       then Some resting
-       else None)
+  let incoming_price = Order.price incoming in
+  let is_own resting =
+    Participant.equal (Order.participant resting) incoming_participant
+  in
+  let levels_best_first =
+    let m = side_map t opposite_side in
+    match opposite_side with
+    | Sell -> Map.to_alist ~key_order:`Increasing m
+    | Buy -> Map.to_alist ~key_order:`Decreasing m
+  in
+  let rec search = function
+    | [] -> None
+    | (price, q) :: worse_levels ->
+      if not
+           (Price.is_marketable
+              incoming_side
+              ~price:incoming_price
+              ~resting_price:price)
+      then None
+      else (
+        match
+          List.find (Order_queue.to_list q) ~f:(fun resting ->
+            not (is_own resting))
+        with
+        | Some resting -> Some resting
+        | None -> search worse_levels)
+  in
+  search levels_best_first
 ;;
 
 let orders_on_side t side =
