@@ -43,7 +43,8 @@ let%expect_test "initial state has every chip enabled and no events" =
     {|
     JSIP Exchange Monitor   0 of 0 events   auto-scroll ↓
     BBO:        (no quotes yet)
-    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]  [4 session]
+    P&L:        (no trades yet)
+    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
     Substring:  (empty)
     ──────────────────────────────────────────────────────────────────────
       (no events visible)
@@ -61,7 +62,8 @@ let%expect_test "feeding sample events populates the display" =
     {|
     JSIP Exchange Monitor   8 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
     Substring:  (empty)
     ──────────────────────────────────────────────────────────────────────
     ACCEPTED id=1 0 BUY 100@$150.00 DAY
@@ -87,7 +89,8 @@ let%expect_test "with a directory, the display renders symbol names" =
     {|
     JSIP Exchange Monitor   8 of 8 events   auto-scroll ↓
     BBO:        AAPL: $149.90 x100 / $150.10 x200
-    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
     Substring:  (empty)
     ──────────────────────────────────────────────────────────────────────
     ACCEPTED id=1 AAPL BUY 100@$150.00 DAY
@@ -100,6 +103,79 @@ let%expect_test "with a directory, the display renders symbol names" =
     SESSION Alice connected
     ──────────────────────────────────────────────────────────────────────
     Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
+    |}]
+;;
+
+(* ---------- Participant P&L panel ---------- *)
+
+(* Drive real fills through the matching engine, then fold the resulting
+   events into the controller, so the panel's P&L is exactly what a live
+   monitor would accumulate off the audit stream. Alice buys 100 @ $150 then
+   sells 100 @ $155 — a $500 realized gain, back to flat. Bob is left short
+   100 @ $150 and Charlie long 100 @ $155; both mark to the last print
+   ($155), giving Bob -$500 unrealized and Charlie a flat $0. Sorted
+   biggest-winner first: Alice (+$500), Charlie ($0), Bob (-$500). *)
+let%expect_test "P&L panel shows realized and unrealized P&L per participant"
+  =
+  let h = Harness.create () in
+  let events =
+    List.concat
+      [ Harness.submit_quiet
+          ~participant:Harness.bob
+          h
+          (Harness.sell ~price_cents:15000 ())
+      ; Harness.submit_quiet
+          ~participant:Harness.alice
+          h
+          (Harness.buy ~price_cents:15000 ())
+      ; Harness.submit_quiet
+          ~participant:Harness.charlie
+          h
+          (Harness.buy ~price_cents:15500 ())
+      ; Harness.submit_quiet
+          ~participant:Harness.alice
+          h
+          (Harness.sell ~price_cents:15500 ())
+      ]
+  in
+  let c =
+    List.fold events ~init:(Controller.create ()) ~f:Controller.feed_event
+  in
+  print_s
+    [%sexp
+      ((Controller.display c).participant_pnl
+       : Controller.Display.Participant_pnl.t list)];
+  [%expect
+    {|
+    (((participant Alice) (total_cents 50000))
+     ((participant Charlie) (total_cents 0))
+     ((participant Bob) (total_cents -50000)))
+    |}];
+  (* And the same state rendered: the panel sits under the BBO row, ahead of
+     the filter chrome. (ASCII render drops colour — sign lives in the text.) *)
+  show c;
+  [%expect
+    {|
+    JSIP Exchange Monitor   12 of 12 events   auto-scroll ↓
+    BBO:        0: - / $155.00 x100
+    P&L:        Alice: $500.00  Charlie: $0.00  Bob: -$500.00
+    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
+    Substring:  (empty)
+    ──────────────────────────────────────────────────────────────────────
+    ACCEPTED id=4 0 SELL 100@$150.00 DAY
+    FILL fill_id=2 0 $150.00 x100 aggressor=4(Bob w/ client order ID = 5) SELL resting=3(Alice w/ client order ID = 4)
+    TRADE 0 $150.00 x100
+    BBO 0 bid=- ask=-
+    ACCEPTED id=3 0 BUY 100@$150.00 DAY
+    BBO 0 bid=$150.00 x100 ask=-
+    ACCEPTED id=2 0 BUY 100@$155.00 DAY
+    FILL fill_id=1 0 $155.00 x100 aggressor=2(Charlie w/ client order ID = 3) BUY resting=1(Alice w/ client order ID = 2)
+    TRADE 0 $155.00 x100
+    BBO 0 bid=- ask=-
+    ACCEPTED id=1 0 SELL 100@$155.00 DAY
+    BBO 0 bid=- ask=$155.00 x100
+    ──────────────────────────────────────────────────────────────────────
+    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
     |}]
 ;;
 
@@ -145,7 +221,8 @@ let%expect_test "pressing 1 toggles the order-lifecycle category off and \
     {|
     JSIP Exchange Monitor   4 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: (1 order-lifecycle)  [2 trade]  [3 market-data]  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: (1 order-lifecycle)  [2 trade]  [3 market-data]
     Substring:  (empty)
     ──────────────────────────────────────────────────────────────────────
     FILL fill_id=1 0 $150.00 x100 aggressor=2(Alice w/ client order ID = 4) BUY resting=1(Bob w/ client order ID = 3)
@@ -157,7 +234,8 @@ let%expect_test "pressing 1 toggles the order-lifecycle category off and \
     ----- toggle 1 again -----
     JSIP Exchange Monitor   8 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
     Substring:  (empty)
     ──────────────────────────────────────────────────────────────────────
     ACCEPTED id=1 0 BUY 100@$150.00 DAY
@@ -182,7 +260,8 @@ let%expect_test "pressing 2 toggles trade; 3 toggles market-data" =
     {|
     JSIP Exchange Monitor   5 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: [1 order-lifecycle]  (2 trade)  (3 market-data)  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: [1 order-lifecycle]  (2 trade)  (3 market-data)
     Substring:  (empty)
     ──────────────────────────────────────────────────────────────────────
     ACCEPTED id=1 0 BUY 100@$150.00 DAY
@@ -203,7 +282,8 @@ let%expect_test "disabling every category hides every event" =
     {|
     JSIP Exchange Monitor   0 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: (1 order-lifecycle)  (2 trade)  (3 market-data)  (4 session)
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: (1 order-lifecycle)  (2 trade)  (3 market-data)
     Substring:  (empty)
     ──────────────────────────────────────────────────────────────────────
       (no events visible)
@@ -222,7 +302,8 @@ let%expect_test "pressing / enters editing mode with empty buffer" =
     {|
     JSIP Exchange Monitor   8 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
     Substring:  _  (editing)
     [editing substring]
     ──────────────────────────────────────────────────────────────────────
@@ -248,7 +329,8 @@ let%expect_test "typing in edit mode appends to the buffer" =
     {|
     JSIP Exchange Monitor   1 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
     Substring:  fill_  (editing)
     [editing substring]
     ──────────────────────────────────────────────────────────────────────
@@ -268,7 +350,8 @@ let%expect_test "Enter commits the substring filter and returns to browsing" =
     {|
     JSIP Exchange Monitor   1 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
     Substring:  fill
     ──────────────────────────────────────────────────────────────────────
     FILL fill_id=1 0 $150.00 x100 aggressor=2(Alice w/ client order ID = 4) BUY resting=1(Bob w/ client order ID = 3)
@@ -287,7 +370,8 @@ let%expect_test "Escape cancels edit mode and reverts the buffer" =
     {|
     JSIP Exchange Monitor   8 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
     Substring:  (empty)
     ──────────────────────────────────────────────────────────────────────
     ACCEPTED id=1 0 BUY 100@$150.00 DAY
@@ -314,7 +398,8 @@ let%expect_test "Backspace in edit mode pops the last character" =
     {|
     JSIP Exchange Monitor   1 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
     Substring:  fi_  (editing)
     [editing substring]
     ──────────────────────────────────────────────────────────────────────
@@ -342,7 +427,8 @@ let%expect_test "pressing r clears every filter back to defaults" =
     ----- after toggling and committing 'fill' -----
     JSIP Exchange Monitor   1 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: (1 order-lifecycle)  [2 trade]  [3 market-data]  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: (1 order-lifecycle)  [2 trade]  [3 market-data]
     Substring:  fill
     ──────────────────────────────────────────────────────────────────────
     FILL fill_id=1 0 $150.00 x100 aggressor=2(Alice w/ client order ID = 4) BUY resting=1(Bob w/ client order ID = 3)
@@ -351,7 +437,8 @@ let%expect_test "pressing r clears every filter back to defaults" =
     ----- after r -----
     JSIP Exchange Monitor   8 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
     Substring:  (empty)
     ──────────────────────────────────────────────────────────────────────
     ACCEPTED id=1 0 BUY 100@$150.00 DAY
@@ -381,7 +468,8 @@ let%expect_test "counter reflects visible / total even when filters are \
     {|
     JSIP Exchange Monitor   1 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
-    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]  [4 session]
+    P&L:        Alice: $0.00  Bob: $0.00
+    Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
     Substring:  bbo
     ──────────────────────────────────────────────────────────────────────
     BBO 0 bid=$149.90 x100 ask=$150.10 x200
