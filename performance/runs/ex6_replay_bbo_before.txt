@@ -68,14 +68,25 @@ oldify_one / do_some_marking / pool_sweep, and they sum to ~3%.)
 
 Reference numbers (balanced, seed 0)
 ------------------------------------
-1M numbers captured separately in this dir once the contended box frees up;
-200k smoke below (same binary, same preset) for shape:
+1M actions (primary):
+  wall   70.23s (14239 act/s)   [contended box; not a clean throughput claim,
+                                 but 6.4x slower than optimized is real]
+  submit p50=65.54us p99=4.19ms  p99.9=8.39ms max=90.91ms (n=549699)
+  cancel p50=512ns   p99=262.14us p99.9=8.39ms max=32.09ms (n=450301)
+  events accepts=549699 fills=360766 order_cancels=146068 rejects=0
+         cancel_rejects=336325 bbo_updates=279804 trade_reports=360766
+  gc     3049.9 words/action, minor=2957 major=86, live 223507->214994
+  checks fill rate realized=0.381 intended=0.350 OK
 
-  wall   2.87s (69720 act/s)   [contended; not a throughput claim]
-  submit p50=16.38us p99=131.07us p99.9=2.10ms max=6.94ms (n=109931)
-  cancel p50=512ns   p99=65.54us  p99.9=524.29us max=5.70ms (n=90069)
-  events accepts=109931 fills=70806 order_cancels=28960 rejects=0
-         cancel_rejects=67371 bbo_updates=56185 trade_reports=70806
-  depth  50k:1720 100k:2420 150k:2872 200k:3024  (decelerating -> ~3k plateau)
-  gc     1574.7 words/action, minor=313 major=18, live 223492->214993
-  checks fill rate realized=0.376 intended=0.350 OK ; depth plateau OK
+THE O(n) TRAP — cost scales with book depth. Compare 200k vs 1M on the SAME
+un-optimized binary:
+  200k:  submit p50=16.38us,  1574.7 words/action,  minor=313
+  1M:    submit p50=65.54us,  3049.9 words/action,  minor=2957
+Per-action cost roughly DOUBLES from 200k to 1M, because best_level's
+`List.map (Map.to_alist book)` allocates a list proportional to the current
+book size, and a larger fraction of the 1M run happens at the full ~3000-order
+plateau. The longer you run, the worse O(n)-per-write looks. The optimized
+book (ex6_replay_bbo_after.txt) is flat: 145.9 words/action at BOTH scales.
+
+  depth trajectory (deterministic, both binaries): 50k:1720 100k:2420
+    150k:2872 200k:3024 -> ~3k plateau
