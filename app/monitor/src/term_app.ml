@@ -136,6 +136,41 @@ let render_bbo_panel (bbos : (string * Bbo.t) list) =
   View.hcat [ label; body ]
 ;;
 
+(* Colour carries the sign — green profit, red loss, dim grey flat — while
+   the dollar text (via [Price.to_string_dollar]) shows a leading "-" only
+   for a loss, so the panel still reads correctly with colour stripped. *)
+let render_pnl_entry
+  ({ participant; total_cents } : Controller.Display.Participant_pnl.t)
+  =
+  let attr =
+    if total_cents > 0
+    then Attr.fg Attr.Color.Expert.lightgreen
+    else if total_cents < 0
+    then Attr.fg Attr.Color.Expert.lightred
+    else dim_grey
+  in
+  let dollars = Price.to_string_dollar (Price.of_int_cents total_cents) in
+  View.hcat
+    [ View.text ~attrs:[ title_attr ] [%string "%{participant}: "]
+    ; View.text ~attrs:[ attr ] dollars
+    ]
+;;
+
+let render_pnl_panel (entries : Controller.Display.Participant_pnl.t list) =
+  let label =
+    View.text ~attrs:[ dim_grey ] (String.pad_right "P&L:" ~len:12)
+  in
+  let body =
+    if List.is_empty entries
+    then View.text ~attrs:[ dim_grey ] "(no trades yet)"
+    else (
+      let rows = List.map entries ~f:render_pnl_entry in
+      let sep = View.text "  " in
+      List.intersperse rows ~sep |> View.hcat)
+  in
+  View.hcat [ label; body ]
+;;
+
 let render_top_chrome ~stuck_to_bottom (display : Controller.Display.t)
   : View.t
   =
@@ -160,6 +195,7 @@ let render_top_chrome ~stuck_to_bottom (display : Controller.Display.t)
   View.vcat
     ([ header
      ; render_bbo_panel display.bbo_panel
+     ; render_pnl_panel display.participant_pnl
      ; render_chips_row "Categories:" display.category_chips
      ; render_substring_row display.substring_field
      ]
