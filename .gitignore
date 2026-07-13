@@ -1,2 +1,10 @@
 _build
 .claude
+
+# perf profiling output: large binaries tied to one specific build, not source.
+# Keep the decoded text reports in performance/runs/ instead. (~40MB of these
+# were committed by accident once; these patterns stop it recurring.)
+perf.data
+perf.data.old
+perf-*.data
+perf-*.data.old
