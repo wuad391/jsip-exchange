@@ -45,6 +45,10 @@ module Config = struct
     { size_per_level : int
     ; num_levels : int
     ; inventory_skew_cents_per_share : int
+    ; requote_threshold_cents : int
+        (* Hysteresis band: on a BBO move, re-seed only once our target quote
+           has drifted at least this far from where our ladder is resting.
+           Zero reproduces the old "re-quote on any change" behavior. *)
     ; state : symbol_state Symbol_id.Table.t
     ; client_order_id_ref : Int.t Ref.t
     ; print_books : Bool.t
@@ -126,13 +130,29 @@ let new_client_order_id (config : Config.t) =
   !(config.client_order_id_ref)
 ;;
 
-(* half_spread will default to 50 cents if no BBO exists. *)
+(* With no BBO to mirror (an empty side), quote this far off fair value. *)
+let default_half_spread_cents = 50
+
+(* Floor for the mirrored half-spread. The maker mirrors the market by
+   quoting half the current spread on each side, but it is itself the
+   dominant liquidity, so as it (and others) tighten the book the measured
+   spread collapses toward zero. At zero the maker would quote bid = ask; a
+   crossed book makes [Bbo.spread] negative, so it would then quote
+   bid *above* ask. Flooring keeps every quote non-crossing and stops that
+   feedback. It is load-bearing now that self-trade prevention is in place:
+   before, the degenerate quotes self-filled and cleared themselves; now they
+   would rest locked and drive the maker to re-seed without end. *)
+let min_half_spread_cents = 5
+
+(* Half of the current market spread (what we quote on each side), floored so
+   the mirror can never collapse to a zero or crossed quote. *)
 let half_spread_cents (bbo : Bbo.t) =
-  match Bbo.spread bbo with
-  | Some spread ->
-    let spread = Price.to_int_cents spread in
-    spread / 2
-  | None -> 50
+  let mirrored =
+    match Bbo.spread bbo with
+    | Some spread -> Price.to_int_cents spread / 2
+    | None -> default_half_spread_cents
+  in
+  Int.max mirrored min_half_spread_cents
 ;;
 
 let skewed_fair_value (config : Config.t) fair_value_cents inventory =
@@ -149,12 +169,35 @@ let skewed_fair_value (config : Config.t) fair_value_cents inventory =
    matching [Fundamental_oracle.min_price_cents]. *)
 let clamp_to_positive_cents cents = Int.max cents 1
 
+(* Would re-seeding actually move our quotes enough to bother? [current] and
+   [target] are each a [(skewed_fair, half_spread)] pair; we translate both
+   to the inner (top-of-book) bid and ask they imply and answer yes only once
+   one of those has drifted at least [threshold] cents from where our ladder
+   is resting. Comparing against the resting quote (not the previous tick)
+   means slow drift still accumulates past the threshold and re-quotes, while
+   the sub-tick flicker the maker's own re-seeds emit is ignored. *)
+let requote_warranted ~threshold ~current ~target =
+  let inner_bid_ask (fair, half_spread) =
+    fair - half_spread, fair + half_spread
+  in
+  let cur_bid, cur_ask = inner_bid_ask current in
+  let tgt_bid, tgt_ask = inner_bid_ask target in
+  Int.abs (tgt_bid - cur_bid) >= threshold
+  || Int.abs (tgt_ask - cur_ask) >= threshold
+;;
+
 (* ....................................................... *)
 
 (* Seeds each symbol's state with fair value 0; [on_start] repopulates the
    real fair values before any quoting. *)
+(* A few cents of hysteresis by default: enough to swallow the sub-tick BBO
+   churn the maker's own re-seeds create, small enough that real drift still
+   re-quotes promptly. *)
+let default_requote_threshold_cents = 5
+
 let create_config
   ?(testing = false)
+  ?(requote_threshold_cents = default_requote_threshold_cents)
   ()
   ~size_per_level
   ~num_levels
@@ -168,6 +211,7 @@ let create_config
   { size_per_level
   ; num_levels
   ; inventory_skew_cents_per_share
+  ; requote_threshold_cents
   ; state = Hashtbl.of_alist_exn (module Symbol_id) symbol_state_list
   ; client_order_id_ref = ref 0
   ; print_books = testing
@@ -420,11 +464,15 @@ let on_event config context event =
        | None -> return ()
        | Some curr_symbol_state ->
          set_symbol_state config symbol { curr_symbol_state with bbo };
-         (* Re-quote only if the market actually moved enough to change where
-            we'd quote -- comparing the target [(skewed_fair, half_spread)]
-            against what's already resting, not just "did the BBO change", so
-            a reseed (which itself moves the BBO) doesn't trigger another
-            reseed forever. *)
+         (* Re-quote only if the market moved enough to shift where we'd
+            quote. We compare the target [(skewed_fair, half_spread)] against
+            where our ladder is *resting* (not just "did the BBO change"),
+            and require it to have drifted past [requote_threshold_cents] of
+            hysteresis. Both guards matter: comparing against the resting
+            quote keeps a reseed (which itself moves the BBO) from triggering
+            another reseed, and the hysteresis band swallows the sub-tick
+            flicker that would otherwise have the maker re-seeding thousands
+            of times a second. *)
          let target =
            ( skewed_fair_value
                config
@@ -432,11 +480,15 @@ let on_event config context event =
                curr_symbol_state.inventory
            , half_spread_cents bbo )
          in
-         if [%equal: (int * int) option]
-              (Some target)
-              curr_symbol_state.quoted
-         then return ()
-         else reseed config context symbol)
+         (match curr_symbol_state.quoted with
+          | Some current
+            when not
+                   (requote_warranted
+                      ~threshold:config.requote_threshold_cents
+                      ~current
+                      ~target) ->
+            return ()
+          | None | Some _ -> reseed config context symbol))
     | Order_cancel _ -> return ()
     | Fill fill ->
       let side = side_of_fill fill in
@@ -464,3 +516,9 @@ let on_event config context event =
   in
   return ()
 ;;
+
+module For_testing = struct
+  let half_spread_cents = half_spread_cents
+  let min_half_spread_cents = min_half_spread_cents
+  let requote_warranted = requote_warranted
+end
