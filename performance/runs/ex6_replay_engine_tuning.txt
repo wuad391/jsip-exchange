@@ -5,7 +5,7 @@ What this is
 ------------
 Picks up where ex6_replay_bbo_after.txt left off. That report ended with the
 engine dominated by its own data-structure maintenance and flagged the next
-targets. This documents three follow-up optimizations found by re-profiling,
+targets. This documents four follow-up optimizations found by re-profiling,
 all on the PR-#19 nested book (price -> hash-queue). Same driver, preset, seed.
 
   branch : robyn/ex6-workload-profile
@@ -14,8 +14,8 @@ all on the PR-#19 nested book (price -> hash-queue). Same driver, preset, seed.
   raw    : perf-after2.data (before the level cache) / perf-after3.data (after)
            both gitignored
 
-The three changes
------------------
+The four changes
+----------------
 1. Reverse lookup table removed (commit "carry client_order_id on Order.t").
    Order.create discarded the client_order_id, so the engine kept a side
    hashtable (order_id -> client_order_id) purely to relabel fills. Now Order.t
@@ -36,6 +36,16 @@ The three changes
    Hashtbl.mem (in validate_client_id) and then Hashtbl.add_exn (in
    add_client_order) — two probes of the same inner table per submit. Now one
    Hashtbl.add returns [`Ok | `Duplicate]; the common path probes once.
+
+4. Incremental top-of-book cache (this commit). best_bid_offer and find_match
+   still walked the price map (Map.max_elt/min_elt, O(log P)) on every read.
+   The book now caches best_bid / best_ask (the top level per side) and reads
+   them in O(1). Maintained incrementally: an add whose price is strictly more
+   aggressive than the current best becomes the new best (O(1)); removing the
+   last order at the best level recomputes via the O(log P) walk — the only
+   path that still walks. A resting fill just shrinks that level's total_size
+   in place, so the cached pointer needs no update. Bonus: Map.max_elt/min_elt
+   allocate a (key,data) option on every call, so caching also cut allocation.
 
 Correctness
 -----------
@@ -82,8 +92,9 @@ Deterministic (1M actions, contention-independent):
   O(n) baseline (pre-PR#19)          3049.9          2957        86
   + PR#19  O(log) BBO                 145.9           158        29
   + reverse-table removal             141.6           153        28
-  + level-cache + dup-check (now)     140.8           152        28
-  => 21.7x less allocation, 19.5x fewer minor GCs, cumulative.
+  + level-cache + dup-check           140.8           152        28
+  + BBO cache (now)                   124.6           136        26
+  => 24.5x less allocation, 21.7x fewer minor GCs, cumulative from O(n).
 
 Matched back-to-back (1M actions, same box, consecutive):
                         O(n) baseline    fully tuned    factor
@@ -102,10 +113,28 @@ Where the wins came from (submit p50, the headline latency):
   submit again on top by deleting the residual per-read fold and the redundant
   hashtable probes -- CPU-cycle wins, which is why they barely move allocation.
 
+BBO cache isolated (pre vs post, matched back-to-back, same low load)
+--------------------------------------------------------------------
+The level-cache+dup-check binary vs the BBO-cache binary, run consecutively:
+  best_level_entry (the Map min/max walk)   4.48%  ->  0.09%  (off the profile)
+  allocation                               140.8   ->  124.6 w/action  (-11.5%)
+  minor collections                          152   ->  136
+  throughput                              396k     ->  430k act/s      (+8.5%)
+  submit p50                               2.05 us ->  2.05 us   (unchanged: the
+    saved O(log P) walk is below the histogram's ~us resolution; the win shows
+    up as throughput + allocation, not median latency)
+The allocation drop is the interesting part: Map.max_elt/min_elt each allocate
+a (key,data) option, and we called them ~8x per action on the read path (2 per
+best_bid_offer x 2 reads/submit + 2/cancel, plus find_match). The cache returns
+a stored option, allocating nothing, so killing the walk also killed its
+garbage. Diminishing returns, though: only ~8% throughput, because the engine
+is now a small enough slice of the whole that Amdahl caps the win.
+
 What's next
 -----------
-find_and_call is now the single biggest cost (10.18%) — order-id hashtable
+find_and_call is now the single biggest cost (11.30%) — order-id hashtable
 lookups (id_hash on add/remove/find) plus the client_order_tables (get on
-cancel, find_or_add on submit). GC is ~16% of this (much smaller) profile, and
-the workload generator is ~6% and rising: another few-x engine speedup would
-make the RNG the thing to optimize, not the engine.
+cancel, find_or_add on submit). best_level_entry has left the profile (0.09%).
+GC is ~18% of this (much smaller) profile and the workload generator ~7% and
+rising: we are near the point where the RNG, not the engine, is what's left to
+optimize.
