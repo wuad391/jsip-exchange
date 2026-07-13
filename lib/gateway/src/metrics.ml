@@ -11,6 +11,15 @@ open Jsip_exchange_stats
 let max_latency_samples = 100_000
 let sample_interval = Time_ns.Span.of_sec 0.5
 
+(* [live_words] is the one GC figure that costs a full major-heap walk
+   ([Gc.stat]); every other field is free from [Gc.quick_stat]. We refresh it
+   on this slower cadence, off the [sample_interval] snapshot path, so the
+   walk's cost — which grows with the live heap — never widens the snapshot
+   cadence, and thus the dashboard's refresh latency, under load. At 1/20 the
+   snapshot rate the walk is a rare isolated cost rather than a per-sample
+   tax. *)
+let live_words_sample_interval = Time_ns.Span.of_sec 10.
+
 type t =
   { dispatcher : Dispatcher.t
   ; matching_engine : Matching_engine.t
@@ -25,6 +34,10 @@ type t =
   ; mutable cancel_max_us : float
   ; orders_per_sec : int Participant.Table.t
   ; mutable busy_max_us : float
+  ; (* Latest [live_words] from [Gc.stat], refreshed on
+       [live_words_sample_interval] so the per-sample snapshot can read the
+       O(1) [Gc.quick_stat] and never walk the heap itself. *)
+    mutable last_live_words : int
   ; subscribers : Exchange_stats.t Pipe.Writer.t Bag.t
   }
 
@@ -42,6 +55,7 @@ let create ~dispatcher ~matching_engine ~num_symbols ~request_queue_length =
   ; cancel_max_us = 0.
   ; orders_per_sec = Participant.Table.create ()
   ; busy_max_us = 0.
+  ; last_live_words = 0
   ; subscribers = Bag.create ()
   }
 ;;
@@ -97,18 +111,23 @@ let per_participant t =
     })
 ;;
 
-(* [Core.Gc.stat ()] walks the heap to compute [live_words], on the Async
-   thread, once per [sample_interval]. We accept the walk: [live_words] is
-   the headline memory number the dashboard needs, and only [Gc.quick_stat]
-   avoids the walk (but it omits [live_words]); at these sampling rates the
-   pause is negligible for the heaps this exchange runs. Revisit — sampling
-   [live_words] on a slower cadence than the cheap counters — if a large heap
-   makes the walk show up in the latency percentiles. *)
+(* Runs every [sample_interval], so its wall time is what the dashboard's
+   refresh latency is made of — it must stay cheap. GC figures come from
+   [Gc.quick_stat] (O(1)); [live_words], the one field that needs a full-heap
+   walk, is folded in from [last_live_words], refreshed off-path by [start]
+   on [live_words_sample_interval]. This is the "revisit on a large heap" the
+   old comment here flagged: the walk was the term that grew with the heap
+   and stretched the snapshot cadence under load. *)
 let snapshot t : Exchange_stats.t =
   t.seq <- t.seq + 1;
+  let gc : Exchange_stats.Gc_snapshot.t =
+    { (Exchange_stats.Gc_snapshot.of_stat (Core.Gc.quick_stat ())) with
+      live_words = t.last_live_words
+    }
+  in
   { seq = t.seq
   ; sample_period_sec = Time_ns.Span.to_sec sample_interval
-  ; gc = Exchange_stats.Gc_snapshot.of_stat (Core.Gc.stat ())
+  ; gc
   ; submit_latency =
       Exchange_stats.Latency_summary.of_samples
         (Queue.to_array t.submit_samples)
@@ -166,7 +185,19 @@ let broadcast t (stats : Exchange_stats.t) =
 ;;
 
 let start t =
-  Clock_ns.every sample_interval (fun () ->
+  (* Refresh the expensive [live_words] figure on its own slow cadence (and
+     prime it once, so the first snapshots aren't zero). Only this timer pays
+     for [Gc.stat]'s heap walk; the per-[sample_interval] snapshot reads
+     [Gc.quick_stat]. Both fire on a fixed grid ([run_at_intervals]) rather
+     than [interval]-after-completion ([every]), so a slow snapshot cannot
+     stretch the cadence and stale the dashboard. *)
+  let refresh_live_words () =
+    let stat : Core.Gc.Stat.t = Core.Gc.stat () in
+    t.last_live_words <- stat.live_words
+  in
+  refresh_live_words ();
+  Clock_ns.run_at_intervals live_words_sample_interval refresh_live_words;
+  Clock_ns.run_at_intervals sample_interval (fun () ->
     let stats = snapshot t in
     broadcast t stats;
     reset_window t)
