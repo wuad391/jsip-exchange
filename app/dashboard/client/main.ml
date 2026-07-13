@@ -22,7 +22,17 @@ module Symbol_directory = Jsip_symbol_directory.Symbol_directory
    poll out of the graph, so a hidden feed costs no polling at all — only the
    always-on stats poll keeps running. *)
 
-let poll_interval = Time_ns.Span.of_sec 0.5
+(* The server samples every 0.5 s (see [Metrics.sample_interval]). If the
+   browser also polled at 0.5 s, that would be a second, independent 0.5 s
+   stage in series — the two beat against each other and end-to-end latency
+   roughly doubles to ~1 s. So we poll the stats several times per sample
+   interval: the client then catches each snapshot within ~0.1 s of it
+   landing, and latency collapses back to the single ~0.5 s sampling stage.
+   The extra polls that bring no new [seq] are cut off (see [same_window]) so
+   they cost no pane re-render. The event feed is not latency-critical, so it
+   keeps polling once per sample interval. *)
+let stats_poll_interval = Time_ns.Span.of_sec 0.1
+let feed_poll_interval = Time_ns.Span.of_sec 0.5
 
 (* The monitor's *observed* refresh latency, shown in the header: the
    wall-clock gap between snapshots actually landing from the server. Unlike
@@ -52,18 +62,39 @@ module Refresh_latency = struct
   ;;
 end
 
-let poll rpc (local_ graph) =
+let poll ~every rpc (local_ graph) =
   Rpc_effect.Polling_state_rpc.poll
     rpc
     ~equal_query:[%equal: unit]
-    ~every:(Bonsai.return poll_interval)
+    ~every:(Bonsai.return every)
     ~output_type:Rpc_effect.Poll_result.Output_type.Last_ok_response
     (Bonsai.return ())
     graph
 ;;
 
+(* Two polled windows carry the same data when they have the same length and
+   the same newest [seq]: the server only ever appends monotonically-seq'd
+   snapshots into a fixed-size sliding window, so that pair identifies the
+   window's contents exactly. Cutting off [window] on it means the panes
+   recompute once per real snapshot (~0.5 s) rather than on every 0.1 s poll
+   — most of which, between samples, bring nothing new. *)
+let same_window (a : Exchange_stats.t list option) b =
+  let signature =
+    Option.map ~f:(fun snapshots ->
+      ( List.length snapshots
+      , Option.value_map (List.last snapshots) ~default:(-1) ~f:(fun s ->
+          s.Exchange_stats.seq) ))
+  in
+  [%equal: (int * int) option] (signature a) (signature b)
+;;
+
 let app (local_ graph) =
-  let window = poll Jsip_dashboard_protocol.stats_rpc graph in
+  let window =
+    poll ~every:stats_poll_interval Jsip_dashboard_protocol.stats_rpc graph
+  in
+  (* Poll fast to track the server (above); re-render only when the window
+     actually advances. *)
+  let window = Bonsai.cutoff window ~equal:same_window in
   (* Fetch the id<->name directory once at startup and mirror it locally.
      Until it lands (or if the fetch fails) the alist is empty, so names fall
      back to raw ids — the same graceful degradation as the terminal monitor. *)
@@ -123,7 +154,8 @@ let app (local_ graph) =
   let feed_visible, set_feed_visible = Bonsai.state' true graph in
   let feed =
     match%sub feed_visible with
-    | true -> poll Jsip_dashboard_protocol.feed_rpc graph
+    | true ->
+      poll ~every:feed_poll_interval Jsip_dashboard_protocol.feed_rpc graph
     | false -> Bonsai.return None
   in
   let selected, set_selected =
