@@ -12,8 +12,16 @@ type t
 
 (** Start a server on the given port with the given symbols. Returns the
     server handle and the port it is actually listening on (useful when you
-    pass port 0 to get an OS-assigned port). *)
-val start : symbols:Symbol.t list -> port:int -> unit -> t Deferred.t
+    pass port 0 to get an OS-assigned port). [limits] sets the
+    per-participant submit/cancel rate limits (default
+    {!Session.Limits.default}); tests pass tight limits to exercise the
+    limiter deterministically. *)
+val start
+  :  ?limits:Session.Limits.t
+  -> symbols:Symbol.t list
+  -> port:int
+  -> unit
+  -> t Deferred.t
 
 (** The port the server is listening on. *)
 val port : t -> int

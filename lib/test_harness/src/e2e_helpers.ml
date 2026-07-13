@@ -9,8 +9,8 @@ let ok_str res =
   | Error e -> print_endline [%string "%{(Error.to_string_hum e)}"]
 ;;
 
-let with_server ~symbols f =
-  let%bind server = Exchange_server.start ~symbols ~port:0 () in
+let with_server ?limits ~symbols f =
+  let%bind server = Exchange_server.start ?limits ~symbols ~port:0 () in
   let port = Exchange_server.port server in
   Monitor.protect
     (fun () -> f ~server ~port)

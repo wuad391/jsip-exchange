@@ -7,12 +7,14 @@ type t =
       Exchange_event.t Pipe.Writer.t Bag.t Symbol.Table.t
   ; audit_subscribers : Exchange_event.t Pipe.Writer.t Bag.t
   ; sessions : Session.t Participant.Table.t
+  ; limits : Session.Limits.t
   }
 
-let create () =
+let create ?(limits = Session.Limits.default) () =
   { market_data_subscribers_by_symbol = Symbol.Table.create ()
   ; audit_subscribers = Bag.create ()
   ; sessions = Participant.Table.create ()
+  ; limits
   }
 ;;
 
@@ -29,7 +31,7 @@ let set_up_session t participant =
     | None -> return ()
     | Some old_session -> clean_up_session t old_session
   in
-  let new_session = Session.create participant in
+  let new_session = Session.create ~limits:t.limits participant in
   let () = Hashtbl.add_exn t.sessions ~key:participant ~data:new_session in
   return ()
 ;;

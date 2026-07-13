@@ -6,9 +6,13 @@ open! Async
 open Jsip_types
 open Jsip_gateway
 
-(** Start a server on an OS-assigned port, run [f], then shut down. *)
+(** Start a server on an OS-assigned port, run [f], then shut down. [limits]
+    overrides the per-participant rate limits (default
+    {!Jsip_gateway.Session.Limits.default}); rate-limit tests pass tight
+    limits to trip the limiter deterministically. *)
 val with_server
-  :  symbols:Symbol.t list
+  :  ?limits:Session.Limits.t
+  -> symbols:Symbol.t list
   -> (server:Exchange_server.t -> port:int -> 'a Deferred.t)
   -> 'a Deferred.t
 
