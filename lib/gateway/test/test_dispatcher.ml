@@ -11,8 +11,8 @@ let%expect_test "market_data_queue_lengths counts each pipe once, not per \
                  symbol"
   =
   let t = Dispatcher.create () in
-  let aapl = Symbol.of_string "AAPL" in
-  let msft = Symbol.of_string "MSFT" in
+  let aapl = Symbol_id.of_int 0 in
+  let msft = Symbol_id.of_int 3 in
   (* One pipe registered on two symbols, a second pipe on one: occupancy must
      see two distinct pipes (all empty → depth 0), not three registrations. *)
   let _reader_on_two = Dispatcher.subscribe_market_data t [ aapl; msft ] in

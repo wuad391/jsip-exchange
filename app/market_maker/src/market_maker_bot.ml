@@ -45,7 +45,7 @@ module Config = struct
     { size_per_level : int
     ; num_levels : int
     ; inventory_skew_cents_per_share : int
-    ; state : symbol_state Symbol.Table.t
+    ; state : symbol_state Symbol_id.Table.t
     ; client_order_id_ref : Int.t Ref.t
     ; print_books : Bool.t
     }
@@ -139,6 +139,16 @@ let skewed_fair_value (config : Config.t) fair_value_cents inventory =
   fair_value_cents - (!inventory * config.inventory_skew_cents_per_share)
 ;;
 
+(* A skewed quote can go non-positive: enough inventory skew or price levels
+   can push [skewed_fair_value_cents -/+ offset] to or below zero, and
+   [Price.of_int_cents] will happily wrap a negative number into a [Price.t]
+   with no complaint. The exchange now rejects negative-priced orders
+   outright (see [Matching_engine.submit]), so an un-clamped quote here would
+   just get bounced -- but the market maker should never try to post one in
+   the first place. Floor at one cent, the smallest representable price tick,
+   matching [Fundamental_oracle.min_price_cents]. *)
+let clamp_to_positive_cents cents = Int.max cents 1
+
 (* ....................................................... *)
 
 (* Seeds each symbol's state with fair value 0; [on_start] repopulates the
@@ -158,7 +168,7 @@ let create_config
   { size_per_level
   ; num_levels
   ; inventory_skew_cents_per_share
-  ; state = Hashtbl.of_alist_exn (module Symbol) symbol_state_list
+  ; state = Hashtbl.of_alist_exn (module Symbol_id) symbol_state_list
   ; client_order_id_ref = ref 0
   ; print_books = testing
   }
@@ -167,7 +177,7 @@ let create_config
 let seed_book
   (config : Config.t)
   (context : Bot_runtime.Context.t)
-  (symbols : Symbol.t List.t)
+  (symbols : Symbol_id.t List.t)
   =
   let%bind () =
     Deferred.List.iter
@@ -208,7 +218,9 @@ let seed_book
                  ; participant = Context.participant context
                  ; side = Buy
                  ; price =
-                     Price.of_int_cents (skewed_fair_value_cents - offset)
+                     Price.of_int_cents
+                       (clamp_to_positive_cents
+                          (skewed_fair_value_cents - offset))
                  ; size = Size.of_int config.size_per_level
                  ; time_in_force = Day
                  ; client_order_id = buy_client_order_id
@@ -221,7 +233,9 @@ let seed_book
                  ; participant = Context.participant context
                  ; side = Sell
                  ; price =
-                     Price.of_int_cents (skewed_fair_value_cents + offset)
+                     Price.of_int_cents
+                       (clamp_to_positive_cents
+                          (skewed_fair_value_cents + offset))
                  ; size = Size.of_int config.size_per_level
                  ; time_in_force = Day
                  ; client_order_id = sell_client_order_id
@@ -329,7 +343,7 @@ let on_tick (config : Config.t) context =
             }
         ->
         print_endline
-          [%string "\nSTART for %{symbol#Symbol}===================="];
+          [%string "\nSTART for %{symbol#Symbol_id}===================="];
         print_endline [%string "Fair value price: %{fair_value_cents#Int}"];
         print_endline [%string "BBO: %{bbo#Bbo}"];
         print_endline [%string "Inventory: %{!(inventory)#Int}\n"];

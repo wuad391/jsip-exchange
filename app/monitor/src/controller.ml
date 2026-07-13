@@ -1,5 +1,7 @@
 open! Core
 open Jsip_types
+open Jsip_gateway
+open Jsip_pnl
 
 module Mode = struct
   type t =
@@ -24,10 +26,23 @@ module Display = struct
     }
   [@@deriving sexp_of, compare, equal]
 
+  module Participant_pnl = struct
+    type t =
+      { participant : string
+      ; total_cents : int
+      }
+    [@@deriving sexp_of, compare, equal]
+  end
+
   type t =
     { title : string
     ; counter : string
-    ; bbo_panel : (Symbol.t * Bbo.t) list
+    ; bbo_panel : (string * Bbo.t) list
+        (* Each symbol already rendered to its display label (name if the
+           directory knows the id, else the raw id) so the view needs no
+           directory of its own. *)
+    ; participant_pnl : Participant_pnl.t list
+        (* Net P&L per participant, biggest winner first (ties by name). *)
     ; category_chips : Chip.t list
     ; substring_field : substring_field
     ; visible_events : (Event_log.Color.t * string) list
@@ -43,18 +58,46 @@ type t =
   ; committed_substring : string
   ; mode : Mode.t
   ; should_exit : bool
+  ; directory : Symbol_directory.t
+  ; pnl : Pnl.t
+  ; traded : Participant.Set.t
+  (* [Pnl.t] can summarize a given participant but does not enumerate the
+     ones it knows, so we track the set seen in a fill ourselves — that is
+     exactly who the P&L panel lists. *)
   }
 
-let create () =
-  { log = Event_log.create ()
+let create ?(directory = Symbol_directory.empty) () =
+  { log = Event_log.create ~directory ()
   ; enabled_categories = Event_log.Category.all
   ; committed_substring = ""
   ; mode = Browsing
   ; should_exit = false
+  ; directory
+  ; pnl = Pnl.empty
+  ; traded = Participant.Set.empty
   }
 ;;
 
-let feed_event t event = { t with log = Event_log.add_event t.log event }
+(* Fold the same audit stream the event log shows into live P&L. A [Fill]
+   carries both sides, so it updates two participants and marks them both as
+   seen; a [Trade_report] only refreshes the mark price used to value open
+   positions; every other event leaves P&L untouched. *)
+let feed_event t event =
+  let log = Event_log.add_event t.log event in
+  let pnl, traded =
+    match (event : Exchange_event.t) with
+    | Fill ({ aggressor_participant; resting_participant; _ } as fill) ->
+      ( Pnl.apply_fill t.pnl fill
+      , Set.add (Set.add t.traded aggressor_participant) resting_participant
+      )
+    | Trade_report _ -> Pnl.apply_trade_report t.pnl event, t.traded
+    | Order_accept _ | Order_cancel _ | Order_reject _ | Cancel_reject _
+    | Best_bid_offer_update _ ->
+      t.pnl, t.traded
+  in
+  { t with log; pnl; traded }
+;;
+
 let should_exit t = t.should_exit
 
 let is_editing_substring t =
@@ -174,9 +217,25 @@ let display t : Display.t =
     | Editing_substring _ ->
       "Enter=commit  ESC=cancel  Backspace=delete  (other keys append)"
   in
+  let participant_pnl =
+    Set.to_list t.traded
+    |> List.map ~f:(fun participant ->
+      let summary : Pnl.Summary.t = Pnl.summary t.pnl participant in
+      { Display.Participant_pnl.participant =
+          Participant.to_string participant
+      ; total_cents = summary.total_cents
+      })
+    |> List.sort ~compare:(fun (a : Display.Participant_pnl.t) b ->
+      match Int.descending a.total_cents b.total_cents with
+      | 0 -> String.compare a.participant b.participant
+      | c -> c)
+  in
   { title = "JSIP Exchange Monitor"
   ; counter = [%string "%{visible_count#Int} of %{total#Int} events"]
-  ; bbo_panel = Event_log.current_bbos t.log
+  ; bbo_panel =
+      List.map (Event_log.current_bbos t.log) ~f:(fun (id, bbo) ->
+        Symbol_directory.name_or_id t.directory id, bbo)
+  ; participant_pnl
   ; category_chips =
       [ cat_chip '1' Order_lifecycle
       ; cat_chip '2' Trade

@@ -1,33 +1,202 @@
 open! Core
 open Bonsai_web
+open Bonsai.Let_syntax
 module Dashboard_state = Jsip_dashboard.Dashboard_state
+module Exchange_stats = Jsip_exchange_stats.Exchange_stats
+module Symbol_directory = Jsip_symbol_directory.Symbol_directory
 
-(* The dashboard's browser half. It polls the native server's window RPC once a
-   second, reconstructs the render state from the polled window, and draws the
-   panes. All the numeric work lives in [Dashboard_state.display]; this file is
-   just the Bonsai glue. It mirrors [app/monitor]'s split (pure state + thin UI
-   layer) — including the [let%map.Bonsai] idiom — diverging only where it must:
-   it polls a [Polling_state_rpc] rather than draining a Pipe_rpc, because the
-   browser's [Rpc_effect] has no Pipe_rpc support. The poll is diff-based, so
-   only the newly-arrived snapshots cross the wire each second. *)
+(* The dashboard's browser half. It polls the native server's window RPCs on
+   a short interval, reconstructs the render state from the polled windows,
+   and draws the panes. All the numeric work lives in
+   [Dashboard_state.display]; this file is just the Bonsai glue. It mirrors
+   [app/monitor]'s split (pure state + thin UI layer) — including the
+   [let%map.Bonsai] idiom — diverging only where it must: it polls
+   [Polling_state_rpc]s rather than draining Pipe_rpcs, because the browser's
+   [Rpc_effect] has no Pipe_rpc support. The polls are diff-based, so only
+   newly-arrived data crosses the wire each poll.
 
-let poll_interval = Time_ns.Span.of_sec 1.
+   A second poll ([feed_rpc]) drives the live event feed, and a bit of
+   [Bonsai.state] holds which symbol tab is selected — the feed's events are
+   filtered against it in [Feed_pane], so switching tabs needs no re-fetch.
+   That feed poll is gated on [feed_visible]: collapsing the pane drops the
+   poll out of the graph, so a hidden feed costs no polling at all — only the
+   always-on stats poll keeps running. *)
+
+(* The server samples every 0.5 s (see [Metrics.sample_interval]). If the
+   browser also polled at 0.5 s, that would be a second, independent 0.5 s
+   stage in series — the two beat against each other and end-to-end latency
+   roughly doubles to ~1 s. So we poll the stats several times per sample
+   interval: the client then catches each snapshot within ~0.1 s of it
+   landing, and latency collapses back to the single ~0.5 s sampling stage.
+   The extra polls that bring no new [seq] are cut off (see [same_window]) so
+   they cost no pane re-render. The event feed is not latency-critical, so it
+   keeps polling once per sample interval. *)
+let stats_poll_interval = Time_ns.Span.of_sec 0.1
+let feed_poll_interval = Time_ns.Span.of_sec 0.5
+
+(* The monitor's *observed* refresh latency, shown in the header: the
+   wall-clock gap between snapshots actually landing from the server. Unlike
+   a static poll interval it moves — it sits near the sample interval when
+   healthy and climbs when the monitor falls behind. Fed one [now] per
+   snapshot arrival in [app]. *)
+module Refresh_latency = struct
+  type t =
+    { last_arrival : Time_ns.t option
+    ; ms : float
+    }
+  [@@deriving sexp_of, equal]
+
+  let default = { last_arrival = None; ms = 0. }
+
+  let observe (t : t) ~(now : Time_ns.t) =
+    match t.last_arrival with
+    | None -> { t with last_arrival = Some now }
+    | Some previous ->
+      let gap = Time_ns.Span.to_ms (Time_ns.diff now previous) in
+      (* Light EMA so the readout is steady rather than flickering with
+         jitter. *)
+      let ms =
+        if Float.(t.ms <= 0.) then gap else (0.6 *. t.ms) +. (0.4 *. gap)
+      in
+      { last_arrival = Some now; ms }
+  ;;
+end
+
+let poll ~every rpc (local_ graph) =
+  Rpc_effect.Polling_state_rpc.poll
+    rpc
+    ~equal_query:[%equal: unit]
+    ~every:(Bonsai.return every)
+    ~output_type:Rpc_effect.Poll_result.Output_type.Last_ok_response
+    (Bonsai.return ())
+    graph
+;;
+
+(* Two polled windows carry the same data when they have the same length and
+   the same newest [seq]: the server only ever appends monotonically-seq'd
+   snapshots into a fixed-size sliding window, so that pair identifies the
+   window's contents exactly. Cutting off [window] on it means the panes
+   recompute once per real snapshot (~0.5 s) rather than on every 0.1 s poll
+   — most of which, between samples, bring nothing new. *)
+let same_window (a : Exchange_stats.t list option) b =
+  let signature =
+    Option.map ~f:(fun snapshots ->
+      ( List.length snapshots
+      , Option.value_map (List.last snapshots) ~default:(-1) ~f:(fun s ->
+          s.Exchange_stats.seq) ))
+  in
+  [%equal: (int * int) option] (signature a) (signature b)
+;;
 
 let app (local_ graph) =
   let window =
-    Rpc_effect.Polling_state_rpc.poll
-      Jsip_dashboard_protocol.stats_rpc
-      ~equal_query:[%equal: unit]
-      ~every:(Bonsai.return poll_interval)
-      ~output_type:Rpc_effect.Poll_result.Output_type.Last_ok_response
-      (Bonsai.return ())
+    poll ~every:stats_poll_interval Jsip_dashboard_protocol.stats_rpc graph
+  in
+  (* Poll fast to track the server (above); re-render only when the window
+     actually advances. *)
+  let window = Bonsai.cutoff window ~equal:same_window in
+  (* Fetch the id<->name directory once at startup and mirror it locally.
+     Until it lands (or if the fetch fails) the alist is empty, so names fall
+     back to raw ids — the same graceful degradation as the terminal monitor. *)
+  let directory_alist, set_directory_alist =
+    Bonsai.state
+      []
+      ~sexp_of_model:
+        [%sexp_of: (Jsip_types.Symbol_id.t * Jsip_types.Symbol.t) list]
+      ~equal:[%equal: (Jsip_types.Symbol_id.t * Jsip_types.Symbol.t) list]
       graph
   in
-  let%map.Bonsai window = window in
-  window
-  |> Option.map ~f:(fun snapshots ->
-    Dashboard_state.display (Dashboard_state.of_snapshots snapshots))
-  |> Dashboard_app.view
+  let dispatch_directory =
+    Rpc_effect.Rpc.dispatcher
+      Jsip_dashboard_protocol.symbol_directory_rpc
+      graph
+  in
+  Bonsai.Edge.lifecycle
+    ~on_activate:
+      (let%arr dispatch_directory and set_directory_alist in
+       match%bind.Effect dispatch_directory () with
+       | Ok alist -> set_directory_alist alist
+       | Error _ -> Effect.return ())
+    graph;
+  let directory =
+    let%arr directory_alist in
+    Symbol_directory.of_alist directory_alist
+  in
+  (* Feed one [now] into [Refresh_latency] each time a fresh snapshot lands
+     ([seq] bumps), so the header shows the live refresh latency. *)
+  let refresh, observe_arrival =
+    Bonsai.state_machine
+      ~sexp_of_model:[%sexp_of: Refresh_latency.t]
+      ~sexp_of_action:[%sexp_of: Time_ns.t]
+      ~default_model:Refresh_latency.default
+      ~apply_action:(fun _ctx model now ->
+        Refresh_latency.observe model ~now)
+      graph
+  in
+  let latest_seq =
+    let%arr window in
+    match window with
+    | None | Some [] -> -1
+    | Some snapshots -> (List.last_exn snapshots).Exchange_stats.seq
+  in
+  Bonsai.Edge.on_change
+    ~equal:[%equal: int]
+    latest_seq
+    ~callback:
+      (let%arr observe_arrival
+       and get_now = Bonsai.Clock.get_current_time graph in
+       fun (_seq : int) ->
+         let%bind.Effect now = get_now in
+         observe_arrival now)
+    graph;
+  (* The feed poll lives inside the [feed_visible] branch, so collapsing the
+     pane tears the poll down entirely — no feed traffic while hidden. *)
+  let feed_visible, set_feed_visible = Bonsai.state' true graph in
+  let feed =
+    match%sub feed_visible with
+    | true ->
+      poll ~every:feed_poll_interval Jsip_dashboard_protocol.feed_rpc graph
+    | false -> Bonsai.return None
+  in
+  let selected, set_selected =
+    Bonsai.state
+      Feed_pane.Selection.All
+      ~sexp_of_model:[%sexp_of: Feed_pane.Selection.t]
+      ~equal:[%equal: Feed_pane.Selection.t]
+      graph
+  in
+  let%map.Bonsai window
+  and feed
+  and feed_visible
+  and set_feed_visible
+  and selected
+  and set_selected
+  and refresh
+  and directory in
+  let display =
+    Option.map window ~f:(fun snapshots ->
+      Dashboard_state.display
+        ~directory
+        (Dashboard_state.of_snapshots snapshots))
+  in
+  let monitor_latency_ms =
+    Float.iround_nearest_exn refresh.Refresh_latency.ms
+  in
+  let on_toggle_feed = set_feed_visible not in
+  let feed_view =
+    Feed_pane.view
+      ~directory
+      ~events:(Option.value feed ~default:[])
+      ~selected
+      ~on_select:set_selected
+      ~on_collapse:on_toggle_feed
+  in
+  Dashboard_app.view
+    ~feed:feed_view
+    ~feed_visible
+    ~on_toggle_feed
+    ~monitor_latency_ms
+    display
 ;;
 
 let () = Bonsai_web.Start.start app

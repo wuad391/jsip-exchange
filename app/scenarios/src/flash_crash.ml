@@ -1,6 +1,7 @@
 open! Core
 open Jsip_types
 open Jsip_scenario_runner
+open Jsip_symbol_directory
 module Fundamental_oracle = Jsip_fundamental.Fundamental_oracle
 module News_injector = Jsip_news_injector.News_injector
 module Spammer = Jsip_bots.Spammer
@@ -21,9 +22,9 @@ let initial_price_cents = 15000
 (* Higher volatility and weak mean reversion: we want the market jumpy and,
    once the crash starts, we do *not* want the fundamental snapping back to
    its starting level -- the point is a sustained collapse, not a dip. *)
-let oracle_config : Fundamental_oracle.Config.t =
-  Symbol.Map.of_alist_exn
-    [ ( symbol
+let oracle_config ~symbol_id : Fundamental_oracle.Config.t =
+  Symbol_id.Map.of_alist_exn
+    [ ( symbol_id
       , { Fundamental_oracle.Config.initial_price_cents
         ; volatility_cents_per_sec = 5.0
         ; mean_reversion_strength = 0.02
@@ -37,7 +38,7 @@ let oracle_config : Fundamental_oracle.Config.t =
    descriptions cycle through the phases the exercise suggests -- a fund
    dumping, other holders stop-loss selling, then dealers giving up -- so the
    [News_injector]'s stdout narration reads like a crash unfolding. *)
-let crash_news : News_injector.Event.t list =
+let crash_news ~symbol_id : News_injector.Event.t list =
   let step_cents = -300 in
   let first_at = Time_ns.Span.of_sec 8.0 in
   let step_every = Time_ns.Span.of_sec 2.0 in
@@ -53,7 +54,7 @@ let crash_news : News_injector.Event.t list =
         Time_ns.Span.( + )
           first_at
           (Time_ns.Span.scale step_every (Float.of_int i))
-    ; symbol
+    ; symbol = symbol_id
     ; delta_cents = step_cents
     ; description = descriptions.(i % Array.length descriptions)
     })
@@ -76,7 +77,7 @@ let day_ioc_mix ~day_pct =
    cancelling the remainder. Ticking a few times a second, it dumps size
    continuously through the crash. Each swept side leaves the book one-sided,
    which is what blows the spread out past the makers' tolerance below. *)
-let whale_spec =
+let whale_spec ~symbols =
   let params : Spammer.Config.resource_exhaustion_params =
     { orders_per_burst = 12
     ; buy_chance = Percent.of_percentage 10.
@@ -89,11 +90,9 @@ let whale_spec =
   Bot_spec.T
     { bot = (module Spammer)
     ; config =
-        Spammer.Config.create
-          ~symbols:[ symbol ]
-          ~behavior:(Resource_exhaustion params)
+        Spammer.Config.create ~symbols ~behavior:(Resource_exhaustion params)
     ; participant = Participant.of_string "whale"
-    ; symbols = [ symbol ]
+    ; symbols
     ; rng_seed = 5001
     ; tick_interval = Time_ns.Span.of_ms 250.0
     ; is_marketdata_consumer = true
@@ -106,7 +105,7 @@ let whale_spec =
    observed spread blows past 250 cents, both makers stand aside instead of
    quoting into the dislocation -- and with the makers gone, liquidity
    collapses and the crash accelerates. *)
-let market_maker_specs =
+let market_maker_specs ~symbols =
   List.map
     [ "market-maker-a", 2001; "market-maker-b", 2002 ]
     ~f:(fun (participant, seed) ->
@@ -118,9 +117,9 @@ let market_maker_specs =
               ~size_per_level:10
               ~num_levels:5
               ~inventory_skew_cents_per_share:1
-              ~symbols:[ symbol ]
+              ~symbols
         ; participant = Participant.of_string participant
-        ; symbols = [ symbol ]
+        ; symbols
         ; rng_seed = seed
         ; tick_interval = Time_ns.Span.of_sec 1.0
         ; is_marketdata_consumer = true
@@ -129,18 +128,18 @@ let market_maker_specs =
 
 (* Background flow so there is genuine two-sided liquidity for the whale to
    eat into (and so the book isn't empty before the crash even starts). *)
-let noise_trader_spec =
+let noise_trader_spec ~symbols =
   Bot_spec.T
     { bot = (module Noise_trader)
     ; config =
         Noise_trader.create_config
-          ~symbols:[ symbol ]
+          ~symbols
           ~avg_size:8
           ~tick_chance:0.8
           ~aggressiveness_pct:50
           ~ioc_pct:50
     ; participant = Participant.of_string "noise-trader"
-    ; symbols = [ symbol ]
+    ; symbols
     ; rng_seed = 3001
     ; tick_interval = Time_ns.Span.of_ms 200.0
     ; is_marketdata_consumer = true
@@ -151,12 +150,12 @@ let noise_trader_spec =
    of ever-lower prints, its signal points down and it sells into the fall --
    the trend-follower amplifying the move, exactly the "others see it falling
    and sell too" dynamic the exercise describes. *)
-let momentum_trader_spec =
+let momentum_trader_spec ~symbol_id =
   Bot_spec.T
     { bot = (module Momentum_trader)
     ; config =
         Momentum_trader.Config.create_exn
-          ~symbol
+          ~symbol:symbol_id
           ~window_capacity:5
           ~threshold_cents:15
           ~max_order_size:25
@@ -164,7 +163,7 @@ let momentum_trader_spec =
           ~cooldown_ticks:1
           ()
     ; participant = Participant.of_string "momentum-trader"
-    ; symbols = [ symbol ]
+    ; symbols = [ symbol_id ]
     ; rng_seed = 4001
     ; tick_interval = Time_ns.Span.of_ms 500.0
     ; is_marketdata_consumer = true
@@ -172,12 +171,15 @@ let momentum_trader_spec =
 ;;
 
 let configure () : Scenario_config.t =
+  let directory = Symbol_directory.of_names [ symbol ] in
+  let symbol_id = Symbol_directory.id_exn directory symbol in
+  let symbols = [ symbol_id ] in
   { name
-  ; symbols = [ symbol ]
-  ; oracle_config
-  ; news = crash_news
+  ; directory
+  ; oracle_config = oracle_config ~symbol_id
+  ; news = crash_news ~symbol_id
   ; bots =
-      (whale_spec :: market_maker_specs)
-      @ [ noise_trader_spec; momentum_trader_spec ]
+      (whale_spec ~symbols :: market_maker_specs ~symbols)
+      @ [ noise_trader_spec ~symbols; momentum_trader_spec ~symbol_id ]
   }
 ;;

@@ -41,7 +41,7 @@ module Config : sig
       exposed so tests can observe a run. Build one with
       {!pump_and_dump_params}. *)
   type pump_and_dump_params =
-    { target_symbol : Symbol.t (** The single symbol to manipulate. *)
+    { target_symbol : Symbol_id.t (** The single symbol to manipulate. *)
     ; pump_target_pct : Percent.t
     (** Flip to [Distribute] once the mid has risen this far above the
         anchor. *)
@@ -67,7 +67,7 @@ module Config : sig
   (** Build a params record with its mutable state seeded to a fresh run
       ([Accumulate], flat position, no anchor). *)
   val pump_and_dump_params
-    :  target_symbol:Symbol.t
+    :  target_symbol:Symbol_id.t
     -> pump_target_pct:Percent.t
     -> clip_size:int
     -> max_inventory:int
@@ -84,7 +84,7 @@ module Config : sig
 
   type t
 
-  val create : symbols:Symbol.t list -> behavior:behavior -> t
+  val create : symbols:Symbol_id.t list -> behavior:behavior -> t
 end
 
 include Jsip_bot_runtime.Bot_runtime.Bot with module Config := Config

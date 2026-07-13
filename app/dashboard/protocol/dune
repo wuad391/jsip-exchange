@@ -1,6 +1,12 @@
 (library
  (name jsip_dashboard_protocol)
  (public_name jsip-exchange.jsip_dashboard_protocol)
- (libraries core polling_state_rpc jsip_exchange_stats jsip_dashboard)
+ (libraries
+  core
+  async_rpc_kernel
+  polling_state_rpc
+  jsip_types
+  jsip_exchange_stats
+  jsip_dashboard)
  (preprocess
   (pps ppx_jane)))

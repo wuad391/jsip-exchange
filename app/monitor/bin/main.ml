@@ -38,12 +38,27 @@ let subscribe_audit_log ~connection ~host ~port =
   | Ok (Ok (pipe, _md)) -> pipe
 ;;
 
+(* The monitor renders names by mirroring the server's directory. If the
+   fetch fails (e.g. an older server without the RPC), we degrade to showing
+   raw ids rather than refusing to start — the audit stream is the point. *)
+let fetch_directory ~connection =
+  match%map
+    Rpc.Rpc.dispatch Rpc_protocol.symbol_directory_rpc connection ()
+  with
+  | Ok alist -> Symbol_directory.of_alist alist
+  | Error err ->
+    Core.eprint_s
+      [%message "symbol-directory fetch failed; showing ids" (err : Error.t)];
+    Symbol_directory.empty
+;;
+
 let main ~host ~port () =
   let%bind connection = connect_to_exchange ~host ~port in
+  let%bind directory = fetch_directory ~connection in
   let%bind events = subscribe_audit_log ~connection ~host ~port in
   let%map result =
     Bonsai_term.start_with_exit (fun ~exit ~dimensions graph ->
-      Term_app.app ~events ~exit ~dimensions graph)
+      Term_app.app ~directory ~events ~exit ~dimensions graph)
   in
   ok_exn result
 ;;

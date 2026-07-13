@@ -4,29 +4,39 @@
 
     Run with: dune exec app/server/bin/main.exe -- -port 12345
 
-    Optionally seed the book with a market maker: dune exec
-    app/server/bin/main.exe -- -port 12345 -seed-market-maker *)
+    Optionally drive sustained traffic with two seed market makers: dune exec
+    app/server/bin/main.exe -- -port 12345 -trade-back-and-forth *)
 
 open! Core
 open! Async
-open Jsip_types
 open Jsip_gateway
+open Jsip_types
 open Jsip_market_maker
 module Fundamental_oracle = Jsip_fundamental.Fundamental_oracle
 module Bot_runtime = Jsip_bot_runtime.Bot_runtime
 
-let default_symbols =
-  [ Symbol.of_string "AAPL"
-  ; Symbol.of_string "TSLA"
-  ; Symbol.of_string "GOOG"
-  ; Symbol.of_string "MSFT"
-  ]
+(* Ex4 phase 2: the server is the authority for the id<->name mapping. It
+   trades this fixed set of tickers; the directory assigns id 0 to the first,
+   1 to the second, and so on, then serves that mapping over
+   [symbol_directory_rpc] so clients can render names. The wire itself still
+   carries only [Symbol_id.t] — names live here and at the display edges. *)
+let symbol_names = [ "AAPL"; "TSLA"; "GOOG"; "MSFT" ]
+
+let directory =
+  Symbol_directory.of_names (List.map symbol_names ~f:Symbol.of_string)
 ;;
 
-(* No session-feed subscription here: [connect_as] only drives the seed
-   market makers in [trade_back_and_forth], which submit static ladders via
-   [Market_maker.seed_book] and never react to fills, so they have no need to
-   consume their session feed. *)
+(* Resolve one of [directory]'s ticker names to its wire id. Only ever called
+   on names drawn from [symbol_names] above, so a miss is a programmer error. *)
+let symbol_id_exn name =
+  match Symbol_directory.id directory (Symbol.of_string name) with
+  | Some id -> id
+  | None -> raise_s [%message "server: unknown symbol name" (name : string)]
+;;
+
+(* A thin login helper: authenticate as [participant] and hand back the
+   connection. The session-feed and market-data subscriptions the bot needs
+   are set up by the caller, [start_market_maker_bot]. *)
 let connect_as ~where_to_connect participant =
   let%bind conn = Rpc.Connection.client where_to_connect >>| Result.ok_exn in
   let%bind login_result =
@@ -126,10 +136,12 @@ let start_market_maker_bot
    more realistic trade-off for a demo; it isn't tuned for guaranteed
    crossing over arbitrarily long runs. *)
 let trade_back_and_forth ~where_to_connect =
+  (* The demo is written with ticker names; resolve them to wire ids up front
+     through the same [directory] the server serves to clients. *)
   let symbol_anchors =
-    [ Symbol.of_string "AAPL", 15000
-    ; Symbol.of_string "TSLA", 25000
-    ; Symbol.of_string "GOOG", 28000
+    [ symbol_id_exn "AAPL", 15000
+    ; symbol_id_exn "TSLA", 25000
+    ; symbol_id_exn "GOOG", 28000
     ]
   in
   let symbols = List.map symbol_anchors ~f:fst in
@@ -144,7 +156,7 @@ let trade_back_and_forth ~where_to_connect =
         ; mean_reversion_strength = 0.05
         ; tick_interval = Time_ns.Span.of_sec 1.0
         } ))
-    |> Symbol.Map.of_alist_exn
+    |> Symbol_id.Map.of_alist_exn
   in
   (* [size_per_level] is deliberately small. A full [num_levels]-deep cross
      shifts each side's skewed center by
@@ -193,9 +205,7 @@ let trade_back_and_forth ~where_to_connect =
 ;;
 
 let start ~port ~market_maker_behavior =
-  let%bind server =
-    Exchange_server.start ~symbols:default_symbols ~port ()
-  in
+  let%bind server = Exchange_server.start ~directory ~port () in
   let where_to_connect =
     Tcp.Where_to_connect.of_host_and_port { host = "localhost"; port }
   in
@@ -214,10 +224,8 @@ let start ~port ~market_maker_behavior =
     [%string
       "JSIP Exchange server listening on port %{Exchange_server.port \
        server#Int}"];
-  let symbols =
-    List.map default_symbols ~f:Symbol.to_string |> String.concat ~sep:", "
-  in
-  print_endline [%string "Trading: %{symbols}"];
+  print_endline
+    [%string "Trading: %{String.concat ~sep:\", \" symbol_names}"];
   Exchange_server.close_finished server
 ;;
 
@@ -234,8 +242,7 @@ let () =
              (no_arg_some `Trade_back_and_forth)
              ~doc:
                " run two market makers in a loop, generating sustained \
-                traffic for the monitor (mutually exclusive with \
-                -seed-market-maker)"
+                traffic for the monitor"
          ]
      and () = Log.Global.set_level_via_param () in
      fun () -> start ~port ~market_maker_behavior)

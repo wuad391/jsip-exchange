@@ -1,6 +1,7 @@
 open! Core
 open Jsip_types
 open Jsip_scenario_runner
+open Jsip_symbol_directory
 module Fundamental_oracle = Jsip_fundamental.Fundamental_oracle
 module News_injector = Jsip_news_injector.News_injector
 module Momentum_trader = Jsip_bots.Momentum_trader_hansel
@@ -22,24 +23,15 @@ let initial_price_cents = 15000
    from the scripted news shocks below, not from the oracle's own noise --
    that keeps the momentum trader's signal driven by the trend we scripted
    rather than by random wiggles. *)
-let oracle_config : Fundamental_oracle.Config.t =
-  Symbol.Map.of_alist_exn
-    [ ( symbol
+let oracle_config ~symbol_id : Fundamental_oracle.Config.t =
+  Symbol_id.Map.of_alist_exn
+    [ ( symbol_id
       , { Fundamental_oracle.Config.initial_price_cents
         ; volatility_cents_per_sec = 1.0
         ; mean_reversion_strength = 0.02
         ; tick_interval = Time_ns.Span.of_sec 1.0
         } )
     ]
-;;
-
-(* A time-in-force distribution: [day_pct]% resting [Day] orders, the balance
-   [Ioc]. Written as a distribution (rather than a single Ioc probability) so
-   a new order type is mixed in by adding an entry, not by changing a bot. *)
-let day_ioc_mix ~day_pct =
-  [ Time_in_force.Day, Percent.of_percentage day_pct
-  ; Ioc, Percent.of_percentage (100. -. day_pct)
-  ]
 ;;
 
 (* A staircase of shocks: a run of positive steps builds a sustained uptrend,
@@ -49,14 +41,14 @@ let day_ioc_mix ~day_pct =
    move and its signal crosses the threshold in each direction in turn -- it
    should buy into the rise and sell into the fall. Priced in a single place
    so the trend's shape is easy to retune. *)
-let trend_news =
+let trend_news ~symbol_id =
   let step_cents = 40 in
   let step_every = Time_ns.Span.of_sec 3.0 in
   let up_steps = 6 in
   let down_steps = 6 in
   let event ~index ~delta ~label : News_injector.Event.t =
     { at = Time_ns.Span.scale step_every (Float.of_int index)
-    ; symbol
+    ; symbol = symbol_id
     ; delta_cents = delta
     ; description = label
     }
@@ -81,12 +73,12 @@ let trend_news =
    whatever the market maker and noise trader are resting near the touch and
    cancel the rest, so the trader's position tracks the trend without leaving
    stale orders behind. *)
-let momentum_trader_spec =
+let momentum_trader_spec ~symbol_id =
   Bot_spec.T
     { bot = (module Momentum_trader)
     ; config =
         Momentum_trader.Config.create_exn
-          ~symbol
+          ~symbol:symbol_id
           ~window_capacity:5
           ~threshold_cents:15
           ~max_order_size:25
@@ -94,7 +86,7 @@ let momentum_trader_spec =
           ~cooldown_ticks:1
           ()
     ; participant = Participant.of_string "momentum-trader"
-    ; symbols = [ symbol ]
+    ; symbols = [ symbol_id ]
     ; rng_seed = 4001
     ; tick_interval = Time_ns.Span.of_ms 500.0
     ; is_marketdata_consumer = true
@@ -104,7 +96,7 @@ let momentum_trader_spec =
 (* Quotes both sides so the momentum trader's marketable [Ioc] entries always
    have resting liquidity to hit, and so the book has a sensible spread as
    the fundamental walks with the news. *)
-let market_maker_spec =
+let market_maker_spec ~symbols =
   Bot_spec.T
     { bot = (module Market_maker_bot)
     ; config =
@@ -113,9 +105,9 @@ let market_maker_spec =
           ~size_per_level:10
           ~num_levels:5
           ~inventory_skew_cents_per_share:1
-          ~symbols:[ symbol ]
+          ~symbols
     ; participant = Participant.of_string "market-maker"
-    ; symbols = [ symbol ]
+    ; symbols
     ; rng_seed = 2001
     ; tick_interval = Time_ns.Span.of_sec 1.0
     ; is_marketdata_consumer = true
@@ -125,18 +117,18 @@ let market_maker_spec =
 (* Organic two-sided flow so the trade tape has prints between shocks -- the
    momentum trader reads [Trade_report]s, so this keeps its price window fed
    even during the quiet stretches between news steps. *)
-let noise_trader_spec =
+let noise_trader_spec ~symbols =
   Bot_spec.T
     { bot = (module Noise_trader)
     ; config =
         Noise_trader.create_config
-          ~symbols:[ symbol ]
+          ~symbols
           ~avg_size:8
           ~tick_chance:0.8
           ~aggressiveness_pct:50
           ~ioc_pct:40
     ; participant = Participant.of_string "noise-trader"
-    ; symbols = [ symbol ]
+    ; symbols
     ; rng_seed = 3001
     ; tick_interval = Time_ns.Span.of_ms 200.0
     ; is_marketdata_consumer = true
@@ -144,10 +136,17 @@ let noise_trader_spec =
 ;;
 
 let configure () : Scenario_config.t =
+  let directory = Symbol_directory.of_names [ symbol ] in
+  let symbol_id = Symbol_directory.id_exn directory symbol in
+  let symbols = [ symbol_id ] in
   { name
-  ; symbols = [ symbol ]
-  ; oracle_config
-  ; news = trend_news
-  ; bots = [ momentum_trader_spec; market_maker_spec; noise_trader_spec ]
+  ; directory
+  ; oracle_config = oracle_config ~symbol_id
+  ; news = trend_news ~symbol_id
+  ; bots =
+      [ momentum_trader_spec ~symbol_id
+      ; market_maker_spec ~symbols
+      ; noise_trader_spec ~symbols
+      ]
   }
 ;;

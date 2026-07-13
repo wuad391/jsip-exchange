@@ -27,7 +27,7 @@ let limits ~submit_burst ~cancel_burst : Session.Limits.t =
 (* Log in tests *)
 (* ---------------------------------------------------------------- *)
 let%expect_test "Log in required before submit or cancel" =
-  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
     let%bind alice = connect_as ~port ~login:false Harness.alice in
     let%bind bob = connect_as ~login:false ~port Harness.bob in
     (* Bob places a sell *)
@@ -44,7 +44,7 @@ let%expect_test "Log in required before submit or cancel" =
 let%expect_test "Cannot log in two users under the same name" =
   let%bind res =
     Monitor.try_with_or_error ~extract_exn:true (fun () ->
-      with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+      with_server ~num_symbols:1 (fun ~server:_ ~port ->
         let%bind _ = connect_as ~port Harness.alice in
         (* let res = Or_error.try_with (fun () -> let%bind _ = connect_as
            ~port Harness.alice in return ()) in let () = match res with | Ok
@@ -69,7 +69,7 @@ let%expect_test "Cannot log in two users under the same name" =
 let%expect_test "Log in and submit order guard against duplicate client \
                  order IDs"
   =
-  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
     let%bind bob = connect_as ~port Harness.bob in
     (* Bob places a sell *)
     let%bind () =
@@ -80,8 +80,8 @@ let%expect_test "Log in and submit order guard against duplicate client \
     in
     [%expect
       {|
-      [for Bob] ACCEPTED id=1 AAPL SELL 100@$150.00 DAY
-      [for Bob] REJECTED AAPL SELL 100@$150.00 reason=Duplicate client order ID
+      [for Bob] ACCEPTED id=1 0 SELL 100@$150.00 DAY
+      [for Bob] REJECTED 0 SELL 100@$150.00 reason=Duplicate client order ID
       |}];
     return ())
 ;;
@@ -90,14 +90,14 @@ let%expect_test "Log in and submit order guard against duplicate client \
 (* Cancellation tests *)
 (* ---------------------------------------------------------------- *)
 let%expect_test "Submit then cancel" =
-  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
     let%bind alice = connect_as ~port Harness.alice in
     let%bind bob = connect_as ~port Harness.bob in
     (* Bob places a sell *)
     let%bind () =
       rpc_submit bob (Harness.sell ~price_cents:15000 ~client_order_id:1 ())
     in
-    [%expect {| [for Bob] ACCEPTED id=1 AAPL SELL 100@$150.00 DAY |}];
+    [%expect {| [for Bob] ACCEPTED id=1 0 SELL 100@$150.00 DAY |}];
     let%bind res =
       Async.try_with (fun () ->
         rpc_submit alice (Harness.buy ~price_cents:1 ~client_order_id:1 ()))
@@ -107,32 +107,32 @@ let%expect_test "Submit then cancel" =
       | Ok _ -> return ()
       | Error e -> return (print_endline [%string "%{(Exn.to_string e)}"])
     in
-    [%expect {| [for Alice] ACCEPTED id=2 AAPL BUY 100@$0.01 DAY |}];
+    [%expect {| [for Alice] ACCEPTED id=2 0 BUY 100@$0.01 DAY |}];
     [%expect {||}];
     (* Alice places a buy — should cross *)
     let%bind () = rpc_cancel alice (Harness.cancel ~client_order_id:1) in
     [%expect
-      {| [for Alice] CANCELLED id=2 AAPL remaining=100 reason=PARTICIPANT_REQUESTED |}];
+      {| [for Alice] CANCELLED id=2 0 remaining=100 reason=PARTICIPANT_REQUESTED |}];
     return ())
 ;;
 
 let%expect_test "Canceling an already filled order" =
-  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
     let%bind alice = connect_as ~port Harness.alice in
     let%bind bob = connect_as ~port Harness.bob in
     (* Bob places a sell *)
     let%bind () =
       rpc_submit bob (Harness.sell ~price_cents:1 ~client_order_id:1 ())
     in
-    [%expect {| [for Bob] ACCEPTED id=1 AAPL SELL 100@$0.01 DAY |}];
+    [%expect {| [for Bob] ACCEPTED id=1 0 SELL 100@$0.01 DAY |}];
     let%bind () =
       rpc_submit alice (Harness.buy ~price_cents:1 ~client_order_id:1 ())
     in
     [%expect
       {|
-      [for Alice] ACCEPTED id=2 AAPL BUY 100@$0.01 DAY
-      [for Alice] FILL fill_id=1 AAPL $0.01 x100 aggressor=2(Alice w/ client order ID = 1) BUY resting=1(Bob w/ client order ID = 1)
-      [for Bob] FILL fill_id=1 AAPL $0.01 x100 aggressor=2(Alice w/ client order ID = 1) BUY resting=1(Bob w/ client order ID = 1)
+      [for Alice] ACCEPTED id=2 0 BUY 100@$0.01 DAY
+      [for Alice] FILL fill_id=1 0 $0.01 x100 aggressor=2(Alice w/ client order ID = 1) BUY resting=1(Bob w/ client order ID = 1)
+      [for Bob] FILL fill_id=1 0 $0.01 x100 aggressor=2(Alice w/ client order ID = 1) BUY resting=1(Bob w/ client order ID = 1)
       |}];
     (* Alice places a buy — should cross *)
     let%bind () = rpc_cancel bob (Harness.cancel ~client_order_id:1) in
@@ -145,7 +145,7 @@ let%expect_test "Canceling an already filled order" =
 ;;
 
 let%expect_test "Canceling a non existent order" =
-  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
     let%bind alice = connect_as ~port Harness.alice in
     let%bind () = rpc_cancel alice (Harness.cancel ~client_order_id:1) in
     [%expect
@@ -154,7 +154,7 @@ let%expect_test "Canceling a non existent order" =
 ;;
 
 let%expect_test "BBO update after cancel" =
-  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
     let%bind alice = connect_as ~port Harness.alice in
     let%bind bob = connect_as ~port Harness.bob in
     (* Bob places a sell *)
@@ -167,9 +167,9 @@ let%expect_test "BBO update after cancel" =
     in
     [%expect
       {|
-      [for Bob] ACCEPTED id=1 AAPL SELL 100@$0.01 DAY
-      [for Alice] BBO AAPL bid=- ask=$0.01 x100
-      [for Bob] ACCEPTED id=2 AAPL SELL 100@$1.00 DAY
+      [for Bob] ACCEPTED id=1 0 SELL 100@$0.01 DAY
+      [for Alice] BBO 0 bid=- ask=$0.01 x100
+      [for Bob] ACCEPTED id=2 0 SELL 100@$1.00 DAY
       |}];
     (* let%bind () = rpc_submit alice (Harness.buy ~price_cents:100
        ~participant:Harness.alice ~client_order_id:1 ()) in [%expect {| |}]; *)
@@ -177,8 +177,8 @@ let%expect_test "BBO update after cancel" =
     let%bind () = rpc_cancel bob (Harness.cancel ~client_order_id:1) in
     [%expect
       {|
-      [for Bob] CANCELLED id=1 AAPL remaining=100 reason=PARTICIPANT_REQUESTED
-      [for Alice] BBO AAPL bid=- ask=$1.00 x100
+      [for Bob] CANCELLED id=1 0 remaining=100 reason=PARTICIPANT_REQUESTED
+      [for Alice] BBO 0 bid=- ask=$1.00 x100
       |}];
     return ())
 ;;
@@ -188,29 +188,29 @@ let%expect_test "BBO update after cancel" =
 (* ---------------------------------------------------------------- *)
 
 let%expect_test "e2e: two clients trade with each other" =
-  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
     let%bind alice = connect_as ~port Harness.alice in
     let%bind bob = connect_as ~port Harness.bob in
     (* Bob places a sell *)
     let%bind () =
       rpc_submit bob (Harness.sell ~price_cents:15000 ~client_order_id:1 ())
     in
-    [%expect {| [for Bob] ACCEPTED id=1 AAPL SELL 100@$150.00 DAY |}];
+    [%expect {| [for Bob] ACCEPTED id=1 0 SELL 100@$150.00 DAY |}];
     (* Alice places a buy — should cross *)
     let%bind () =
       rpc_submit alice (Harness.buy ~price_cents:15000 ~client_order_id:1 ())
     in
     [%expect
       {|
-      [for Alice] ACCEPTED id=2 AAPL BUY 100@$150.00 DAY
-      [for Alice] FILL fill_id=1 AAPL $150.00 x100 aggressor=2(Alice w/ client order ID = 1) BUY resting=1(Bob w/ client order ID = 1)
-      [for Bob] FILL fill_id=1 AAPL $150.00 x100 aggressor=2(Alice w/ client order ID = 1) BUY resting=1(Bob w/ client order ID = 1)
+      [for Alice] ACCEPTED id=2 0 BUY 100@$150.00 DAY
+      [for Alice] FILL fill_id=1 0 $150.00 x100 aggressor=2(Alice w/ client order ID = 1) BUY resting=1(Bob w/ client order ID = 1)
+      [for Bob] FILL fill_id=1 0 $150.00 x100 aggressor=2(Alice w/ client order ID = 1) BUY resting=1(Bob w/ client order ID = 1)
       |}];
     return ())
 ;;
 
 let%expect_test "e2e: three clients, sequential orders, shared book" =
-  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
     let%bind alice = connect_as ~port Harness.alice in
     let%bind bob = connect_as ~port Harness.bob in
     let%bind charlie = connect_as ~port Harness.charlie in
@@ -218,30 +218,30 @@ let%expect_test "e2e: three clients, sequential orders, shared book" =
     let%bind () =
       rpc_submit bob (Harness.sell ~price_cents:15000 ~size:50 ())
     in
-    [%expect {| [for Bob] ACCEPTED id=1 AAPL SELL 50@$150.00 DAY |}];
+    [%expect {| [for Bob] ACCEPTED id=1 0 SELL 50@$150.00 DAY |}];
     (* Charlie posts a sell at a higher price *)
     let%bind () =
       rpc_submit charlie (Harness.sell ~price_cents:15010 ~size:50 ())
     in
-    [%expect {| [for Charlie] ACCEPTED id=2 AAPL SELL 50@$150.10 DAY |}];
+    [%expect {| [for Charlie] ACCEPTED id=2 0 SELL 50@$150.10 DAY |}];
     (* Alice buys 80 — should sweep through both *)
     let%bind () =
       rpc_submit alice (Harness.buy ~price_cents:15010 ~size:80 ())
     in
     [%expect
       {|
-      [for Alice] ACCEPTED id=3 AAPL BUY 80@$150.10 DAY
-      [for Alice] FILL fill_id=1 AAPL $150.00 x50 aggressor=3(Alice w/ client order ID = 7) BUY resting=1(Bob w/ client order ID = 5)
-      [for Alice] FILL fill_id=2 AAPL $150.10 x30 aggressor=3(Alice w/ client order ID = 7) BUY resting=2(Charlie w/ client order ID = 6)
-      [for Bob] FILL fill_id=1 AAPL $150.00 x50 aggressor=3(Alice w/ client order ID = 7) BUY resting=1(Bob w/ client order ID = 5)
-      [for Charlie] FILL fill_id=2 AAPL $150.10 x30 aggressor=3(Alice w/ client order ID = 7) BUY resting=2(Charlie w/ client order ID = 6)
+      [for Alice] ACCEPTED id=3 0 BUY 80@$150.10 DAY
+      [for Alice] FILL fill_id=1 0 $150.00 x50 aggressor=3(Alice w/ client order ID = 7) BUY resting=1(Bob w/ client order ID = 5)
+      [for Alice] FILL fill_id=2 0 $150.10 x30 aggressor=3(Alice w/ client order ID = 7) BUY resting=2(Charlie w/ client order ID = 6)
+      [for Bob] FILL fill_id=1 0 $150.00 x50 aggressor=3(Alice w/ client order ID = 7) BUY resting=1(Bob w/ client order ID = 5)
+      [for Charlie] FILL fill_id=2 0 $150.10 x30 aggressor=3(Alice w/ client order ID = 7) BUY resting=2(Charlie w/ client order ID = 6)
       |}];
     (* Verify book state *)
     let%bind book = rpc_book alice Harness.aapl in
     print_endline (Option.value_exn book |> Book.to_string);
     [%expect
       {|
-      === AAPL ===
+      === 0 ===
         BIDS: (empty)
         ASKS:
           $150.10 x20
@@ -255,7 +255,7 @@ let%expect_test "e2e: three clients, sequential orders, shared book" =
 (* ---------------------------------------------------------------- *)
 
 let%expect_test "e2e: market data subscriber receives trade and BBO updates" =
-  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
     let%bind sub = connect_as ~port (Participant.of_string "Sub") in
     let%bind alice = connect_as ~port Harness.alice in
     let%bind bob = connect_as ~port Harness.bob in
@@ -278,24 +278,24 @@ let%expect_test "e2e: market data subscriber receives trade and BBO updates" =
     let%bind () = rpc_submit bob (Harness.sell ~price_cents:15000 ()) in
     [%expect
       {|
-      [for Bob] ACCEPTED id=1 AAPL SELL 100@$150.00 DAY
-      [MD Subscriber] BBO AAPL bid=- ask=$150.00 x100
+      [for Bob] ACCEPTED id=1 0 SELL 100@$150.00 DAY
+      [MD Subscriber] BBO 0 bid=- ask=$150.00 x100
       |}];
     (* Cross it with a buy *)
     let%bind () = rpc_submit alice (Harness.buy ~price_cents:15000 ()) in
     [%expect
       {|
-      [for Alice] ACCEPTED id=2 AAPL BUY 100@$150.00 DAY
-      [for Alice] FILL fill_id=1 AAPL $150.00 x100 aggressor=2(Alice w/ client order ID = 9) BUY resting=1(Bob w/ client order ID = 8)
-      [for Bob] FILL fill_id=1 AAPL $150.00 x100 aggressor=2(Alice w/ client order ID = 9) BUY resting=1(Bob w/ client order ID = 8)
-      [MD Subscriber] TRADE AAPL $150.00 x100
-      [MD Subscriber] BBO AAPL bid=- ask=-
+      [for Alice] ACCEPTED id=2 0 BUY 100@$150.00 DAY
+      [for Alice] FILL fill_id=1 0 $150.00 x100 aggressor=2(Alice w/ client order ID = 9) BUY resting=1(Bob w/ client order ID = 8)
+      [for Bob] FILL fill_id=1 0 $150.00 x100 aggressor=2(Alice w/ client order ID = 9) BUY resting=1(Bob w/ client order ID = 8)
+      [MD Subscriber] TRADE 0 $150.00 x100
+      [MD Subscriber] BBO 0 bid=- ask=-
       |}];
     return ())
 ;;
 
 let%expect_test "e2e: subscriber only sees events for subscribed symbol" =
-  with_server ~symbols:[ Harness.aapl; Harness.tsla ] (fun ~server:_ ~port ->
+  with_server ~num_symbols:2 (fun ~server:_ ~port ->
     let%bind sub = connect_as ~port (Participant.of_string "Sub") in
     let%bind bob = connect_as ~port Harness.bob in
     let%bind result =
@@ -319,13 +319,13 @@ let%expect_test "e2e: subscriber only sees events for subscribed symbol" =
         bob
         (Harness.sell ~price_cents:20000 ~symbol:Harness.tsla ())
     in
-    [%expect {| [for Bob] ACCEPTED id=1 TSLA SELL 100@$200.00 DAY |}];
+    [%expect {| [for Bob] ACCEPTED id=1 1 SELL 100@$200.00 DAY |}];
     (* Post on AAPL — subscriber SHOULD see this *)
     let%bind () = rpc_submit bob (Harness.sell ~price_cents:15000 ()) in
     [%expect
       {|
-      [for Bob] ACCEPTED id=2 AAPL SELL 100@$150.00 DAY
-      [MD Subscriber] BBO AAPL bid=- ask=$150.00 x100
+      [for Bob] ACCEPTED id=2 0 SELL 100@$150.00 DAY
+      [MD Subscriber] BBO 0 bid=- ask=$150.00 x100
       |}];
     return ())
 ;;
@@ -335,7 +335,7 @@ let%expect_test "e2e: subscriber only sees events for subscribed symbol" =
 (* ---------------------------------------------------------------- *)
 
 let%expect_test "e2e: many clients submit orders concurrently" =
-  with_server ~symbols:[ Harness.aapl ] (fun ~server:_ ~port ->
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
     let%bind seed = connect_as ~port Harness.bob in
     let%bind () =
       Deferred.List.iter
@@ -372,7 +372,7 @@ let%expect_test "e2e: many clients submit orders concurrently" =
 let%expect_test "e2e: audit log subscriber sees full unfiltered stream \
                  across symbols"
   =
-  with_server ~symbols:[ Harness.aapl; Harness.tsla ] (fun ~server:_ ~port ->
+  with_server ~num_symbols:2 (fun ~server:_ ~port ->
     let%bind sub = connect_as ~port (Participant.of_string "Auditor") in
     let%bind alice = connect_as ~port Harness.alice in
     let%bind bob = connect_as ~port Harness.bob in
@@ -392,9 +392,9 @@ let%expect_test "e2e: audit log subscriber sees full unfiltered stream \
     let%bind () = rpc_submit bob (Harness.sell ~price_cents:15000 ()) in
     [%expect
       {|
-      [AUDIT] ACCEPTED id=1 AAPL SELL 100@$150.00 DAY
-      [AUDIT] BBO AAPL bid=- ask=$150.00 x100
-      [for Bob] ACCEPTED id=1 AAPL SELL 100@$150.00 DAY
+      [AUDIT] ACCEPTED id=1 0 SELL 100@$150.00 DAY
+      [AUDIT] BBO 0 bid=- ask=$150.00 x100
+      [for Bob] ACCEPTED id=1 0 SELL 100@$150.00 DAY
       |}];
     (* Post a sell on TSLA — audit subscriber should see this too
        (multi-symbol). *)
@@ -405,21 +405,21 @@ let%expect_test "e2e: audit log subscriber sees full unfiltered stream \
     in
     [%expect
       {|
-      [AUDIT] ACCEPTED id=2 TSLA SELL 100@$200.00 DAY
-      [AUDIT] BBO TSLA bid=- ask=$200.00 x100
-      [for Bob] ACCEPTED id=2 TSLA SELL 100@$200.00 DAY
+      [AUDIT] ACCEPTED id=2 1 SELL 100@$200.00 DAY
+      [AUDIT] BBO 1 bid=- ask=$200.00 x100
+      [for Bob] ACCEPTED id=2 1 SELL 100@$200.00 DAY
       |}];
     (* Cross the AAPL sell — the audit log should see ACCEPTED + FILL + BBO. *)
     let%bind () = rpc_submit alice (Harness.buy ~price_cents:15000 ()) in
     [%expect
       {|
-      [AUDIT] ACCEPTED id=3 AAPL BUY 100@$150.00 DAY
-      [AUDIT] FILL fill_id=1 AAPL $150.00 x100 aggressor=3(Alice w/ client order ID = 29) BUY resting=1(Bob w/ client order ID = 27)
-      [AUDIT] TRADE AAPL $150.00 x100
-      [AUDIT] BBO AAPL bid=- ask=-
-      [for Alice] ACCEPTED id=3 AAPL BUY 100@$150.00 DAY
-      [for Alice] FILL fill_id=1 AAPL $150.00 x100 aggressor=3(Alice w/ client order ID = 29) BUY resting=1(Bob w/ client order ID = 27)
-      [for Bob] FILL fill_id=1 AAPL $150.00 x100 aggressor=3(Alice w/ client order ID = 29) BUY resting=1(Bob w/ client order ID = 27)
+      [AUDIT] ACCEPTED id=3 0 BUY 100@$150.00 DAY
+      [AUDIT] FILL fill_id=1 0 $150.00 x100 aggressor=3(Alice w/ client order ID = 29) BUY resting=1(Bob w/ client order ID = 27)
+      [AUDIT] TRADE 0 $150.00 x100
+      [AUDIT] BBO 0 bid=- ask=-
+      [for Alice] ACCEPTED id=3 0 BUY 100@$150.00 DAY
+      [for Alice] FILL fill_id=1 0 $150.00 x100 aggressor=3(Alice w/ client order ID = 29) BUY resting=1(Bob w/ client order ID = 27)
+      [for Bob] FILL fill_id=1 0 $150.00 x100 aggressor=3(Alice w/ client order ID = 29) BUY resting=1(Bob w/ client order ID = 27)
       |}];
     return ())
 ;;
@@ -468,7 +468,7 @@ let%expect_test "dispatcher: closing a subscriber's reader removes the \
 let%expect_test "rate limits are tracked per participant" =
   with_server
     ~limits:(limits ~submit_burst:1 ~cancel_burst:1)
-    ~symbols:[ Harness.aapl ]
+    ~num_symbols:1
     (fun ~server:_ ~port ->
        let%bind alice = connect_as ~port Harness.alice in
        let%bind bob = connect_as ~port Harness.bob in
@@ -478,7 +478,7 @@ let%expect_test "rate limits are tracked per participant" =
            alice
            (Harness.buy ~price_cents:10000 ~client_order_id:1 ())
        in
-       [%expect {| [for Alice] ACCEPTED id=1 AAPL BUY 100@$100.00 DAY |}];
+       [%expect {| [for Alice] ACCEPTED id=1 0 BUY 100@$100.00 DAY |}];
        (* Her next submit is over budget and rejected. *)
        let%bind () =
          rpc_submit
@@ -486,19 +486,19 @@ let%expect_test "rate limits are tracked per participant" =
            (Harness.buy ~price_cents:9900 ~client_order_id:2 ())
        in
        [%expect
-         {| [for Alice] REJECTED AAPL BUY 100@$99.00 reason=rate limit exceeded |}];
+         {| [for Alice] REJECTED 0 BUY 100@$99.00 reason=rate limit exceeded |}];
        (* Bob's budget is his own — Alice flooding doesn't lock him out. *)
        let%bind () =
          rpc_submit bob (Harness.buy ~price_cents:9800 ~client_order_id:1 ())
        in
-       [%expect {| [for Bob] ACCEPTED id=2 AAPL BUY 100@$98.00 DAY |}];
+       [%expect {| [for Bob] ACCEPTED id=2 0 BUY 100@$98.00 DAY |}];
        return ())
 ;;
 
 let%expect_test "the cancel limit is separate from the submit limit" =
   with_server
     ~limits:(limits ~submit_burst:1 ~cancel_burst:1)
-    ~symbols:[ Harness.aapl ]
+    ~num_symbols:1
     (fun ~server:_ ~port ->
        let%bind alice = connect_as ~port Harness.alice in
        (* Alice rests one order, spending her only submit token. *)
@@ -507,7 +507,7 @@ let%expect_test "the cancel limit is separate from the submit limit" =
            alice
            (Harness.buy ~price_cents:10000 ~client_order_id:1 ())
        in
-       [%expect {| [for Alice] ACCEPTED id=1 AAPL BUY 100@$100.00 DAY |}];
+       [%expect {| [for Alice] ACCEPTED id=1 0 BUY 100@$100.00 DAY |}];
        (* A second submit is over the submit budget... *)
        let%bind () =
          rpc_submit
@@ -515,18 +515,18 @@ let%expect_test "the cancel limit is separate from the submit limit" =
            (Harness.buy ~price_cents:9900 ~client_order_id:2 ())
        in
        [%expect
-         {| [for Alice] REJECTED AAPL BUY 100@$99.00 reason=rate limit exceeded |}];
+         {| [for Alice] REJECTED 0 BUY 100@$99.00 reason=rate limit exceeded |}];
        (* ...but the independent cancel budget still lets her cancel order 1. *)
        let%bind () = rpc_cancel alice (Harness.cancel ~client_order_id:1) in
        [%expect
-         {| [for Alice] CANCELLED id=1 AAPL remaining=100 reason=PARTICIPANT_REQUESTED |}];
+         {| [for Alice] CANCELLED id=1 0 remaining=100 reason=PARTICIPANT_REQUESTED |}];
        return ())
 ;;
 
 let%expect_test "cancels over the cancel limit are rejected" =
   with_server
     ~limits:(limits ~submit_burst:2 ~cancel_burst:1)
-    ~symbols:[ Harness.aapl ]
+    ~num_symbols:1
     (fun ~server:_ ~port ->
        let%bind alice = connect_as ~port Harness.alice in
        (* Rest two orders; the submit budget of 2 admits both. *)
@@ -535,17 +535,17 @@ let%expect_test "cancels over the cancel limit are rejected" =
            alice
            (Harness.buy ~price_cents:10000 ~client_order_id:1 ())
        in
-       [%expect {| [for Alice] ACCEPTED id=1 AAPL BUY 100@$100.00 DAY |}];
+       [%expect {| [for Alice] ACCEPTED id=1 0 BUY 100@$100.00 DAY |}];
        let%bind () =
          rpc_submit
            alice
            (Harness.buy ~price_cents:9900 ~client_order_id:2 ())
        in
-       [%expect {| [for Alice] ACCEPTED id=2 AAPL BUY 100@$99.00 DAY |}];
+       [%expect {| [for Alice] ACCEPTED id=2 0 BUY 100@$99.00 DAY |}];
        (* The first cancel spends the single cancel token. *)
        let%bind () = rpc_cancel alice (Harness.cancel ~client_order_id:1) in
        [%expect
-         {| [for Alice] CANCELLED id=1 AAPL remaining=100 reason=PARTICIPANT_REQUESTED |}];
+         {| [for Alice] CANCELLED id=1 0 remaining=100 reason=PARTICIPANT_REQUESTED |}];
        (* The second cancel is over the cancel budget and rejected. *)
        let%bind () = rpc_cancel alice (Harness.cancel ~client_order_id:2) in
        [%expect
@@ -556,7 +556,7 @@ let%expect_test "cancels over the cancel limit are rejected" =
 let%expect_test "a rate-limited submit never reaches the book" =
   with_server
     ~limits:(limits ~submit_burst:1 ~cancel_burst:1)
-    ~symbols:[ Harness.aapl ]
+    ~num_symbols:1
     (fun ~server:_ ~port ->
        let%bind alice = connect_as ~port Harness.alice in
        let%bind () =
@@ -564,14 +564,14 @@ let%expect_test "a rate-limited submit never reaches the book" =
            alice
            (Harness.buy ~price_cents:10000 ~client_order_id:1 ())
        in
-       [%expect {| [for Alice] ACCEPTED id=1 AAPL BUY 100@$100.00 DAY |}];
+       [%expect {| [for Alice] ACCEPTED id=1 0 BUY 100@$100.00 DAY |}];
        let%bind () =
          rpc_submit
            alice
            (Harness.buy ~price_cents:9900 ~client_order_id:2 ())
        in
        [%expect
-         {| [for Alice] REJECTED AAPL BUY 100@$99.00 reason=rate limit exceeded |}];
+         {| [for Alice] REJECTED 0 BUY 100@$99.00 reason=rate limit exceeded |}];
        (* The gateway stopped the second order before the engine, so only the
           first rests on the book. *)
        let%bind book = rpc_book alice Harness.aapl in

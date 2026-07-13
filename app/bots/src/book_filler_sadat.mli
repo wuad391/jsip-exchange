@@ -10,7 +10,7 @@ open Jsip_types
 
 module Config : sig
   type t =
-    { symbols : Symbol.t list
+    { symbols : Symbol_id.t list
     (** Books to flood, round-robined across. Must be non-empty. *)
     ; orders_per_tick : int
     (** Resting orders added per tick — the primary intensity knob. Positive. *)

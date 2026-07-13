@@ -25,11 +25,27 @@ let run_client ~host ~port ~participant_name =
       (Or_error.error_string
          [%string "Login error: %{(Error.to_string_hum s)#String}"])
   | Ok participant ->
+    (* Fetch the id<->name mapping once, up front. Everything the user types
+       or sees goes through this: names resolve to ids on the way out, ids
+       render as names on the way back. The wire still only carries ids. *)
+    let%bind directory_alist =
+      Rpc.Rpc.dispatch_exn Rpc_protocol.symbol_directory_rpc conn ()
+    in
+    let directory = Symbol_directory.of_alist directory_alist in
+    let render_symbol symbol =
+      Symbol_directory.name_or_id directory symbol
+    in
+    let symbol_names =
+      Symbol_directory.names directory
+      |> List.map ~f:Symbol.to_string
+      |> String.concat ~sep:", "
+    in
     print_endline
       [%string
         {|
             Connected to exchange at %{host}:%{port#Int} as %{participant#Participant}
-            Commands: BUY|SELL <symbol> <size> <price> [IOC|DAY]
+            Trading: %{symbol_names}
+            Commands: BUY|SELL <client order id> <symbol> <size> <price> [IOC|DAY]
                       BOOK <symbol>
                       SUBSCRIBE <symbol>  (stream market data)
 
@@ -49,7 +65,10 @@ let run_client ~host ~port ~participant_name =
         else (
           let parse_result =
             Or_error.try_with_join (fun () ->
-              Exchange_command.parse ~default_participant:participant line)
+              Exchange_command.parse
+                ~directory
+                ~default_participant:participant
+                line)
           in
           match parse_result with
           | Error e ->
@@ -64,8 +83,13 @@ let run_client ~host ~port ~participant_name =
                (match result with
                 | None ->
                   print_endline
-                    [%string "No book available for %{symbol#Symbol}"]
-                | Some result -> print_endline (Book.to_string result));
+                    [%string "No book available for %{render_symbol symbol}"]
+                | Some result ->
+                  (* [Book.to_string] prints the raw id in its header, so
+                     name the book ourselves first (we hold the directory
+                     here). *)
+                  print_endline [%string "Book for %{render_symbol symbol}:"];
+                  print_endline (Book.to_string result));
                loop ()
              | Subscribe symbol ->
                let%bind result =
@@ -82,14 +106,15 @@ let run_client ~host ~port ~participant_name =
                 | Ok (Ok (reader, _id)) ->
                   print_endline
                     [%string
-                      {| Subscribed to %{symbol#Symbol} market data. Updates will appear below.
+                      {| Subscribed to %{render_symbol symbol} market data. Updates will appear below.
                             Continue entering commands as normal.|}];
                   (* Read market data in the background; the command loop
                      continues running concurrently. *)
                   don't_wait_for
                     (Pipe.iter_without_pushback reader ~f:(fun event ->
                        print_endline
-                         [%string "[MD] %{Protocol.format_event event}"]));
+                         [%string
+                           "[MD] %{Protocol.format_event ~directory event}"]));
                   loop ())
              | Submit request ->
                let%bind result =
@@ -125,6 +150,7 @@ let run_client ~host ~port ~participant_name =
         (Pipe.iter_without_pushback session_feed ~f:(fun event ->
            let event_string =
              Protocol.format_event
+               ~directory
                ~participant:(Some (Participant.of_string participant_name))
                event
            in

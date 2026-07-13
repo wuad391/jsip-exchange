@@ -1,0 +1,6 @@
+(library
+ (name jsip_symbol_directory)
+ (public_name jsip-exchange.jsip_symbol_directory)
+ (libraries core jsip_types)
+ (preprocess
+  (pps ppx_jane)))

@@ -6,13 +6,14 @@ open! Async
 open Jsip_types
 open Jsip_gateway
 
-(** Start a server on an OS-assigned port, run [f], then shut down. [limits]
+(** Start a server on an OS-assigned port trading [num_symbols] symbols (ids
+    [0, 1, ..., num_symbols - 1]), run [f], then shut down. [limits]
     overrides the per-participant rate limits (default
     {!Jsip_gateway.Session.Limits.default}); rate-limit tests pass tight
     limits to trip the limiter deterministically. *)
 val with_server
   :  ?limits:Session.Limits.t
-  -> symbols:Symbol.t list
+  -> num_symbols:int
   -> (server:Exchange_server.t -> port:int -> 'a Deferred.t)
   -> 'a Deferred.t
 
@@ -41,7 +42,7 @@ val connection : client -> Rpc.Connection.t
 val rpc_submit : client -> Order.Request.t -> unit Deferred.t
 
 (** Query the book via RPC. *)
-val rpc_book : client -> Symbol.t -> Book.t option Deferred.t
+val rpc_book : client -> Symbol_id.t -> Book.t option Deferred.t
 
 val rpc_cancel : client -> Client_order_id.t -> unit Deferred.t
-val rpc_subscribe : client -> Symbol.t list -> string -> unit Deferred.t
+val rpc_subscribe : client -> Symbol_id.t list -> string -> unit Deferred.t

@@ -1,6 +1,7 @@
 open! Core
 open Jsip_types
 open Jsip_scenario_runner
+open Jsip_symbol_directory
 module Fundamental_oracle = Jsip_fundamental.Fundamental_oracle
 module Market_maker_bot = Jsip_market_maker.Market_maker_bot
 module Slow_consumer_bot = Jsip_bots.Slow_consumer
@@ -16,24 +17,10 @@ let description =
 
 let aapl = Symbol.of_string "AAPL"
 
-(* A gently drifting fundamental so the market maker's quotes keep moving,
-   which keeps market-data events flowing for the slow consumers to fall
-   behind on. Deterministic given the runner's seed. *)
-let oracle_config : Fundamental_oracle.Config.t =
-  Symbol.Map.of_alist_exn
-    [ ( aapl
-      , { Fundamental_oracle.Config.initial_price_cents = 15000
-        ; volatility_cents_per_sec = 10.0
-        ; mean_reversion_strength = 0.05
-        ; tick_interval = Time_ns.Span.of_sec 0.5
-        } )
-    ]
-;;
-
 (* Build one market-maker instance. Each instance needs its own [participant]
    name — the gateway keys sessions by participant, so reusing a name would
    evict the earlier session — and its own [rng_seed]. *)
-let market_maker_spec ~participant ~rng_seed =
+let market_maker_spec ~symbols ~participant ~rng_seed =
   Bot_spec.T
     { bot = (module Market_maker_bot)
     ; config =
@@ -42,9 +29,9 @@ let market_maker_spec ~participant ~rng_seed =
           ~size_per_level:100
           ~num_levels:3
           ~inventory_skew_cents_per_share:1
-          ~symbols:[ aapl ]
+          ~symbols
     ; participant
-    ; symbols = [ aapl ]
+    ; symbols
     ; rng_seed
     ; (* Re-quote four times a second: a brisk stream of BBO updates. *)
       tick_interval = Time_ns.Span.of_sec 0.25
@@ -55,12 +42,12 @@ let market_maker_spec ~participant ~rng_seed =
 (* Build one slow-consumer instance. [read_delay] tunes how far behind this
    particular consumer falls: the bigger it is relative to the market maker's
    event rate, the faster this subscriber's exchange-side buffer grows. *)
-let slow_consumer_spec ~participant ~rng_seed ~read_delay =
+let slow_consumer_spec ~symbols ~participant ~rng_seed ~read_delay =
   Bot_spec.T
     { bot = (module Slow_consumer_bot)
     ; config = Slow_consumer_bot.Config.create ~read_delay
     ; participant
-    ; symbols = [ aapl ]
+    ; symbols
     ; rng_seed
     ; tick_interval = Time_ns.Span.of_sec 5.0
     ; is_marketdata_consumer = true
@@ -79,8 +66,25 @@ let consumer_roster =
 ;;
 
 let configure () : Scenario_config.t =
+  let directory = Symbol_directory.of_names [ aapl ] in
+  let aapl_id = Symbol_directory.id_exn directory aapl in
+  let symbols = [ aapl_id ] in
+  (* A gently drifting fundamental so the market maker's quotes keep moving,
+     which keeps market-data events flowing for the slow consumers to fall
+     behind on. Deterministic given the runner's seed. *)
+  let oracle_config : Fundamental_oracle.Config.t =
+    Symbol_id.Map.of_alist_exn
+      [ ( aapl_id
+        , { Fundamental_oracle.Config.initial_price_cents = 15000
+          ; volatility_cents_per_sec = 10.0
+          ; mean_reversion_strength = 0.05
+          ; tick_interval = Time_ns.Span.of_sec 0.5
+          } )
+      ]
+  in
   let market_makers =
     [ market_maker_spec
+        ~symbols
         ~participant:(Participant.of_string "MarketMaker")
         ~rng_seed:1
     ]
@@ -88,12 +92,13 @@ let configure () : Scenario_config.t =
   let slow_consumers =
     List.map consumer_roster ~f:(fun (name, rng_seed, read_delay) ->
       slow_consumer_spec
+        ~symbols
         ~participant:(Participant.of_string name)
         ~rng_seed
         ~read_delay)
   in
   { name
-  ; symbols = [ aapl ]
+  ; directory
   ; oracle_config
   ; news = []
   ; bots = market_makers @ slow_consumers

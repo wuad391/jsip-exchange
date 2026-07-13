@@ -4,9 +4,9 @@
   jsip_types
   jsip_order_book
   jsip_gateway
+  jsip_scenario_runner
   jsip_fundamental
   jsip_bot_runtime
-  jsip_scenario_runner
   jsip_market_maker
   async
   core)

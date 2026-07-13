@@ -385,7 +385,7 @@ let%expect_test "snapshot lists levels in price-time priority order" =
      bids should appear highest-first and asks lowest-first. *)
   [%expect
     {|
-    === AAPL ===
+    === 0 ===
       BIDS:
         $150.00 x100
         $149.95 x100
@@ -395,5 +395,50 @@ let%expect_test "snapshot lists levels in price-time priority order" =
         $150.10 x100
         $150.15 x100
       BBO: $150.00 x100 / $150.05 x100
+    |}]
+;;
+
+let%expect_test "snapshot aggregates size across orders at the same price" =
+  let book = Order_book.create Harness.aapl in
+  (* Two participants stack orders at shared prices: three lots on the bid at
+     $150.00 and two on the ask at $150.10. Each level should report the
+     summed size, not just the first resting order's. *)
+  Order_book.add
+    book
+    (make_order ~side:Buy ~price_cents:15000 ~order_id:1 ~size:100 ());
+  Order_book.add
+    book
+    (make_order
+       ~side:Buy
+       ~price_cents:15000
+       ~order_id:2
+       ~size:50
+       ~participant:Harness.bob
+       ());
+  Order_book.add
+    book
+    (make_order ~side:Buy ~price_cents:14990 ~order_id:3 ~size:75 ());
+  Order_book.add
+    book
+    (make_order ~side:Sell ~price_cents:15010 ~order_id:4 ~size:100 ());
+  Order_book.add
+    book
+    (make_order
+       ~side:Sell
+       ~price_cents:15010
+       ~order_id:5
+       ~size:200
+       ~participant:Harness.bob
+       ());
+  print_endline (Order_book.snapshot book |> Book.to_string);
+  [%expect
+    {|
+    === 0 ===
+      BIDS:
+        $150.00 x150
+        $149.90 x75
+      ASKS:
+        $150.10 x300
+      BBO: $150.00 x150 / $150.10 x300
     |}]
 ;;

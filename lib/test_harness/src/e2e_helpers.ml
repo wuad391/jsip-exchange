@@ -9,8 +9,25 @@ let ok_str res =
   | Error e -> print_endline [%string "%{(Error.to_string_hum e)}"]
 ;;
 
-let with_server ?limits ~symbols f =
-  let%bind server = Exchange_server.start ?limits ~symbols ~port:0 () in
+(* Tests still ask for a symbol count, not a name set — the id math is what
+   they exercise. We synthesize a directory so the server has one: the first
+   few ids get the canonical tickers (matching [app/server]'s set, so a test
+   that does render names sees familiar ones), and any beyond that get a
+   generated [SYM<n>] placeholder. *)
+let canonical_names = [ "AAPL"; "TSLA"; "GOOG"; "MSFT" ]
+
+let default_directory ~num_symbols =
+  List.init num_symbols ~f:(fun i ->
+    match List.nth canonical_names i with
+    | Some name -> name
+    | None -> [%string "SYM%{i#Int}"])
+  |> List.map ~f:Symbol.of_string
+  |> Symbol_directory.of_names
+;;
+
+let with_server ?limits ~num_symbols f =
+  let directory = default_directory ~num_symbols in
+  let%bind server = Exchange_server.start ?limits ~directory ~port:0 () in
   let port = Exchange_server.port server in
   Monitor.protect
     (fun () -> f ~server ~port)

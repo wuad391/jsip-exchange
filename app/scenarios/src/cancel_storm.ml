@@ -1,6 +1,7 @@
 open! Core
 open Jsip_types
 open Jsip_scenario_runner
+open Jsip_symbol_directory
 
 let name = "cancel-storm"
 
@@ -20,26 +21,26 @@ let symbol_table =
   ]
 ;;
 
-let symbols = List.map symbol_table ~f:fst
+let symbol_names = List.map symbol_table ~f:fst
 
 (* The market maker quotes with this half-spread when it has no BBO (its
    default), so the storm's marketable orders must reach past it to cross. *)
 let market_maker_half_spread_cents = 50
 
-let oracle_config : Jsip_fundamental.Fundamental_oracle.Config.t =
+let oracle_config ~directory : Jsip_fundamental.Fundamental_oracle.Config.t =
   List.map symbol_table ~f:(fun (symbol, initial_price_cents) ->
-    ( symbol
+    ( Symbol_directory.id_exn directory symbol
     , { Jsip_fundamental.Fundamental_oracle.Config.initial_price_cents
       ; volatility_cents_per_sec = 10.0
       ; mean_reversion_strength = 0.1
       ; tick_interval = Time_ns.Span.of_sec 0.2
       } ))
-  |> Symbol.Map.of_alist_exn
+  |> Symbol_id.Map.of_alist_exn
 ;;
 
 (* A market maker gives the storm a two-sided book to cancel against and to
    fill against for the marketable fraction. *)
-let market_maker_spec =
+let market_maker_spec ~symbols =
   Bot_spec.T
     { bot = (module Jsip_market_maker.Market_maker_bot)
     ; config =
@@ -58,7 +59,7 @@ let market_maker_spec =
 ;;
 
 (* A noise trader adds organic churn so the storm is not the only activity. *)
-let noise_trader_spec =
+let noise_trader_spec ~symbols =
   Bot_spec.T
     { bot = (module Jsip_bots.Noise_trader)
     ; config =
@@ -79,7 +80,7 @@ let noise_trader_spec =
 (* 50 cycles every 0.1s per bot -> ~500 submit+cancel pairs/sec each, spread
    randomly across all three symbols. Distinct names and seeds so the copies
    churn independently. *)
-let cancel_storm_spec ~index =
+let cancel_storm_spec ~symbols ~index =
   Bot_spec.T
     { bot = (module Jsip_bots.Cancel_storm)
     ; config =
@@ -101,13 +102,19 @@ let cancel_storm_spec ~index =
 let num_storms = 3
 
 let configure () : Scenario_config.t =
+  let directory = Symbol_directory.of_names symbol_names in
+  let symbols =
+    List.map symbol_table ~f:(fun (symbol, _) ->
+      Symbol_directory.id_exn directory symbol)
+  in
   { name
-  ; symbols
-  ; oracle_config
+  ; directory
+  ; oracle_config = oracle_config ~directory
   ; news = []
   ; bots =
-      market_maker_spec
-      :: noise_trader_spec
-      :: List.init num_storms ~f:(fun i -> cancel_storm_spec ~index:(i + 1))
+      market_maker_spec ~symbols
+      :: noise_trader_spec ~symbols
+      :: List.init num_storms ~f:(fun i ->
+        cancel_storm_spec ~symbols ~index:(i + 1))
   }
 ;;

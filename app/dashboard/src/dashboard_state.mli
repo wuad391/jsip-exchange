@@ -1,13 +1,14 @@
 (** Pure rolling-window state for the monitoring dashboard.
 
-    Folds the per-second {!Jsip_exchange_stats.Exchange_stats.t} snapshots the
-    exchange streams into a bounded window (the last {!max_window} seconds) and
-    projects it into render-ready {!Display} data. Holds no Async and no Bonsai
-    state, so it is fully testable as plain data — the analog of
-    [app/monitor]'s [Controller]. *)
+    Folds the per-second {!Jsip_exchange_stats.Exchange_stats.t} snapshots
+    the exchange streams into a bounded window (the last {!max_window}
+    seconds) and projects it into render-ready {!Display} data. Holds no
+    Async and no Bonsai state, so it is fully testable as plain data — the
+    analog of [app/monitor]'s [Controller]. *)
 
 open! Core
 open Jsip_exchange_stats
+module Symbol_directory = Jsip_symbol_directory.Symbol_directory
 
 (** Length of the retained window, in snapshots (one per second). *)
 val max_window : int
@@ -47,9 +48,9 @@ val of_snapshots : Exchange_stats.t list -> t
 
 (** The render-ready projection the Bonsai layer draws: chart series (oldest
     first) and current-second readouts for every pane. Decoupled from any
-    Bonsai/Vdom type so the pane math — words to megabytes, percentile series,
-    busiest-sender ranking, pipe occupancy — is testable as plain data, the
-    analog of [Controller.Display]. *)
+    Bonsai/Vdom type so the pane math — words to megabytes, percentile
+    series, busiest-sender ranking, pipe occupancy — is testable as plain
+    data, the analog of [Controller.Display]. *)
 module Display : sig
   (** One RPC class's latency: a line per percentile over the window plus the
       current second's readouts, with [per_sec] the throughput that second. *)
@@ -76,13 +77,27 @@ module Display : sig
   [@@deriving sexp_of, equal]
 
   (** One pipe category's occupancy: current depths plus a line of the max
-      single-pipe depth over the window (the smoking gun for a slow consumer). *)
+      single-pipe depth over the window (the smoking gun for a slow
+      consumer). *)
   type occupancy_row =
     { label : string
     ; max_depth : int
     ; total_depth : int
     ; num_pipes : int
     ; max_depth_series : float list
+    }
+  [@@deriving sexp_of, equal]
+
+  (** One symbol's top of book for the market-state pane: best bid/ask as
+      formatted dollar strings with sizes, and the spread. A side is [None]
+      when that side of the book is empty. *)
+  type book_row =
+    { symbol : string
+    ; bid : string option
+    ; bid_size : int option
+    ; ask : string option
+    ; ask_size : int option
+    ; spread : string option
     }
   [@@deriving sexp_of, equal]
 
@@ -101,9 +116,13 @@ module Display : sig
     ; occupancy : occupancy_row list
     ; loop_busy_series : float list
     ; loop_busy_us : float
+    ; books : book_row list
     }
   [@@deriving sexp_of, equal]
 end
 
-(** Project the current window into render-ready pane data. *)
-val display : t -> Display.t
+(** Project the current window into render-ready pane data. With a
+    [directory] (the browser fetches one at startup) each book's symbol
+    renders as its name; the default empty directory falls back to the
+    numeric id. *)
+val display : ?directory:Symbol_directory.t -> t -> Display.t

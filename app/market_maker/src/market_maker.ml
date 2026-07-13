@@ -6,7 +6,7 @@ open Jsip_gateway
 module Config = struct
   type t =
     { participant : Participant.t
-    ; symbol : Symbol.t
+    ; symbol : Symbol_id.t
     ; fair_value_cents : int
     ; half_spread_cents : int
     ; size_per_level : int
@@ -26,6 +26,12 @@ let new_client_order_id () =
   client_order_id_ref := !client_order_id_ref + 1;
   Client_order_id.of_int !client_order_id_ref
 ;;
+
+(* A wide spread or enough price levels can push
+   [fair_value_cents -/+ offset] to or below zero; the exchange rejects
+   negative-priced orders outright (see [Matching_engine.submit]), so floor
+   at one cent, the smallest representable price tick, before that happens. *)
+let clamp_to_positive_cents cents = Int.max cents 1
 
 let seed_book (config : Config.t) conn =
   let submit request =
@@ -50,7 +56,9 @@ let seed_book (config : Config.t) conn =
           ({ symbol = config.symbol
            ; participant = config.participant
            ; side = Buy
-           ; price = Price.of_int_cents (config.fair_value_cents - offset)
+           ; price =
+               Price.of_int_cents
+                 (clamp_to_positive_cents (config.fair_value_cents - offset))
            ; size = Size.of_int config.size_per_level
            ; time_in_force = Day
            ; client_order_id = new_client_order_id ()
@@ -61,7 +69,9 @@ let seed_book (config : Config.t) conn =
           ({ symbol = config.symbol
            ; participant = config.participant
            ; side = Sell
-           ; price = Price.of_int_cents (config.fair_value_cents + offset)
+           ; price =
+               Price.of_int_cents
+                 (clamp_to_positive_cents (config.fair_value_cents + offset))
            ; size = Size.of_int config.size_per_level
            ; time_in_force = Day
            ; client_order_id = new_client_order_id ()

@@ -27,10 +27,15 @@ let command =
          "-seed"
          (optional_with_default 0 int)
          ~doc:"INT random seed for reproducible scenarios (default 0)"
+     and count_orders =
+       flag
+         "-count-orders"
+         no_arg
+         ~doc:" report total submit/cancel counts at shutdown"
      in
      fun () ->
        let config = S.configure () in
-       Runner.run config ~port ~seed)
+       Runner.run ~count_orders config ~port ~seed)
     ~behave_nicely_in_pipeline:false
 ;;
 

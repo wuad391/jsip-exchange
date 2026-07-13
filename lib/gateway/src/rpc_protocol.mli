@@ -30,7 +30,14 @@ val submit_order_rpc : (Order.Request.t, unit Or_error.t) Rpc.Rpc.t
 
 (** Query the order book for a given symbol. Returns a structured snapshot of
     all resting orders on both sides, if a book for that symbol exists. *)
-val book_query_rpc : (Symbol.t, Book.t option) Rpc.Rpc.t
+val book_query_rpc : (Symbol_id.t, Book.t option) Rpc.Rpc.t
+
+(** Fetch the exchange's symbol directory: the [(id, name)] pairs mapping
+    each wire {!Jsip_types.Symbol_id.t} to its human-readable
+    {!Jsip_types.Symbol.t}. A client fetches this once at connect and mirrors
+    it locally (see {!Jsip_gateway.Symbol_directory}) so it can show [AAPL]
+    instead of [0]; the wire itself stays int-only. *)
+val symbol_directory_rpc : (unit, (Symbol_id.t * Symbol.t) list) Rpc.Rpc.t
 
 (** Subscribe to market data for one or more symbols. The server pushes BBO
     updates and trade reports as they happen via a single pipe. The query is
@@ -38,7 +45,7 @@ val book_query_rpc : (Symbol.t, Book.t option) Rpc.Rpc.t
     avoids the overhead of opening a separate pipe per symbol when a client
     cares about several. *)
 val market_data_rpc
-  : (Symbol.t list, Exchange_event.t, Error.t) Rpc.Pipe_rpc.t
+  : (Symbol_id.t list, Exchange_event.t, Error.t) Rpc.Pipe_rpc.t
 
 (** Subscribe to the full audit log: every [Exchange_event.t] the matching
     engine produces, across every symbol and participant.

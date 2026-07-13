@@ -18,7 +18,7 @@ module Config : sig
   (** Storm knobs plus the per-cycle order-id counter. Build one with
       {!create_config}, which seeds the counter. *)
   type t =
-    { symbols : Symbol.t list
+    { symbols : Symbol_id.t list
     (** Symbols to storm; each cycle picks one at random. *)
     ; cycles_per_tick : int
     (** Submit->cancel cycles per tick — the intensity knob. *)
@@ -53,7 +53,7 @@ val on_event : Config.t -> Context.t -> Exchange_event.t -> unit Deferred.t
 (** Build a config, seeding the order-id counter to [0]. See the field docs
     on {!Config.t} for what each knob controls. *)
 val create_config
-  :  symbols:Symbol.t list
+  :  symbols:Symbol_id.t list
   -> cycles_per_tick:int
   -> size:int
   -> pct_marketable:int
