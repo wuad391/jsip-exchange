@@ -56,6 +56,31 @@ let%expect_test "exact cross at same price" =
     |}]
 ;;
 
+let%expect_test "self-trade prevention: own crossing order does not fill" =
+  let t = Harness.create () in
+  (* Alice rests a sell at $150.00, then submits a buy at $150.00 that would
+     cross it. Because both orders are hers, self-trade prevention blocks the
+     match: no FILL is emitted, and the buy simply rests -- leaving her own
+     book locked ($150.00 bid against her own $150.00 ask). *)
+  submit_ t (Harness.sell ~price_cents:15000 ());
+  submit_ t (Harness.buy ~price_cents:15000 ());
+  [%expect
+    {|
+    ACCEPTED id=1 0 SELL 100@$150.00 DAY
+    ACCEPTED id=2 0 BUY 100@$150.00 DAY
+    |}];
+  Harness.print_book t Harness.aapl;
+  [%expect
+    {|
+    === 0 ===
+      BIDS:
+        $150.00 x100
+      ASKS:
+        $150.00 x100
+      BBO: $150.00 x100 / $150.00 x100
+    |}]
+;;
+
 let%expect_test "buy crosses at resting price, not aggressor price" =
   let t = Harness.create () in
   submit_ ~participant:Harness.bob t (Harness.sell ~price_cents:15000 ());
@@ -273,7 +298,14 @@ let%expect_test "BBO update emitted when order rests on book" =
 
 let%expect_test "BBO update: reflects new best after fill" =
   let t = Harness.create () in
-  let events = Harness.submit_quiet t (Harness.sell ~price_cents:15000 ()) in
+  (* Bob rests the ask so Alice's buy actually crosses it (a same-participant
+     pair would be blocked by self-trade prevention and never fill). *)
+  let events =
+    Harness.submit_quiet
+      ~participant:Harness.bob
+      t
+      (Harness.sell ~price_cents:15000 ())
+  in
   Harness.print_events ~show:show_bbo events;
   [%expect {| BBO 0 bid=- ask=$150.00 x100 |}];
   let events = Harness.submit_quiet t (Harness.buy ~price_cents:15000 ()) in

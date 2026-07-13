@@ -297,8 +297,14 @@ it does, don't re-implement — show the student where it lives.
 - End-of-day cancellation of resting Day orders.
 - `Time_in_force.Good_till_cancel` and `Time_in_force.Fill_or_kill`.
 - `Exchange_command` parsing module (typed command dispatch).
-- Self-trade prevention.
 - Map-backed order book replacing the original list-based version.
+
+Note: self-trade prevention was previously listed here as a week-1
+deliverable, but the matching engine never actually enforced it —
+`find_match` took no participant into account. It is now implemented in
+`lib/order_book/src/order_book.ml` (an incoming order skips its own
+participant's resting orders). A reminder that this section can drift from
+the code, which is the ground truth.
 
 ### Week 2, exercises 1–3 only
 
