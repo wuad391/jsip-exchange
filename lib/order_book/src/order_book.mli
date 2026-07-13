@@ -28,6 +28,14 @@ val remove : t -> Order_id.t -> unit
 (** Find a resting order by ID. *)
 val find : t -> Order_id.t -> Order.t option
 
+(** Fill [by] units of an order that is currently resting on this book,
+    keeping the book's cached level sizes consistent. Use this in place of
+    {!Jsip_types.Order.fill} for a resting order: a bare [Order.fill] shrinks
+    the order without telling the book, so {!best_bid_offer} would report a
+    stale size for that price level until the order is removed. The order
+    must be resting on [t]. *)
+val fill_resting : t -> Order.t -> by:Size.t -> unit
+
 (** {2 Matching} *)
 
 (** Find the best resting order that the given incoming order could trade

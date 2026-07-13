@@ -1,0 +1,88 @@
+ex6 replay — engine micro-tuning after the O(log) BBO migration
+===============================================================
+
+What this is
+------------
+Picks up where ex6_replay_bbo_after.txt left off. That report ended with the
+engine dominated by its own data-structure maintenance and flagged the next
+targets. This documents three follow-up optimizations found by re-profiling,
+all on the PR-#19 nested book (price -> hash-queue). Same driver, preset, seed.
+
+  branch : robyn/ex6-workload-profile
+  cmd    : perf record -F 999 -- main.exe replay -preset balanced \
+             -num-actions 1000000 -depth-every 0
+  raw    : perf-after2.data (before the level cache) / perf-after3.data (after)
+           both gitignored
+
+The three changes
+-----------------
+1. Reverse lookup table removed (commit "carry client_order_id on Order.t").
+   Order.create discarded the client_order_id, so the engine kept a side
+   hashtable (order_id -> client_order_id) purely to relabel fills. Now Order.t
+   carries the id and fills read it as a field. -2 reverse-table lookups per
+   fill.
+
+2. Per-level size cache (this commit). best_bid_offer computed the top-of-book
+   size by folding the whole best-price queue on every read (level_size ->
+   Order_queue.fold). Each price level now carries a mutable total_size,
+   maintained at three sites — add (+), remove' (-), and fill_resting (-).
+   best_level reads it in O(1). The subtlety: Order.fill mutates a resting
+   order's remaining_size WITHOUT going through the book, so resting-order fills
+   in match_loop now route through Order_book.fill_resting, which shrinks the
+   order and the cached level total together. A bare Order.fill on a resting
+   order would silently rot the cache.
+
+3. Duplicate client-order-id check collapsed (this commit). submit did
+   Hashtbl.mem (in validate_client_id) and then Hashtbl.add_exn (in
+   add_client_order) — two probes of the same inner table per submit. Now one
+   Hashtbl.add returns [`Ok | `Duplicate]; the common path probes once.
+
+Correctness
+-----------
+Event counts are byte-identical to every prior run at 1M actions:
+  accepts=549699 fills=360766 order_cancels=146068 order_rejects=0
+  cancel_rejects=336325 bbo_updates=279804 trade_reports=360766
+  fill rate realized=0.381 intended=0.350 OK
+Same decisions, computed more cheaply.
+
+Evidence: read the PROPORTIONS, not the wall
+--------------------------------------------
+The two captures ran at very different box contention (perf sample duration:
+29.5 s for after2, 3.9 s for after3 — another session was building during the
+first). So absolute wall and latency are NOT a clean comparison. The reliable
+signal is the self-normalized self-time proportions, which show the mechanism
+worked:
+
+  symbol                         after2   after3   what happened
+  ------------------------------------------------------------------
+  Hash_queue.foldi (level fold)   4.42%   0% (gone) best_level stopped folding
+  Doubly_linked.with_iteration    2.57%   0% (gone) the fold's DLL traversal
+  Hashtbl.mem                     5.28%   1.97%     dropped the redundant probe
+  best_level_entry (BBO read)     5.50%   4.48%     now just the Map min/max walk
+  Hashtbl.find_and_call           9.30%  10.18%     now #1 — bigger slice, smaller pie
+  allocation                    141.6 w   140.8 w   flat: this is a CPU win, not memory
+
+The fold symbols left the profile entirely (zero samples in after3), which is
+the point: an O(k)-per-read fold became an O(1) field read plus O(1)-per-write
+maintenance, and BBO is read twice per submit and twice per cancel while each
+order only enqueues/dequeues once — so moving the work to the write side is a
+clear net win.
+
+Directional latency (same contention caveat as above)
+-----------------------------------------------------
+                     after2 (contended)   after3 (light)   note
+  submit p50           4.10 us              2.05 us         median, fairly robust
+  submit p99          32.77 us             16.38 us
+  cancel p99.9         2.10 ms            262.14 us ... (cancel) 32.77 us
+  wall                28.67 s               3.72 s          DOMINATED by contention
+Treat these as consistent-with-the-profile, not as an isolated speedup number.
+For a clean latency delta we would need to run before/after back-to-back at the
+same contention (the after2 binary was not preserved).
+
+What's next
+-----------
+find_and_call is now the single biggest cost (10.18%) — order-id hashtable
+lookups (id_hash on add/remove/find) plus the client_order_tables (get on
+cancel, find_or_add on submit). GC is ~16% of this (much smaller) profile, and
+the workload generator is ~6% and rising: another few-x engine speedup would
+make the RNG the thing to optimize, not the engine.
