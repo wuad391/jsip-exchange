@@ -160,8 +160,8 @@ let snapshot_side t (side : Side.t) : Level.t list =
     | Buy -> Map.to_alist ~key_order:`Decreasing (side_map t side)
     | Sell -> Map.to_alist ~key_order:`Increasing (side_map t side)
   in
-  List.map ordered ~f:(fun (price, q) ->
-    ({ price; size = level_size q } : Level.t))
+  List.map ordered ~f:(fun (price, q) : Level.t ->
+    { price; size = level_size q })
 ;;
 
 let snapshot t =
