@@ -29,13 +29,12 @@ let print_call_counts (counts : Call_counts.t) =
        %{counts.cancels#Int} cancels"]
 ;;
 
-(* Bring up one bot end-to-end: open its own RPC connection, subscribe to the
-   market-data stream for the symbols listed in the spec, and run the bot.
-   Once the session feed exists (week 2 exercise 1) this is also where each
-   bot will log in and subscribe to its session-feed RPC, so its [on_event]
-   handler can react to the matching engine's responses to its own orders and
-   to fills against its resting orders. *)
-let start_bot ~where_to_connect ~oracle ~counts (Bot_spec.T spec) =
+(* Bring up one bot end-to-end: open its own RPC connection, log in,
+   subscribe to the session feed (and market data when the spec asks for it),
+   pump events into [on_event], and start the tick loop. Every piece —
+   connection, tick loop, feed — is retained in the returned [Bot_handle.t]
+   so the interactive console can tear the bot down again mid-run. *)
+let start_bot ?counts ~where_to_connect ~oracle (Bot_spec.T spec) =
   let%bind connection =
     Rpc.Connection.client where_to_connect
     >>| Result.map_error ~f:Error.of_exn
@@ -47,62 +46,89 @@ let start_bot ~where_to_connect ~oracle ~counts (Bot_spec.T spec) =
       connection
       (Participant.to_string spec.participant)
   in
-  let () =
-    match login_result with
-    | Ok _ -> print_endline [%string "Bot is logged in and running."]
-    | Error _ -> print_endline [%string "Error logging bot in."]
-  in
-  let submit request =
-    Option.iter counts ~f:(fun (c : Call_counts.t) ->
-      c.submits <- c.submits + 1);
-    Rpc.Rpc.dispatch_exn Rpc_protocol.submit_order_rpc connection request
-  in
-  let cancel client_order_id =
-    Option.iter counts ~f:(fun (c : Call_counts.t) ->
-      c.cancels <- c.cancels + 1);
-    Rpc.Rpc.dispatch_exn
-      Rpc_protocol.cancel_order_rpc
-      connection
-      client_order_id
-  in
-  let bot =
-    Bot_runtime.create
-      spec.bot
-      spec.config
-      ~participant:spec.participant
-      ~oracle
-      ~rng:(Splittable_random.of_int spec.rng_seed)
-      ~submit
-      ~cancel
-      ~tick_interval:spec.tick_interval
-  in
-  let%bind session_feed, _metadata =
-    Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc connection ()
-  in
-  (* Only subscribe to market data if this bot actually consumes it. A bot
-     that opts out (e.g. a pure order/cancel spammer) then never receives MD,
-     saving the subscription and the per-event [feed_event] work. *)
-  let%bind market_data_feeds =
-    if spec.is_marketdata_consumer
-    then (
-      let%map md_pipe, _metadata =
-        Rpc.Pipe_rpc.dispatch_exn
-          Rpc_protocol.market_data_rpc
-          connection
-          spec.symbols
-      in
-      [ md_pipe ])
-    else return []
-  in
-  let output = Pipe.interleave (session_feed :: market_data_feeds) in
-  don't_wait_for (Pipe.iter output ~f:(Bot_runtime.feed_event bot));
-  print_endline
-    [%string "[scenario] starting bot %{spec.participant#Participant}"];
-  don't_wait_for (Bot_runtime.start bot);
-  return ()
+  match login_result with
+  | Error error ->
+    let%bind () = Rpc.Connection.close connection in
+    return
+      (Or_error.error_s
+         [%message
+           "bot login failed"
+             ~participant:(spec.participant : Participant.t)
+             (error : Error.t)])
+  | Ok (_ : Participant.t) ->
+    let submit request =
+      Option.iter counts ~f:(fun (c : Call_counts.t) ->
+        c.submits <- c.submits + 1);
+      Rpc.Rpc.dispatch_exn Rpc_protocol.submit_order_rpc connection request
+    in
+    let cancel client_order_id =
+      Option.iter counts ~f:(fun (c : Call_counts.t) ->
+        c.cancels <- c.cancels + 1);
+      Rpc.Rpc.dispatch_exn
+        Rpc_protocol.cancel_order_rpc
+        connection
+        client_order_id
+    in
+    let bot =
+      Bot_runtime.create
+        spec.bot
+        spec.config
+        ~participant:spec.participant
+        ~oracle
+        ~rng:(Splittable_random.of_int spec.rng_seed)
+        ~submit
+        ~cancel
+        ~tick_interval:spec.tick_interval
+    in
+    let%bind session_feed, _metadata =
+      Rpc.Pipe_rpc.dispatch_exn Rpc_protocol.session_feed_rpc connection ()
+    in
+    (* Only subscribe to market data if this bot actually consumes it. A bot
+       that opts out (e.g. a pure order/cancel spammer) then never receives
+       MD, saving the subscription and the per-event [feed_event] work. *)
+    let%bind market_data_feeds =
+      if spec.is_marketdata_consumer
+      then (
+        let%map md_pipe, _metadata =
+          Rpc.Pipe_rpc.dispatch_exn
+            Rpc_protocol.market_data_rpc
+            connection
+            spec.symbols
+        in
+        [ md_pipe ])
+      else return []
+    in
+    let feed = Pipe.interleave (session_feed :: market_data_feeds) in
+    let feed_pump = Pipe.iter feed ~f:(Bot_runtime.feed_event bot) in
+    (* Retained in the handle for teardown, and ALSO [don't_wait_for]'d so an
+       escaping exception is routed to the enclosing monitor instead of
+       silently parked in the handle. *)
+    don't_wait_for feed_pump;
+    print_endline
+      [%string "[scenario] starting bot %{spec.participant#Participant}"];
+    let tick_loop = Bot_runtime.start bot in
+    don't_wait_for tick_loop;
+    return
+      (Ok
+         { Bot_handle.participant = spec.participant
+         ; kind = Bot_runtime.bot_name bot
+         ; symbols = spec.symbols
+         ; connection
+         ; runtime = bot
+         ; tick_loop
+         ; feed
+         ; feed_pump
+         ; started_at = Time_ns.now ()
+         })
 ;;
 
-let run ?(count_orders = false) (config : Scenario_config.t) ~port ~seed =
+let run
+  ?(count_orders = false)
+  ?interactive
+  (config : Scenario_config.t)
+  ~port
+  ~seed
+  =
   print_endline
     [%string
       "[scenario] starting %{config.name} on port %{port#Int} \
@@ -131,11 +157,28 @@ let run ?(count_orders = false) (config : Scenario_config.t) ~port ~seed =
   (* Background tasks. *)
   don't_wait_for (Fundamental_oracle.start oracle);
   don't_wait_for (News_injector.start injector);
+  (* Scenario bots and (soon) console-spawned bots share one roster, so an
+     interactive session can kill or crash the bots the scenario booted. *)
+  let registry = Bot_registry.create () in
   let%bind () =
-    Deferred.List.iter
-      ~how:`Parallel
-      config.bots
-      ~f:(start_bot ~where_to_connect ~oracle ~counts)
+    Deferred.List.iter ~how:`Parallel config.bots ~f:(fun spec ->
+      match%map start_bot ?counts ~where_to_connect ~oracle spec with
+      | Ok handle ->
+        (match Bot_registry.add registry handle with
+         | Ok () -> ()
+         | Error error -> print_s [%sexp (error : Error.t)])
+      | Error error -> print_s [%sexp (error : Error.t)])
   in
+  (* The console comes up only after every scenario bot has registered, so
+     its very first [list] already shows them. *)
+  Option.iter interactive ~f:(fun menu ->
+    don't_wait_for
+      (Console.start
+         ~registry
+         ~menu
+         ~directory:config.directory
+         ~spawn:(fun spec ->
+           start_bot ?counts ~where_to_connect ~oracle spec)
+         ~shutdown:(fun () -> Exchange_server.close server)));
   Exchange_server.close_finished server
 ;;

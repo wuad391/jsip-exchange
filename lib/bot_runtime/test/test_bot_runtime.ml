@@ -138,3 +138,82 @@ let%expect_test "fundamental price is read from the oracle" =
   [%expect {| 15000 |}];
   return ()
 ;;
+
+(* ----- stopping the tick loop ----- *)
+
+(* A bot that counts its lifecycle calls, for the stop tests. *)
+module Counting_bot = struct
+  module Config = struct
+    type t =
+      { mutable starts : int
+      ; mutable ticks : int
+      }
+  end
+
+  let name = "counting"
+
+  let on_start (cfg : Config.t) _ctx =
+    cfg.starts <- cfg.starts + 1;
+    return ()
+  ;;
+
+  let on_tick (cfg : Config.t) _ctx =
+    cfg.ticks <- cfg.ticks + 1;
+    return ()
+  ;;
+
+  let on_event _ _ctx _event = return ()
+end
+
+let make_counting_bot () =
+  let oracle = Fundamental_oracle.create oracle_config ~seed:1 in
+  let config : Counting_bot.Config.t = { starts = 0; ticks = 0 } in
+  let bot =
+    Bot_runtime.create
+      (module Counting_bot)
+      config
+      ~participant:alice
+      ~oracle
+      ~rng:(Splittable_random.of_int 0)
+      ~submit:(fun _req -> return (Ok ()))
+      ~cancel:(fun _id -> return (Ok ()))
+        (* Deliberately enormous: these tests must win the loop's race via
+           [stop], never by an actual tick firing. *)
+      ~tick_interval:(Time_ns.Span.of_day 1.0)
+  in
+  bot, config
+;;
+
+let%expect_test "stop before start: start returns at once, running nothing" =
+  let bot, config = make_counting_bot () in
+  Bot_runtime.stop bot;
+  let%bind () = Bot_runtime.start bot in
+  print_s [%message (config.starts : int) (config.ticks : int)];
+  [%expect {| ((config.starts 0) (config.ticks 0)) |}];
+  return ()
+;;
+
+let%expect_test "stop wakes a sleeping tick loop immediately" =
+  let bot, config = make_counting_bot () in
+  let started = Bot_runtime.start bot in
+  (* Let [on_start] run and the loop settle into its (day-long) sleep. *)
+  let%bind () = Scheduler.yield_until_no_jobs_remain () in
+  print_s
+    [%message (config.starts : int) (Deferred.is_determined started : bool)];
+  [%expect
+    {| ((config.starts 1) ("Deferred.is_determined started" false)) |}];
+  Bot_runtime.stop bot;
+  (* Idempotent: a second stop is a no-op. *)
+  Bot_runtime.stop bot;
+  let%bind () = started in
+  print_s [%message (config.ticks : int)];
+  [%expect {| (config.ticks 0) |}];
+  return ()
+;;
+
+let%expect_test "bot_name is the strategy label, not the participant" =
+  let bot, _config = make_counting_bot () in
+  print_endline (Bot_runtime.bot_name bot);
+  [%expect {| counting |}];
+  return ()
+;;

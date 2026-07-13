@@ -18,6 +18,7 @@ let color_reject = "#f85149"
 let color_cancel_reject = "#f0883e"
 let color_bbo = "#58a6ff"
 let color_trade = "#bc8cff"
+let color_session = "#8b949e"
 
 let symbol_of_event : Exchange_event.t -> Symbol_id.t option = function
   | Order_accept { order_id = _; participant = _; request } ->
@@ -38,6 +39,7 @@ let symbol_of_event : Exchange_event.t -> Symbol_id.t option = function
     None
   | Best_bid_offer_update { symbol; bbo = _ } -> Some symbol
   | Trade_report { symbol; price = _; size = _ } -> Some symbol
+  | Session_status { participant = _; status = _ } -> None
 ;;
 
 type feed_row =
@@ -120,6 +122,10 @@ let format ?(directory = Symbol_directory.empty) (event : Exchange_event.t)
       let symbol = render_symbol symbol in
       let size = Size.to_int size in
       [%string "TRADE %{symbol} %{price#Price} x%{size#Int}"], color_trade
+    | Session_status { participant; status } ->
+      ( [%string
+          "SESSION %{participant#Participant} %{status#Session_status}"]
+      , color_session )
   in
   { symbol = symbol_of_event event; text; color }
 ;;

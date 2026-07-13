@@ -15,8 +15,8 @@ open Jsip_types
 open Jsip_symbol_directory
 
 (** The symbol an event pertains to, or [None] for events that carry no
-    symbol (only {!Jsip_types.Exchange_event.Cancel_reject}). Drives the
-    feed's per-symbol tab filtering. *)
+    symbol ([Cancel_reject] and [Session_status]). Drives the feed's
+    per-symbol tab filtering. *)
 val symbol_of_event : Exchange_event.t -> Symbol_id.t option
 
 (** One rendered feed line: the (optional) symbol it belongs to, the display

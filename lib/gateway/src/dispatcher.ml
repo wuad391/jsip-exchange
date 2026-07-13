@@ -16,24 +16,6 @@ let create () =
   }
 ;;
 
-let clean_up_session t session =
-  let participant = Session.participant session in
-  Hashtbl.remove t.sessions participant;
-  return (Session.close session)
-;;
-
-let set_up_session t participant =
-  let has_active_session = Hashtbl.find t.sessions participant in
-  let%bind () =
-    match has_active_session with
-    | None -> return ()
-    | Some old_session -> clean_up_session t old_session
-  in
-  let new_session = Session.create participant in
-  let () = Hashtbl.add_exn t.sessions ~key:participant ~data:new_session in
-  return ()
-;;
-
 let subscribe_market_data t symbols =
   let reader, writer = Pipe.create () in
   (* Register the same writer in every requested symbol's bag. A per-symbol
@@ -132,9 +114,40 @@ let dispatch_event t (event : Exchange_event.t) =
     push_to_session t resting_participant event
   | Cancel_reject { participant; client_order_id = _; reason = _ } ->
     push_to_session t participant event
+  | Session_status { participant = _; status = _ } ->
+    (* Operator-facing telemetry: already pushed to every audit subscriber
+       above, and deliberately not echoed to the participant's own session
+       feed or to market data. *)
+    ()
 ;;
 
 let dispatch t events = List.iter events ~f:(dispatch_event t)
+
+(* Session set-up and clean-up live below [dispatch_event] because each
+   announces itself with a [Session_status] event — presence telemetry for
+   the audit feed (and so the monitor), emitted once the registry already
+   reflects the new state. *)
+
+let clean_up_session t session =
+  let participant = Session.participant session in
+  Hashtbl.remove t.sessions participant;
+  Session.close session;
+  dispatch_event t (Session_status { participant; status = Disconnected });
+  return ()
+;;
+
+let set_up_session t participant =
+  let has_active_session = Hashtbl.find t.sessions participant in
+  let%bind () =
+    match has_active_session with
+    | None -> return ()
+    | Some old_session -> clean_up_session t old_session
+  in
+  let new_session = Session.create participant in
+  let () = Hashtbl.add_exn t.sessions ~key:participant ~data:new_session in
+  dispatch_event t (Session_status { participant; status = Connected });
+  return ()
+;;
 
 let audit_queue_lengths t =
   Bag.fold t.audit_subscribers ~init:[] ~f:(fun acc writer ->

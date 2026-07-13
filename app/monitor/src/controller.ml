@@ -136,6 +136,7 @@ let handle_browsing_char t = function
   | '1' -> toggle_category t Order_lifecycle
   | '2' -> toggle_category t Trade
   | '3' -> toggle_category t Market_data
+  | '4' -> toggle_category t Session
   | _ -> t
 ;;
 
@@ -213,7 +214,7 @@ let display t : Display.t =
   in
   let footer =
     match t.mode with
-    | Browsing -> "q=quit  r=reset  1-3=categories  /=substring"
+    | Browsing -> "q=quit  r=reset  1-4=categories  /=substring"
     | Editing_substring _ ->
       "Enter=commit  ESC=cancel  Backspace=delete  (other keys append)"
   in
@@ -240,6 +241,7 @@ let display t : Display.t =
       [ cat_chip '1' Order_lifecycle
       ; cat_chip '2' Trade
       ; cat_chip '3' Market_data
+      ; cat_chip '4' Session
       ]
   ; substring_field
   ; visible_events

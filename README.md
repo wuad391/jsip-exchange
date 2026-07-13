@@ -142,9 +142,9 @@ libraries into complete programs.
 | `app/server`          | Exchange server that listens for RPC connections on a TCP port. Supports `-seed-market-maker` (pre-seed the book) and `-trade-back-and-forth` (two MMs trading in a loop to generate sustained traffic).                                    |
 | `app/client`          | Interactive client that connects to the server. Supports `BUY`, `SELL`, `BOOK`, and `SUBSCRIBE` commands.                                                                                                                                   |
 | `app/market_maker`    | Library for a bot that seeds the book with resting orders around a fair value.                                                                                                                                                              |
-| `app/bots`            | Library where trading bots live. One module per bot; currently empty — we'll be adding bots as we build out the exchange.                                                                                                                   |
-| `app/scenarios`       | Library where named scenarios live. One module per scenario (`Calm_day`, `Active_day`, `Earnings_shock`, `Flash_crash`); each satisfies `Scenario.S` and is registered in `Jsip_scenarios.all`.                                             |
-| `app/scenario_runner` | CLI that picks a scenario from `Jsip_scenarios`, starts a server, instantiates a `Fundamental_oracle`, schedules `News_injector` events, and starts the scenario's bots.                                                                    |
+| `app/bots`            | Library where trading bots live. One module per bot: noise trader, momentum trader, spammer (resource-exhaustion and pump-and-dump), cancel storm, book filler, slow consumer.                                                              |
+| `app/scenarios`       | Library where named scenarios live. One module per scenario (`Calm_day`, `Active_day`, `Earnings_shock`, `Flash_crash`, and more — plus the empty `Sandbox` for the console); each satisfies `Scenario.S` and is registered in `Jsip_scenarios.all`. Also home of `Default_bot_menu`, the kinds the console can spawn. |
+| `app/scenario_runner` | CLI that picks a scenario from `Jsip_scenarios`, starts a server, instantiates a `Fundamental_oracle`, schedules `News_injector` events, and starts the scenario's bots. With `-interactive`, a stdin console spawns, kills, and crashes bots while the run goes.                                                       |
 | `app/monitor`         | Bonsai_term TUI (text-based user interface — a styled terminal app, similar in spirit to `htop` or `vim`): subscribes to the exchange's audit log and renders a filterable, color-coded stream of every event the matching engine produces. |
 
 ### Test Harness (`lib/test_harness/src/`)
@@ -161,11 +161,10 @@ Shared infrastructure for all tests:
   events.
 - **`E2e_helpers`**: Helpers for async end-to-end tests that spin up a
   real server on an OS-assigned port: `with_server`, `connect_as`,
-  `connection`, `rpc_submit`, `rpc_book`. The participant-targeted
-  events triggered by an `rpc_submit` currently surface as `[for
-<participant>]` lines on stdout, since the session feed RPC isn't
-  wired up yet — once it is, `rpc_submit` will drain those events from
-  the session feed and return them.
+  `connection`, `rpc_submit`, `rpc_book`, `rpc_cancel`,
+  `rpc_cancel_all`. `connect_as` logs in and drains the session feed,
+  printing each participant-targeted event as a `[for <participant>]`
+  line — that's how e2e expect tests observe the engine's responses.
 
 ## Building and running
 
@@ -190,10 +189,12 @@ dune exec app/server/bin/main.exe -- -port 12345 -trade-back-and-forth
 # Run an interactive order-entry client
 dune exec app/client/bin/main.exe -- -port 12345 -name Alice
 
-# Boot a named scenario (exchange + bots + simulated news) on one process.
-# NOTE: the named scenarios are currently TODO stubs; filling them in is
-# part of the project, so this will raise until they're implemented.
+# Boot a named scenario (exchange + bots + simulated news) in one process
 dune exec app/scenario_runner/bin/main.exe -- -scenario calm-day -port 12345 -seed 0
+
+# Or boot the empty sandbox with an interactive console: spawn, kill, and
+# crash bots while the exchange runs (composes with any -scenario too)
+dune exec app/scenario_runner/bin/main.exe -- -interactive -port 12345
 
 # Watch the exchange's audit log in a filterable TUI
 dune exec app/monitor/bin/main.exe -- -host localhost -port 12345
@@ -214,21 +215,32 @@ SUBSCRIBE AAPL                   Stream market data updates
 
 ### What you'll see when you submit orders
 
-The exchange does not yet have a way to push participant-targeted events
-(acceptance, fills, cancellations, rejections) back to a specific client
-— wiring up the session feed RPC and the login flow it depends on is a
-week-2 exercise. The `Session` module and the dispatcher's routing logic
-already exist; what's missing is the RPC that hands a session's pipe
-back to its owner.
+Participant-targeted events (acceptance, fills, cancellations,
+rejections) arrive on your session feed — the client subscribes to it at
+login and prints each event as it lands. Public market-data events (BBO
+updates and trade reports) are a separate channel: use the `SUBSCRIBE
+<symbol>` command to attach a per-symbol stream and see the public side
+of the exchange's responses.
 
-For now, the `Dispatcher`'s `push_to_session` stub prints those events
-on the server process's stdout, prefixed with `[for <participant>]`. Run
-the server in one terminal so you can see them as they happen.
+### Console commands (`-interactive`)
 
-Public market-data events (BBO updates and trade reports) _do_ already
-have a real push channel: use the `SUBSCRIBE <symbol>` command in the
-client to attach a per-symbol stream so you see the public side of
-the exchange's responses to your orders.
+```
+spawn <kind> [<name>] [<SYM>...] [key=value ...]
+                     start a bot (kinds: mm, noise, momentum, spammer,
+                     cancel-storm; `kinds` lists each one's knobs)
+kill <name>          cancel all its orders, then disconnect it
+crash <name>         disconnect only — its ghost orders stay on the book
+list                 live bots with kind, symbols, and uptime
+kinds                spawnable kinds and their knobs
+quit                 kill every bot and shut the exchange down
+```
+
+On the monitor, a `kill` shows up as a burst of `MASS_CANCEL` events
+followed by `SESSION <name> disconnected`; a `crash` shows only the
+disconnect, and the bot's stale quotes linger — exactly the failure mode
+real exchanges' cancel-on-disconnect feature exists to prevent. Try
+`-scenario calm-day -interactive`, then `kill market-maker` mid-run and
+watch the book empty out.
 
 ## Testing
 

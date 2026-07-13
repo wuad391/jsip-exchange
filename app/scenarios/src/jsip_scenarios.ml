@@ -1,4 +1,5 @@
 open! Core
+module Default_bot_menu = Default_bot_menu
 module Scenario = Scenario
 
 let all : (module Scenario.S) list =
@@ -12,6 +13,7 @@ let all : (module Scenario.S) list =
   ; (module Book_filler_storm)
   ; (module Spam_storm)
   ; (module Slow_consumer)
+  ; (module Sandbox)
   ]
 ;;
 

@@ -37,7 +37,7 @@ let%expect_test "events appear in insertion order" =
   print_lines (Event_log.visible_lines log);
   [%expect
     {|
-    count=7
+    count=8
     ACCEPTED id=1 0 BUY 100@$150.00 DAY
     FILL fill_id=1 0 $150.00 x100 aggressor=2(Alice w/ client order ID = 4) BUY resting=1(Bob w/ client order ID = 3)
     CANCELLED id=1 0 remaining=50 reason=IOC_REMAINDER
@@ -45,6 +45,7 @@ let%expect_test "events appear in insertion order" =
     REJECTED CANCEL because Cannot cancel non-existent order
     BBO 0 bid=$149.90 x100 ask=$150.10 x200
     TRADE 0 $150.00 x100
+    SESSION Alice connected
     |}]
 ;;
 
@@ -69,6 +70,7 @@ let%expect_test "with a directory, lines render symbol names" =
     REJECTED CANCEL because Cannot cancel non-existent order
     BBO AAPL bid=$149.90 x100 ask=$150.10 x200
     TRADE AAPL $150.00 x100
+    SESSION Alice connected
     |}]
 ;;
 
@@ -172,6 +174,7 @@ let%expect_test "each event variant renders with its assigned color" =
     [orange] REJECTED CANCEL because Cannot cancel non-existent order
     [blue] BBO 0 bid=$149.90 x100 ask=$150.10 x200
     [magenta] TRADE 0 $150.00 x100
+    [default] SESSION Alice connected
     |}]
 ;;
 

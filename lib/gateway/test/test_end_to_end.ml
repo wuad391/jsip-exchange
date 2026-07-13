@@ -413,6 +413,52 @@ let%expect_test "e2e: audit log subscriber sees full unfiltered stream \
     return ())
 ;;
 
+(* ---------------------------------------------------------------- *)
+(* Session-status (presence) tests *)
+(* ---------------------------------------------------------------- *)
+
+(* Await exactly one audit event and print it. Blocking on the pipe (rather
+   than yielding and hoping) makes the test deterministic: the login /
+   disconnect happened on the server across a real network round-trip, and
+   this rendezvouses with its announcement. *)
+let read_one_audit_event reader =
+  match%bind Pipe.read_exactly reader ~num_values:1 with
+  | `Exactly events ->
+    Queue.iter events ~f:(fun event ->
+      print_endline [%string "[AUDIT] %{Protocol.format_event event}"]);
+    return ()
+  | `Eof | `Fewer _ ->
+    print_endline "[AUDIT] unexpected end of stream";
+    return ()
+;;
+
+let%expect_test "e2e: audit log announces logins and disconnects" =
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
+    let%bind auditor =
+      connect_as ~port ~login:false (Participant.of_string "Auditor")
+    in
+    let%bind result =
+      Rpc.Pipe_rpc.dispatch
+        Rpc_protocol.audit_log_rpc
+        (connection auditor)
+        ()
+    in
+    let reader =
+      match result with
+      | Ok (Ok (reader, _id)) -> reader
+      | _ -> failwith "subscribe failed"
+    in
+    let%bind alice = connect_as ~port Harness.alice in
+    let%bind () = read_one_audit_event reader in
+    [%expect {| [AUDIT] SESSION Alice connected |}];
+    let%bind () = Rpc.Connection.close (connection alice) in
+    let%bind () = read_one_audit_event reader in
+    [%expect {| [AUDIT] SESSION Alice disconnected |}];
+    (* Stop reading before teardown so nothing races the test's end. *)
+    Pipe.close_read reader;
+    return ())
+;;
+
 let%expect_test "dispatcher: closing a subscriber's reader removes the \
                  writer"
   =
@@ -448,4 +494,96 @@ let%expect_test "dispatcher: closing a subscriber's reader removes the \
           (Dispatcher.For_testing.audit_subscriber_count dispatcher : int)];
   [%expect {| ("after closing reader_b" (count 0)) |}];
   return ()
+;;
+
+(* ---------------------------------------------------------------- *)
+(* Cancel-all tests *)
+(* ---------------------------------------------------------------- *)
+
+let%expect_test "e2e: cancel-all sweeps only the caller's resting orders" =
+  with_server ~num_symbols:2 (fun ~server:_ ~port ->
+    let%bind alice = connect_as ~port Harness.alice in
+    let%bind bob = connect_as ~port Harness.bob in
+    let%bind () =
+      rpc_submit alice (Harness.buy ~price_cents:15000 ~client_order_id:1 ())
+    in
+    let%bind () =
+      rpc_submit alice (Harness.buy ~price_cents:14900 ~client_order_id:2 ())
+    in
+    let%bind () =
+      rpc_submit
+        alice
+        (Harness.sell
+           ~price_cents:20100
+           ~symbol:Harness.tsla
+           ~client_order_id:3
+           ())
+    in
+    let%bind () =
+      rpc_submit bob (Harness.sell ~price_cents:15100 ~client_order_id:1 ())
+    in
+    [%expect
+      {|
+      [for Alice] ACCEPTED id=1 0 BUY 100@$150.00 DAY
+      [for Alice] ACCEPTED id=2 0 BUY 100@$149.00 DAY
+      [for Alice] ACCEPTED id=3 1 SELL 100@$201.00 DAY
+      [for Bob] ACCEPTED id=4 0 SELL 100@$151.00 DAY
+      |}];
+    let%bind count = rpc_cancel_all alice in
+    print_s [%sexp (count : int Or_error.t)];
+    [%expect
+      {|
+      [for Alice] CANCELLED id=1 0 remaining=100 reason=MASS_CANCEL
+      [for Alice] CANCELLED id=2 0 remaining=100 reason=MASS_CANCEL
+      [for Alice] CANCELLED id=3 1 remaining=100 reason=MASS_CANCEL
+      (Ok 3)
+      |}];
+    (* bob's book survived alice's sweep; a second sweep finds nothing. *)
+    let%bind book = rpc_book bob Harness.aapl in
+    print_endline (Option.value_exn book |> Book.to_string);
+    let%bind count = rpc_cancel_all alice in
+    print_s [%sexp (count : int Or_error.t)];
+    [%expect
+      {|
+      === 0 ===
+        BIDS: (empty)
+        ASKS:
+          $151.00 x100
+        BBO: - / $151.00 x100
+      (Ok 0)
+      |}];
+    return ())
+;;
+
+let%expect_test "e2e: cancel-all is ordered behind an in-flight submit" =
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
+    let%bind alice = connect_as ~port Harness.alice in
+    (* Dispatch a submit and, WITHOUT awaiting it, a cancel-all on the same
+       connection: both ride the server's single ordered request queue, so
+       the sweep must catch the order the submit just placed — no
+       resurrection race where a late accept survives the kill. *)
+    let submitted =
+      rpc_submit alice (Harness.buy ~price_cents:15000 ~client_order_id:1 ())
+    in
+    let%bind count = rpc_cancel_all alice in
+    let%bind () = submitted in
+    print_s [%sexp (count : int Or_error.t)];
+    [%expect
+      {|
+      [for Alice] ACCEPTED id=1 0 BUY 100@$150.00 DAY
+      [for Alice] CANCELLED id=1 0 remaining=100 reason=MASS_CANCEL
+      (Ok 1)
+      |}];
+    return ())
+;;
+
+let%expect_test "e2e: cancel-all requires login" =
+  with_server ~num_symbols:1 (fun ~server:_ ~port ->
+    let%bind stranger =
+      connect_as ~port ~login:false (Participant.of_string "Stranger")
+    in
+    let%bind count = rpc_cancel_all stranger in
+    print_s [%sexp (count : int Or_error.t)];
+    [%expect {| (Error "User is not logged in.") |}];
+    return ())
 ;;

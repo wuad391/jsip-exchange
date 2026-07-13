@@ -4,6 +4,7 @@ type t =
   | Participant_requested
   | Ioc_remainder
   | End_of_day
+  | Mass_cancel
 [@@deriving
   sexp
   , bin_io

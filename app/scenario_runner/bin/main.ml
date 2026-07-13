@@ -15,8 +15,16 @@ let command =
     ~summary:
       "Run a JSIP scenario: boots an exchange and a configured ecosystem of \
        bots."
-    (let%map_open.Command (module S : Scenario.S) =
-       flag "-scenario" (required scenario_arg) ~doc:"NAME scenario to run"
+    (let%map_open.Command scenario =
+       flag
+         "-scenario"
+         (optional scenario_arg)
+         ~doc:"NAME scenario to run (with -interactive, defaults to sandbox)"
+     and interactive =
+       flag
+         "-interactive"
+         no_arg
+         ~doc:" console on stdin to spawn/kill/crash bots as the run goes"
      and port =
        flag
          "-port"
@@ -34,8 +42,26 @@ let command =
          ~doc:" report total submit/cancel counts at shutdown"
      in
      fun () ->
+       let (module S : Scenario.S) =
+         match scenario, interactive with
+         | Some scenario, _ -> scenario
+         | None, true ->
+           (* The empty playground: -interactive with no scenario means "give
+              me an exchange and let me drive". *)
+           ok_exn (find_by_name "sandbox")
+         | None, false ->
+           failwith
+             "-scenario is required (or pass -interactive to get the \
+              sandbox)"
+       in
        let config = S.configure () in
-       Runner.run ~count_orders config ~port ~seed)
+       Runner.run
+         ~count_orders
+         ?interactive:
+           (Option.some_if interactive Jsip_scenarios.Default_bot_menu.all)
+         config
+         ~port
+         ~seed)
     ~behave_nicely_in_pipeline:false
 ;;
 

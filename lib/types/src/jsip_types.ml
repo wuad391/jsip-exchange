@@ -8,6 +8,7 @@ module Order = Order
 module Order_id = Order_id
 module Participant = Participant
 module Price = Price
+module Session_status = Session_status
 module Side = Side
 module Size = Size
 module Symbol = Symbol

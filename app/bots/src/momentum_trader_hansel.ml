@@ -217,7 +217,7 @@ let on_event (config : Config.t) context (event : Exchange_event.t) =
      if Symbol_id.equal fill.symbol config.symbol
      then apply_fill config context fill
    | Order_accept _ | Order_cancel _ | Order_reject _ | Cancel_reject _
-   | Best_bid_offer_update _ ->
+   | Best_bid_offer_update _ | Session_status _ ->
      ());
   Deferred.unit
 ;;

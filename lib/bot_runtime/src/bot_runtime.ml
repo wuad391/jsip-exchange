@@ -47,6 +47,7 @@ type t =
   { context : Context.t
   ; bot : packed_bot
   ; tick_interval : Time_ns.Span.t
+  ; stop : unit Ivar.t
   }
 
 let create
@@ -68,10 +69,21 @@ let create
     ; dispatch_cancel = cancel
     }
   in
-  { context; bot = Packed { bot = bot_module; config }; tick_interval }
+  { context
+  ; bot = Packed { bot = bot_module; config }
+  ; tick_interval
+  ; stop = Ivar.create ()
+  }
 ;;
 
 let participant t = t.context.participant
+
+let bot_name t =
+  let (Packed { bot = (module B); config = _ }) = t.bot in
+  B.name
+;;
+
+let stop t = Ivar.fill_if_empty t.stop ()
 
 let feed_event t event =
   let (Packed { bot = (module B); config }) = t.bot in
@@ -80,13 +92,26 @@ let feed_event t event =
 
 let start t =
   let (Packed { bot = (module B); config }) = t.bot in
-  let%bind () = B.on_start config t.context in
-  let rec loop () =
-    let%bind () = Clock_ns.after t.tick_interval in
-    let%bind () = B.on_tick config t.context in
-    loop ()
-  in
-  loop ()
+  if Ivar.is_full t.stop
+  then return ()
+  else (
+    let%bind () = B.on_start config t.context in
+    (* Race each inter-tick sleep against the stop signal, so [stop] wakes a
+       sleeping loop immediately instead of waiting out the interval — then
+       re-check before ticking, since the sleep can also win the race after
+       [stop] was called. *)
+    let rec loop () =
+      let%bind () =
+        Deferred.any_unit
+          [ Clock_ns.after t.tick_interval; Ivar.read t.stop ]
+      in
+      if Ivar.is_full t.stop
+      then return ()
+      else (
+        let%bind () = B.on_tick config t.context in
+        loop ())
+    in
+    loop ())
 ;;
 
 module For_testing = struct

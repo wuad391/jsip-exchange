@@ -355,7 +355,7 @@ let on_event (config : Config.t) context (event : Exchange_event.t) =
    | Best_bid_offer_update { symbol; bbo } ->
      Hashtbl.set config.bbo_cache ~key:symbol ~data:bbo
    | Order_accept _ | Fill _ | Order_cancel _ | Order_reject _
-   | Cancel_reject _ | Trade_report _ ->
+   | Cancel_reject _ | Trade_report _ | Session_status _ ->
      ());
   (match config.behavior with
    | Resource_exhaustion _ -> ()
@@ -372,7 +372,7 @@ let on_event (config : Config.t) context (event : Exchange_event.t) =
         if Symbol_id.equal fill.symbol params.target_symbol
         then apply_pump_fill context params fill
       | Order_accept _ | Order_cancel _ | Order_reject _ | Cancel_reject _
-      | Trade_report _ ->
+      | Trade_report _ | Session_status _ ->
         ()));
   Deferred.unit
 ;;

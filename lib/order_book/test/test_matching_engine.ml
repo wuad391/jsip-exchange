@@ -603,3 +603,110 @@ let%expect_test "resting_order_counts across symbols, a fill, and a cancel" =
   counts ();
   [%expect {| ((Bob 1)) |}]
 ;;
+
+(* ================================================================ *)
+(* Cancel-all (mass cancel) *)
+(* ================================================================ *)
+
+let cancel_all ?(participant = Harness.alice) t =
+  let count, events =
+    Matching_engine.cancel_all_for_participant (Harness.engine t) participant
+  in
+  print_endline [%string "cancelled %{count#Int}"];
+  Harness.print_events events
+;;
+
+let%expect_test "cancel-all sweeps every resting order across symbols" =
+  let t = Harness.create () in
+  submit_ t (Harness.buy ~price_cents:15000 ());
+  submit_ t (Harness.buy ~price_cents:14900 ());
+  submit_ t (Harness.sell ~price_cents:15200 ~symbol:Harness.tsla ());
+  (* One MASS_CANCEL per order, in submission order; then exactly one BBO
+     update per touched symbol, not one per cancel. *)
+  cancel_all t;
+  [%expect
+    {|
+    ACCEPTED id=1 0 BUY 100@$150.00 DAY
+    ACCEPTED id=2 0 BUY 100@$149.00 DAY
+    ACCEPTED id=3 1 SELL 100@$152.00 DAY
+    cancelled 3
+    CANCELLED id=1 0 remaining=100 reason=MASS_CANCEL
+    CANCELLED id=2 0 remaining=100 reason=MASS_CANCEL
+    CANCELLED id=3 1 remaining=100 reason=MASS_CANCEL
+    BBO 0 bid=- ask=-
+    BBO 1 bid=- ask=-
+    |}]
+;;
+
+let%expect_test "cancel-all reports the unfilled remainder of a partial fill"
+  =
+  let t = Harness.create () in
+  submit_ t (Harness.buy ~price_cents:15000 ());
+  submit_
+    ~participant:Harness.bob
+    t
+    (Harness.sell ~price_cents:15000 ~size:40 ());
+  cancel_all t;
+  [%expect
+    {|
+    ACCEPTED id=1 0 BUY 100@$150.00 DAY
+    ACCEPTED id=2 0 SELL 40@$150.00 DAY
+    FILL fill_id=1 0 $150.00 x40 aggressor=2(Bob w/ client order ID = 3) SELL resting=1(Alice w/ client order ID = 2)
+    cancelled 1
+    CANCELLED id=1 0 remaining=60 reason=MASS_CANCEL
+    BBO 0 bid=- ask=-
+    |}]
+;;
+
+let%expect_test "cancel-all touches only the given participant, emits no \
+                 BBO event when the touch is unchanged, and finds nothing \
+                 on a second sweep"
+  =
+  let t = Harness.create () in
+  (* alice's bid rests behind bob's better one, so sweeping alice leaves the
+     best bid (and so the BBO) untouched. *)
+  submit_ t (Harness.buy ~price_cents:14900 ());
+  submit_ ~participant:Harness.bob t (Harness.buy ~price_cents:15000 ());
+  cancel_all t;
+  cancel_all t;
+  print_endline "--- bob's order survived alice's sweep ---";
+  Harness.print_events
+    (Matching_engine.cancel
+       (Harness.engine t)
+       { participant = Harness.bob
+       ; client_order_id = Harness.cancel ~client_order_id:3
+       });
+  [%expect
+    {|
+    ACCEPTED id=1 0 BUY 100@$149.00 DAY
+    ACCEPTED id=2 0 BUY 100@$150.00 DAY
+    cancelled 1
+    CANCELLED id=1 0 remaining=100 reason=MASS_CANCEL
+    cancelled 0
+    --- bob's order survived alice's sweep ---
+    CANCELLED id=2 0 remaining=100 reason=PARTICIPANT_REQUESTED
+    BBO 0 bid=- ask=-
+    |}]
+;;
+
+let%expect_test "cancel-all finds nothing after IOC remainders and full \
+                 fills — neither ever rests"
+  =
+  let t = Harness.create () in
+  submit_
+    ~participant:Harness.bob
+    t
+    (Harness.sell ~price_cents:15000 ~size:30 ());
+  (* alice's IOC fills 30 and its remainder is auto-cancelled at submit, so
+     nothing of hers ever rests. *)
+  submit_ t (Harness.buy ~price_cents:15000 ~time_in_force:Ioc ());
+  cancel_all t;
+  [%expect
+    {|
+    ACCEPTED id=1 0 SELL 30@$150.00 DAY
+    ACCEPTED id=2 0 BUY 100@$150.00 IOC
+    FILL fill_id=1 0 $150.00 x30 aggressor=2(Alice w/ client order ID = 3) BUY resting=1(Bob w/ client order ID = 2)
+    CANCELLED id=2 0 remaining=70 reason=IOC_REMAINDER
+    cancelled 0
+    |}]
+;;

@@ -11,4 +11,7 @@ type t =
   | Ioc_remainder
   (** The unfilled portion of an IOC order was automatically cancelled. *)
   | End_of_day (** Day orders are cancelled when the trading session ends. *)
+  | Mass_cancel
+  (** Swept up by a cancel-all: every resting order the participant had was
+      cancelled in one request — e.g. an interactive bot being killed. *)
 [@@deriving sexp, bin_io, compare, equal, hash, string]

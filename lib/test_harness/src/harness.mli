@@ -115,7 +115,8 @@ val submit_ : ?participant:Participant.t -> t -> Order.Request.t -> unit
 
 (** [sample_events] contains exactly one of each [Exchange_event.t] variant,
     in declaration order: [Order_accept], [Fill], [Order_cancel],
-    [Order_reject], [Cancel_reject], [Best_bid_offer_update], [Trade_report]. *)
+    [Order_reject], [Cancel_reject], [Best_bid_offer_update], [Trade_report],
+    [Session_status]. *)
 val sample_events : Exchange_event.t list
 
 (** As [submit], but events are not printed. *)

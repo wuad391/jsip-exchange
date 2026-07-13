@@ -49,7 +49,7 @@ let%expect_test "initial state has every chip enabled and no events" =
     ──────────────────────────────────────────────────────────────────────
       (no events visible)
     ──────────────────────────────────────────────────────────────────────
-    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
+    Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
     |}]
 ;;
 
@@ -60,7 +60,7 @@ let%expect_test "feeding sample events populates the display" =
   show c;
   [%expect
     {|
-    JSIP Exchange Monitor   7 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   8 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
@@ -73,8 +73,9 @@ let%expect_test "feeding sample events populates the display" =
     REJECTED CANCEL because Cannot cancel non-existent order
     BBO 0 bid=$149.90 x100 ask=$150.10 x200
     TRADE 0 $150.00 x100
+    SESSION Alice connected
     ──────────────────────────────────────────────────────────────────────
-    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
+    Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
     |}]
 ;;
 
@@ -86,7 +87,7 @@ let%expect_test "with a directory, the display renders symbol names" =
   show c;
   [%expect
     {|
-    JSIP Exchange Monitor   7 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   8 of 8 events   auto-scroll ↓
     BBO:        AAPL: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
@@ -99,8 +100,9 @@ let%expect_test "with a directory, the display renders symbol names" =
     REJECTED CANCEL because Cannot cancel non-existent order
     BBO AAPL bid=$149.90 x100 ask=$150.10 x200
     TRADE AAPL $150.00 x100
+    SESSION Alice connected
     ──────────────────────────────────────────────────────────────────────
-    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
+    Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
     |}]
 ;;
 
@@ -217,7 +219,7 @@ let%expect_test "pressing 1 toggles the order-lifecycle category off and \
   show c;
   [%expect
     {|
-    JSIP Exchange Monitor   3 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   4 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: (1 order-lifecycle)  [2 trade]  [3 market-data]
@@ -226,10 +228,11 @@ let%expect_test "pressing 1 toggles the order-lifecycle category off and \
     FILL fill_id=1 0 $150.00 x100 aggressor=2(Alice w/ client order ID = 4) BUY resting=1(Bob w/ client order ID = 3)
     BBO 0 bid=$149.90 x100 ask=$150.10 x200
     TRADE 0 $150.00 x100
+    SESSION Alice connected
     ──────────────────────────────────────────────────────────────────────
-    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
+    Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
     ----- toggle 1 again -----
-    JSIP Exchange Monitor   7 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   8 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
@@ -242,8 +245,9 @@ let%expect_test "pressing 1 toggles the order-lifecycle category off and \
     REJECTED CANCEL because Cannot cancel non-existent order
     BBO 0 bid=$149.90 x100 ask=$150.10 x200
     TRADE 0 $150.00 x100
+    SESSION Alice connected
     ──────────────────────────────────────────────────────────────────────
-    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
+    Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
     |}]
 ;;
 
@@ -254,7 +258,7 @@ let%expect_test "pressing 2 toggles trade; 3 toggles market-data" =
   show c;
   [%expect
     {|
-    JSIP Exchange Monitor   4 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   5 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: [1 order-lifecycle]  (2 trade)  (3 market-data)
@@ -264,18 +268,19 @@ let%expect_test "pressing 2 toggles trade; 3 toggles market-data" =
     CANCELLED id=1 0 remaining=50 reason=IOC_REMAINDER
     REJECTED 0 BUY 100@$150.00 reason=unknown symbol
     REJECTED CANCEL because Cannot cancel non-existent order
+    SESSION Alice connected
     ──────────────────────────────────────────────────────────────────────
-    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
+    Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
     |}]
 ;;
 
 let%expect_test "disabling every category hides every event" =
   let c = feed_all (Controller.create ()) in
-  let c = press_chars c [ '1'; '2'; '3' ] in
+  let c = press_chars c [ '1'; '2'; '3'; '4' ] in
   show c;
   [%expect
     {|
-    JSIP Exchange Monitor   0 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   0 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: (1 order-lifecycle)  (2 trade)  (3 market-data)
@@ -283,7 +288,7 @@ let%expect_test "disabling every category hides every event" =
     ──────────────────────────────────────────────────────────────────────
       (no events visible)
     ──────────────────────────────────────────────────────────────────────
-    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
+    Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
     |}]
 ;;
 
@@ -295,7 +300,7 @@ let%expect_test "pressing / enters editing mode with empty buffer" =
   show c;
   [%expect
     {|
-    JSIP Exchange Monitor   7 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   8 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
@@ -309,6 +314,7 @@ let%expect_test "pressing / enters editing mode with empty buffer" =
     REJECTED CANCEL because Cannot cancel non-existent order
     BBO 0 bid=$149.90 x100 ask=$150.10 x200
     TRADE 0 $150.00 x100
+    SESSION Alice connected
     ──────────────────────────────────────────────────────────────────────
     Footer:      Enter=commit  ESC=cancel  Backspace=delete  (other keys append)
     |}]
@@ -321,7 +327,7 @@ let%expect_test "typing in edit mode appends to the buffer" =
   show c;
   [%expect
     {|
-    JSIP Exchange Monitor   1 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   1 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
@@ -342,7 +348,7 @@ let%expect_test "Enter commits the substring filter and returns to browsing" =
   show c;
   [%expect
     {|
-    JSIP Exchange Monitor   1 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   1 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
@@ -350,7 +356,7 @@ let%expect_test "Enter commits the substring filter and returns to browsing" =
     ──────────────────────────────────────────────────────────────────────
     FILL fill_id=1 0 $150.00 x100 aggressor=2(Alice w/ client order ID = 4) BUY resting=1(Bob w/ client order ID = 3)
     ──────────────────────────────────────────────────────────────────────
-    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
+    Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
     |}]
 ;;
 
@@ -362,7 +368,7 @@ let%expect_test "Escape cancels edit mode and reverts the buffer" =
   show c;
   [%expect
     {|
-    JSIP Exchange Monitor   7 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   8 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
@@ -375,8 +381,9 @@ let%expect_test "Escape cancels edit mode and reverts the buffer" =
     REJECTED CANCEL because Cannot cancel non-existent order
     BBO 0 bid=$149.90 x100 ask=$150.10 x200
     TRADE 0 $150.00 x100
+    SESSION Alice connected
     ──────────────────────────────────────────────────────────────────────
-    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
+    Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
     |}]
 ;;
 
@@ -389,7 +396,7 @@ let%expect_test "Backspace in edit mode pops the last character" =
   show c;
   [%expect
     {|
-    JSIP Exchange Monitor   1 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   1 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
@@ -418,7 +425,7 @@ let%expect_test "pressing r clears every filter back to defaults" =
   [%expect
     {|
     ----- after toggling and committing 'fill' -----
-    JSIP Exchange Monitor   1 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   1 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: (1 order-lifecycle)  [2 trade]  [3 market-data]
@@ -426,9 +433,9 @@ let%expect_test "pressing r clears every filter back to defaults" =
     ──────────────────────────────────────────────────────────────────────
     FILL fill_id=1 0 $150.00 x100 aggressor=2(Alice w/ client order ID = 4) BUY resting=1(Bob w/ client order ID = 3)
     ──────────────────────────────────────────────────────────────────────
-    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
+    Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
     ----- after r -----
-    JSIP Exchange Monitor   7 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   8 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
@@ -441,8 +448,9 @@ let%expect_test "pressing r clears every filter back to defaults" =
     REJECTED CANCEL because Cannot cancel non-existent order
     BBO 0 bid=$149.90 x100 ask=$150.10 x200
     TRADE 0 $150.00 x100
+    SESSION Alice connected
     ──────────────────────────────────────────────────────────────────────
-    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
+    Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
     |}]
 ;;
 
@@ -458,7 +466,7 @@ let%expect_test "counter reflects visible / total even when filters are \
   show c;
   [%expect
     {|
-    JSIP Exchange Monitor   1 of 7 events   auto-scroll ↓
+    JSIP Exchange Monitor   1 of 8 events   auto-scroll ↓
     BBO:        0: $149.90 x100 / $150.10 x200
     P&L:        Alice: $0.00  Bob: $0.00
     Categories: [1 order-lifecycle]  [2 trade]  [3 market-data]
@@ -466,6 +474,6 @@ let%expect_test "counter reflects visible / total even when filters are \
     ──────────────────────────────────────────────────────────────────────
     BBO 0 bid=$149.90 x100 ask=$150.10 x200
     ──────────────────────────────────────────────────────────────────────
-    Footer:      q=quit  r=reset  1-3=categories  /=substring  a=auto-scroll
+    Footer:      q=quit  r=reset  1-4=categories  /=substring  a=auto-scroll
     |}]
 ;;

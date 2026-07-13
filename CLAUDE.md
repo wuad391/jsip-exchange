@@ -171,7 +171,8 @@ introduce alternatives without a reason.
 - Pass `[%here]` when function takes `Source_code_position.t`
 - `^/` for paths
 - `Time_ns` > `Time_float`
-- `flag_optional_with_default_doc_sexp`
+- `flag` + `optional_with_default` for flags (the
+  `flag_optional_with_default_doc` helper isn't in this opam switch)
 - Inline complex helpers
 - `Staged.t`: think before apply
 - Sexp changes if variant type changes
@@ -294,34 +295,44 @@ it does, don't re-implement — show the student where it lives.
   priority, not first-found.
 - `Symbol` validation (alphanumeric uppercase only).
 - `Fill.to_participant_view`.
-- End-of-day cancellation of resting Day orders.
-- `Time_in_force.Good_till_cancel` and `Time_in_force.Fill_or_kill`.
+- (End-of-day cancellation is NOT implemented, despite earlier versions
+  of this file claiming it: `Cancel_reason.End_of_day` exists but nothing
+  constructs it. `Time_in_force` is only `Day | Ioc` in the code.)
 - `Exchange_command` parsing module (typed command dispatch).
 - Self-trade prevention.
 - Map-backed order book replacing the original list-based version.
 
-### Week 2, exercises 1–3 only
+### Week 2 and beyond (the earlier "not done yet" list is obsolete)
 
 - `login_rpc`, session registry, per-session pipes, `session_feed_rpc`,
   `cancel_order_rpc`; client-supplied `client_order_id`s.
-- Dynamic market maker with per-symbol inventory tracking.
-- Market maker ported to the `Bot_runtime.Bot` interface.
+- Dynamic market maker with per-symbol inventory tracking, ported to the
+  `Bot_runtime.Bot` interface.
+- All of `app/bots/src/`: noise trader, momentum trader, spammer
+  (resource-exhaustion + pump-and-dump), cancel storm, book filler,
+  slow consumer.
+- All the scenarios in `app/scenarios/src/` (ten named ones plus the
+  empty `sandbox`), and the `app/monitor` bonsai_term TUI. Treat the
+  code as truth if this list drifts again.
+- Symbols-as-ints end-to-end (`Symbol_id.t` on the wire; names live at
+  the edges via `symbol_directory_rpc`).
+- The interactive console (July 2026): `-interactive` on the scenario
+  runner spawns/kills/crashes bots mid-run. Supporting pieces:
+  `Matching_engine.cancel_all_for_participant` + session-scoped
+  `cancel_all_rpc` (reason `Mass_cancel`),
+  `Exchange_event.Session_status` connect/disconnect events on the audit
+  log (monitor category 4), `Bot_runtime.stop`, `Bot_handle.t` /
+  `Bot_registry.t`, and `Default_bot_menu`.
 
-### What students _may not_ have done yet
+### Still genuinely open
 
-- Week 2 Ex4–7: noise trader, calm-day scenario, momentum trader,
-  earnings-shock scenario. These happen with AI assistance, post-lecture.
-- Anything in `app/bots/src/jsip_bots.ml` — empty placeholder.
-- Anything in `app/scenarios/src/` — `calm_day.ml`, `active_day.ml`,
-  `earnings_shock.ml`, `flash_crash.ml` are all `failwith "TODO:
-implement"` stubs.
-- Anything in `app/monitor`.
+- End-of-day cancellation (see above).
 - The audit-log / session backpressure smell at
-  `lib/gateway/src/dispatcher.ml:56,61` and
+  `lib/gateway/src/dispatcher.ml:58,63` and
   `lib/gateway/src/session.ml:18` — uses
   `Pipe.write_without_pushback_if_open`, which doesn't bound buffering
-  for slow subscribers. This becomes a real concern in week 3 when
-  students build the `Slow_consumer` pathological bot.
+  for slow subscribers. The `Slow_consumer` pathological bot exists to
+  poke exactly this.
 
 ## Stub conventions
 
@@ -346,11 +357,11 @@ based on the comment and surrounding code."
   help them get to a precise statement before changing code.
 - **"Add a feature"** — check whether anything in the current code
   already does this or something close. Read existing similar features
-  for reference. (For a new bot, the closest reference is
-  `app/market_maker/src/market_maker.ml` — the dynamic market maker is
-  the only fully-implemented `Bot_runtime.Bot` in the starter. For a
-  new scenario, all four scenario stubs in `app/scenarios/src/` are
-  still `failwith`; the building blocks are
+  for reference. (For a new bot, good references are
+  `app/market_maker/src/market_maker_bot.ml` and the bots in
+  `app/bots/src/`; to make it console-spawnable, add a
+  `Default_bot_menu` entry. For a new scenario, copy any implemented
+  module in `app/scenarios/src/` — the building blocks are
   `Jsip_scenario_runner.Scenario_config.t` and `Bot_spec.t`.)
 - **"Write tests for X"** — prefer adding to existing `test_X.ml` over
   creating new files. Use `Jsip_test_harness` helpers. Don't write tests

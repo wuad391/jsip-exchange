@@ -56,7 +56,7 @@ let%expect_test "market-data RPC" =
     {|
     (Streaming_rpc (query 4cd553520709511864846bda25c448d0)
      (initial_response 86ba5df747eec837f0b391dd49f33f9e)
-     (update_response 0a2c6ffec48f1e98fe90b70ebbcdc32d)
+     (update_response a09e00ba27e90f0322731a879561eb64)
      (error 52966f4a49a77bfdff668e9cc61511b3))
     |}];
   return ()
@@ -71,7 +71,7 @@ let%expect_test "audit-log RPC" =
     {|
     (Streaming_rpc (query 86ba5df747eec837f0b391dd49f33f9e)
      (initial_response 86ba5df747eec837f0b391dd49f33f9e)
-     (update_response 0a2c6ffec48f1e98fe90b70ebbcdc32d)
+     (update_response a09e00ba27e90f0322731a879561eb64)
      (error 52966f4a49a77bfdff668e9cc61511b3))
     |}];
   return ()
@@ -98,7 +98,7 @@ let%expect_test "session_feed RPC" =
     {|
     (Streaming_rpc (query 86ba5df747eec837f0b391dd49f33f9e)
      (initial_response 86ba5df747eec837f0b391dd49f33f9e)
-     (update_response 0a2c6ffec48f1e98fe90b70ebbcdc32d)
+     (update_response a09e00ba27e90f0322731a879561eb64)
      (error 52966f4a49a77bfdff668e9cc61511b3))
     |}];
   return ()
@@ -128,6 +128,19 @@ let%expect_test "exchange-stats RPC" =
      (initial_response 86ba5df747eec837f0b391dd49f33f9e)
      (update_response 06bfbde815404201a248a1abbaf84ba7)
      (error 52966f4a49a77bfdff668e9cc61511b3))
+    |}];
+  return ()
+;;
+
+let%expect_test "cancel-all RPC" =
+  print_s
+    [%sexp
+      (Rpc.Rpc.shapes Rpc_protocol.cancel_all_rpc
+       : Async_rpc_kernel.Rpc_shapes.t)];
+  [%expect
+    {|
+    (Rpc (query 86ba5df747eec837f0b391dd49f33f9e)
+     (response ce7928a05bd6e1c5ac297c653c6aafa2))
     |}];
   return ()
 ;;

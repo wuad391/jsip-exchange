@@ -1,0 +1,11 @@
+(library
+ (name jsip_scenarios_test)
+ (inline_tests)
+ (libraries
+  jsip_types
+  jsip_symbol_directory
+  jsip_scenario_runner
+  jsip_scenarios
+  core)
+ (preprocess
+  (pps ppx_jane)))

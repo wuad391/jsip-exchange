@@ -12,14 +12,16 @@ open Jsip_types
 open Jsip_gateway
 
 (** Coarse-grained grouping of [Exchange_event.t] variants, suited for "show
-    only orders" / "show only trades" / "show only market data" filters.
-    [of_event] is the only classification helper — finer granularity is
-    expressed by pattern-matching on the [Exchange_event.t] itself. *)
+    only orders" / "show only trades" / "show only market data" / "show only
+    session comings-and-goings" filters. [of_event] is the only
+    classification helper — finer granularity is expressed by
+    pattern-matching on the [Exchange_event.t] itself. *)
 module Category : sig
   type t =
     | Order_lifecycle
     | Trade
     | Market_data
+    | Session
   [@@deriving sexp_of, compare, equal, enumerate]
 
   val to_string : t -> string

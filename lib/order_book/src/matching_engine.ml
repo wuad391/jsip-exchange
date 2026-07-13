@@ -208,6 +208,66 @@ let cancel t ({ participant; client_order_id } : Order.Cancel.t) =
       ]
 ;;
 
+let cancel_all_for_participant t participant =
+  match Hashtbl.find t.client_order_tables participant with
+  | None -> 0, []
+  | Some client_order_table ->
+    (* Snapshot before sweeping: each removal below mutates
+       [client_order_table] via [remove_client_order], and removing from a
+       table while iterating it would skip entries. Sort by [Order_id.t] so
+       orders are cancelled in submission order — a hash table iterates in
+       unspecified order, and the sweep's events should be deterministic. *)
+    let resting =
+      Hashtbl.to_alist client_order_table
+      |> List.sort ~compare:(fun (_, order) (_, order') ->
+        Order_id.compare (Order.order_id order) (Order.order_id order'))
+    in
+    (* Record each touched symbol's BBO once, before its first removal, and
+       emit at most one [Best_bid_offer_update] per changed symbol after the
+       whole sweep — pulling a ladder of N orders must not spam N BBO events
+       the way N single [cancel]s would. *)
+    let pre_bbos = Symbol_id.Table.create () in
+    let touched = Queue.create () in
+    let record_pre_bbo symbol book =
+      if not (Hashtbl.mem pre_bbos symbol)
+      then (
+        Hashtbl.add_exn
+          pre_bbos
+          ~key:symbol
+          ~data:(Order_book.best_bid_offer book);
+        Queue.enqueue touched (symbol, book))
+    in
+    let cancel_events =
+      List.map resting ~f:(fun (client_order_id, order) ->
+        let order_id = Order.order_id order in
+        let symbol = Order.symbol order in
+        (* The order was resting, so its symbol's book must exist. *)
+        let book = Option.value_exn (book t symbol) in
+        (* Before either removal: the post-sweep comparison needs the
+           symbol's true starting BBO. *)
+        record_pre_bbo symbol book;
+        Order_book.remove book order_id;
+        remove_client_order t participant client_order_id;
+        Exchange_event.Order_cancel
+          { order_id
+          ; client_order_id
+          ; participant
+          ; symbol
+          ; remaining_size = Order.remaining_size order
+          ; reason = Cancel_reason.Mass_cancel
+          })
+    in
+    let bbo_events =
+      Queue.to_list touched
+      |> List.filter_map ~f:(fun (symbol, book) ->
+        let bbo = Order_book.best_bid_offer book in
+        if Bbo.equal (Hashtbl.find_exn pre_bbos symbol) bbo
+        then None
+        else Some (Exchange_event.Best_bid_offer_update { symbol; bbo }))
+    in
+    List.length cancel_events, cancel_events @ bbo_events
+;;
+
 let submit t ~participant (request : Order.Request.t) =
   (* Identity is server-authoritative: overwrite whatever participant the
      client put in the request with the [~participant] established at login,
