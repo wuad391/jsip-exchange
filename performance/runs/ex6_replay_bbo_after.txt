@@ -1,0 +1,97 @@
+ex6 replay profile — AFTER (O(log P + k) best-bid-offer via nested book)
+=======================================================================
+
+What this is
+------------
+Same experiment as ex6_replay_bbo_before.txt, but on the *optimized* order
+book from PR #19 (nested price -> hash-queue; best_level = Map.min_elt /
+Map.max_elt). Identical driver, preset, seed. This is the "what dominates
+now that BBO recomputation is gone?" profile.
+
+  branch : robyn/ex6-workload-profile @ b67c680 (merge of origin/main PR #19)
+  cmd    : perf record -F 999 -- main.exe replay -preset balanced \
+             -num-actions 1000000 -depth-every 0
+  raw    : perf-balanced-after.data  (gitignored)
+  samples: sample duration 11.2 s  (baseline was 33.8 s for the same 1M
+           actions -> ~3x less on-CPU time; box still contended, so read
+           PROPORTIONS not absolute wall)
+
+Correctness check (this is the important one)
+---------------------------------------------
+Event counts are BYTE-IDENTICAL to the baseline at every scale we ran:
+  accepts=549699 fills=360766 order_cancels=146068 order_rejects=0
+  cancel_rejects=336325 bbo_updates=279804 trade_reports=360766   (1M)
+The migration changed HOW the book computes, not WHAT it decides. Same
+workload in, same fills/cancels/BBO-updates out — only faster.
+
+Cost budget (self time, binned)
+-------------------------------
+A. Order storage + index (the real engine now)  ~41%
+     order-id hashtable:   12.29 Hashtbl.find_and_call  4.00 mem
+                            3.62 add  1.48 remove                (~21%)
+     per-price FIFO queue:  3.45 Hash_queue.foldi  2.55 Doubly_linked.with_iter
+                            1.77 hq-closure  1.22 DLL.remove  1.16 insert_last
+                            0.87 incr_length  0.70 enqueue_exn      (~12%)
+     price->queue AVL map:  2.70 Avltree.add  1.28 findi  1.16 balance
+                            1.25 Map.remove  0.99 find_and_add_or_set
+                            0.78 Avltree.remove                    (~8%)
+
+B. BBO read (best_level_entry = Map.min/max_elt)   4.87%   <-- was ~40%+
+
+C. Engine logic  ~8%
+     1.62 submit  1.54 remove'  1.16 add  1.10 match_loop  0.90 find_match
+     1.01 Order.remaining_size  0.78 Order.price
+
+D. GC / OCaml-5 runtime  ~13%   (bigger SLICE, smaller ABSOLUTE — see below)
+     4.58 oldify_one  2.81 do_some_marking  2.06 caml_modify (write barrier)
+     1.36 oldify_mopup  1.30 stw_empty_minor_heap  0.90 pool_sweep
+     + 1.48 caml_apply2
+
+E. Harness + RNG  ~6%   (now VISIBLE; was <1%)
+     2.87 Workload_generator.next_action  1.65+1.07 Splittable_random
+     0.72 uniform_int
+
+F. Kernel / vdso (contention)  ~3%
+
+The shift, before -> after
+--------------------------
+  Base.Map.loop (to_alist walk)   26.71%  ->  gone from top
+  Jsip_types.Order.price          19.34%  ->   0.78%   (25x less)
+  Base.List.map_loop_dps           9.74%  ->  gone from top
+  caml_initialize (alloc init)     6.31%  ->  gone from top
+  best_level+best_price+closures  ~12%    ->   4.87% (best_level_entry)
+  ---------------------------------------------------------------
+  BBO recomputation total         ~75%    ->  ~5%
+
+The engine is now dominated by its actual data-structure maintenance
+(hashtable order index + per-level hash-queue + price AVL map), all
+O(log P + k) per op. The single biggest cost is now Hashtbl.find_and_call
+(12%) — order-id lookups on submit/cancel — which would be the next target
+if anyone wanted to push further.
+
+Two things worth understanding
+------------------------------
+1. GC went 3% -> 13% of the profile even though allocation dropped 10.8x
+   (1574.7 -> 145.9 words/action) and minor collections dropped ~10x
+   (200k baseline had 313; 1M optimized has 158). It's a bigger slice of a
+   much smaller pie: absolute GC time fell, but BBO recompute fell far more,
+   so GC rose in relative terms. The new caml_modify (write barrier, 2%) is
+   real and new: the hash-queue order lists are MUTABLE, so every
+   enqueue/dequeue mutates heap pointers and pays the barrier. The book
+   traded per-read allocation for per-write mutation — the right trade here.
+2. The workload generator is now ~6% (RNG-heavy: Splittable_random ~2.7%).
+   Still small enough that we are profiling the engine, not the generator
+   (the design goal held). But it is no longer negligible: another ~5x
+   engine speedup would make the generator the thing to optimize.
+
+Numbers, balanced seed 0, 1M actions
+------------------------------------
+                     BEFORE (O(n))      AFTER (O(log P+k))
+  submit p50           16.38 us            4.10 us      (4.0x)
+  submit p99          131.07 us           32.77 us      (4.0x)
+  cancel  p99          65.54 us            8.19 us      (8.0x)
+  allocation         1574.7 w/action     145.9 w/action (10.8x less)
+  minor collections   ~1565 (extrap)      158           (~10x fewer)
+  (wall/throughput omitted: box contended, not a valid absolute claim)
+  fill rate           0.376/0.350 OK      0.381/0.350 OK
+  event counts        identical           identical

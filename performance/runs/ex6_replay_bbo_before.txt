@@ -1,0 +1,81 @@
+ex6 replay profile — BEFORE (O(n) best-bid-offer recomputation)
+================================================================
+
+What this is
+------------
+`perf` self-time profile of the Ex6 replay driver running one workload
+through the matching engine, on the *un-optimized* order book (the
+list-backed `best_level` that materializes the whole book on every read).
+
+  branch : robyn/ex6-workload-profile (based on aba356f, pre-PR-#19)
+  binary : performance/bin/main.exe   (preserved: $CLAUDE_JOB_DIR/tmp/baseline-main.exe)
+  cmd    : perf record -F 999 -- main.exe replay -preset balanced \
+             -num-actions 1000000 -depth-every 0
+  raw    : perf-balanced-before.data  (worktree root; symbols only resolve
+           against the baseline binary above — decode kept here as text)
+  samples: 28K task-clock, sample duration 33.8 s (box heavily contended;
+           SELF-TIME PROPORTIONS are trustworthy, absolute wall time is not)
+
+Cost budget (self time, binned)
+-------------------------------
+A. BBO recomputation  ~74%  (best_bid_offer -> best_level x2 per action)
+     26.71  Base.Map.loop                 tree walk: Map.to_alist / min_elt
+     19.34  Jsip_types.Order.price        field accessor, once per resting order
+      9.74  Base.List.map_loop_dps        List.map over the full to_alist
+      4.83  Base.Comparable.equal         Price.equal filter inside the fold
+      4.60  fn order_book.ml:143          the fold closure in best_level
+      3.96  fn order_book.ml:139          the (fun (_,o) -> o) map closure
+      2.32  Order_book.best_level
+      1.78  Order_book.best_price
+      0.74  Order_book.compare
+      0.17  Base.List.map_loop
+   + the allocation churn that same code creates:
+      6.31  caml_initialize               init-writes for transient lists/Levels
+      4.71  caml_apply2                    calling the ~f closures in map/fold
+   => with allocation churn included, ~85% of the program.
+
+B. Engine core (order storage + matching)  ~7%
+      1.55 Hashtbl.find_and_call  1.48 compare_int  0.58 Hashtbl.add
+      0.42 Hashtbl.mem  0.37 Map.find_and_add_or_set  ~0.9 Avltree.*
+      0.27 Map.remove  0.27 Matching_engine.submit  0.19 find_match
+      0.14 Hashtbl.remove  0.12 match_loop
+
+C. GC / OCaml-5 runtime  ~3%
+      0.95 oldify_one  0.71 do_some_marking  0.33 pool_sweep
+      0.32 oldify_mopup  0.31 stw_empty_minor_heap  0.28 caml_modify
+      0.14 caml_darken
+
+D. Harness (generator + driver + histogram)  <1%
+      0.47 Workload_generator.next_action  ~0.36 Splittable_random  0.13 Replay.run
+
+E. Kernel / vdso (context switches from contention)  ~1%
+
+Headline
+--------
+~75-85% of the whole program is best-bid-offer recomputation. Every submit
+AND every cancel calls best_bid_offer, which calls best_level for both sides,
+which does `List.map (Map.to_alist book)` + `List.fold` over EVERY resting
+order (~3000 at steady state) to sum the top level. That is the O(n)-per-write
+BBO the order-book bench flagged. PR #19 replaces it with a nested
+price -> hash-queue book whose best_level is Map.min_elt = O(log P + k).
+
+Note on GC: the collector is only ~3% despite 1574 words/action allocated,
+because nearly all of those words are the transient to_alist lists + Level
+records that die in the minor heap before promotion — cheap bump-pointer
+minor collection, little marking. (Earlier I mis-grepped for pre-OCaml-5 GC
+symbol names and wrongly said GC was ~0; the OCaml-5 collector symbols are
+oldify_one / do_some_marking / pool_sweep, and they sum to ~3%.)
+
+Reference numbers (balanced, seed 0)
+------------------------------------
+1M numbers captured separately in this dir once the contended box frees up;
+200k smoke below (same binary, same preset) for shape:
+
+  wall   2.87s (69720 act/s)   [contended; not a throughput claim]
+  submit p50=16.38us p99=131.07us p99.9=2.10ms max=6.94ms (n=109931)
+  cancel p50=512ns   p99=65.54us  p99.9=524.29us max=5.70ms (n=90069)
+  events accepts=109931 fills=70806 order_cancels=28960 rejects=0
+         cancel_rejects=67371 bbo_updates=56185 trade_reports=70806
+  depth  50k:1720 100k:2420 150k:2872 200k:3024  (decelerating -> ~3k plateau)
+  gc     1574.7 words/action, minor=313 major=18, live 223492->214993
+  checks fill rate realized=0.376 intended=0.350 OK ; depth plateau OK
