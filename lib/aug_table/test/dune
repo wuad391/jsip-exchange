@@ -1,6 +1,6 @@
 (library
  (name jsip_aug_table_test)
- (libraries jsip_aug_table core)
+ (libraries jsip_aug_table jsip_types core)
  (inline_tests)
  (preprocess
   (pps ppx_jane)))

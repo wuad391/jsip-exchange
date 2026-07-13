@@ -1,5 +1,6 @@
 open! Core
 open Jsip_aug_table
+open Jsip_types
 
 (* A commutative monoid: measure = sum of the data. *)
 module Sum = struct
@@ -130,33 +131,86 @@ let%expect_test "cached measure matches a brute-force fold under many \
     |}]
 ;;
 
-let%expect_test "key_aug_table: max_key stays correct across set/remove" =
+(* [Key_monoid_table]'s measure is a monoid over the keys. Using [(+)] here
+   (sum of the distinct keys) instead of the [max] that [Key_aug_table] pins
+   down demonstrates that the choice of monoid is free. *)
+module Key_sum = struct
+  type key = int
+
+  let compare_key = Int.compare
+  let identity = 0
+  let combine = ( + )
+end
+
+let%expect_test "key_monoid_table: measure is any monoid over the keys" =
+  let t =
+    List.fold
+      [ 3; 1; 4; 1; 5; 9; 2; 6 ]
+      ~init:(Key_monoid_table.empty (module Key_sum))
+      ~f:(fun t k -> Key_monoid_table.set t ~key:k ~data:k)
+  in
+  (* keys form a set (the duplicate 1 collapses), so the cached sum must
+     match a brute-force sum of the alist keys *)
+  let brute = List.sum (module Int) (Key_monoid_table.to_alist t) ~f:fst in
+  printf
+    "length=%d sum_of_keys=%d brute=%d\n"
+    (Key_monoid_table.length t)
+    (Key_monoid_table.measure t)
+    brute;
+  let t = Key_monoid_table.remove t 9 in
+  printf "after remove 9: sum_of_keys=%d\n" (Key_monoid_table.measure t);
+  [%expect
+    {|
+    length=7 sum_of_keys=30 brute=30
+    after remove 9: sum_of_keys=21
+    |}]
+;;
+
+let%expect_test "key_aug_table: max_key / min_elt / max_elt across \
+                 set/remove"
+  =
+  let price = Price.of_int_cents in
   let t =
     List.fold
       [ 3; 1; 4; 1; 5; 9; 2; 6 ]
       ~init:Key_aug_table.empty
-      ~f:(fun t k -> Key_aug_table.set t ~key:k ~data:k)
+      ~f:(fun t k -> Key_aug_table.set t ~key:(price k) ~data:k)
+  in
+  let show label = function
+    | None -> printf "%s=none\n" label
+    | Some (p, d) -> printf "%s=(%d,%d)\n" label (Price.to_int_cents p) d
   in
   printf
     "length=%d max_key=%d\n"
     (Key_aug_table.length t)
-    (Key_aug_table.max_key t);
-  print_s [%sexp (Key_aug_table.to_alist t : (int * int) list)];
-  let t = Key_aug_table.remove t 9 in
-  (* the cached max_key must equal the actual maximum key *)
+    (Key_aug_table.max_key t |> Price.to_int_cents);
+  print_s [%sexp (Key_aug_table.to_alist t : (Price.t * int) list)];
+  show "min_elt" (Key_aug_table.min_elt t);
+  show "max_elt" (Key_aug_table.max_elt t);
+  let t = Key_aug_table.remove t (price 9) in
+  (* the cached max_key and the max_elt spine walk must both track the actual
+     maximum key after a removal *)
   let brute_max =
-    List.fold (Key_aug_table.to_alist t) ~init:0 ~f:(fun acc (k, _) ->
-      Int.max acc k)
+    List.fold
+      (Key_aug_table.to_alist t)
+      ~init:Price.zero
+      ~f:(fun acc (k, _) -> Price.max acc k)
   in
   printf
     "after remove 9: length=%d max_key=%d brute=%d\n"
     (Key_aug_table.length t)
-    (Key_aug_table.max_key t)
-    brute_max;
+    (Key_aug_table.max_key t |> Price.to_int_cents)
+    (Price.to_int_cents brute_max);
+  show "min_elt" (Key_aug_table.min_elt t);
+  show "max_elt" (Key_aug_table.max_elt t);
   [%expect
     {|
     length=7 max_key=9
     ((1 1) (2 2) (3 3) (4 4) (5 5) (6 6) (9 9))
+    min_elt=(1,1)
+    max_elt=(9,9)
     after remove 9: length=6 max_key=6 brute=6
+    min_elt=(1,1)
+    max_elt=(6,6)
     |}]
 ;;

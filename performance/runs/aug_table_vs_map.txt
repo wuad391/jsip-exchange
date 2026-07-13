@@ -1,48 +1,55 @@
-Aug_table vs Key_aug_table vs Core.Map — core_bench (-ascii -quota 1)
-keys:int values:Order.t  measure:max-key (combine=max, identity=0)
-  aug = generic Aug_table (closures)   key = monomorphized Key_aug_table (inlined)   map = Core.Map
-Time/Run: lower is better.  mWd/Run: minor words allocated per run.
-
-Estimated testing time 38s (38 benchmarks x 1s). Change using '-quota'.
+Estimated testing time 50s (50 benchmarks x 1s). Change using '-quota'.
                                                                                                                           
   Name                                         Prom/Run        mjWd/Run           Time/Run          mWd/Run   Percentage  
  --------------------------------------- --------------- --------------- ------------------ ---------------- ------------ 
-  aug creation n=1000                           263.16w         263.16w       464_470.66ns       73_564.00w        0.26%  
-  key creation n=1000                           255.46w         255.46w       312_329.89ns       72_558.00w        0.17%  
-  map creation n=1000                           138.11w         138.11w       195_934.54ns       57_341.00w        0.11%  
-  aug add n=1000                                                                  476.45ns           86.00w               
-  key add n=1000                                                                  318.64ns           85.00w               
-  map add n=1000                                                                  164.99ns           66.00w               
-  aug remove n=1000                                                               313.01ns           58.00w               
-  key remove n=1000                                                               198.67ns           56.00w               
-  map remove n=1000                                                               122.24ns           45.00w               
-  aug find n=1000                                                                  70.87ns           10.00w               
-  key find n=1000                                                                  46.52ns            9.00w               
-  map find n=1000                                                                  52.40ns            3.00w               
-  aug fold n=1000                                                               7_346.58ns            8.00w               
-  key fold n=1000                                                               6_893.68ns            8.00w               
-  map fold n=1000                                                               6_562.98ns            3.00w               
-  aug measure O(1) n=1000                                                          10.96ns            3.00w               
-  key measure O(1) n=1000                                                          11.21ns            3.00w               
-  map measure O(n) fold n=1000                                                  6_197.87ns            3.00w               
-  map measure O(log n) max_elt n=1000                                              17.75ns            3.00w               
-  aug creation n=100000                   2_577_629.20w   2_577_629.20w   181_111_539.93ns   12_434_298.00w      100.00%  
-  key creation n=100000                   2_476_592.20w   2_476_592.20w   138_939_221.53ns   12_334_292.00w       76.71%  
-  map creation n=100000                   1_750_717.71w   1_750_717.71w    91_414_247.71ns    9_964_205.00w       50.47%  
-  aug add n=100000                                                              1_045.92ns          156.00w               
-  key add n=100000                                                                664.56ns          155.00w               
-  map add n=100000                                                                386.69ns          120.00w               
-  aug remove n=100000                                                             682.62ns          107.00w               
-  key remove n=100000                                                             413.31ns          105.00w               
-  map remove n=100000                                                             274.70ns           87.00w               
-  aug find n=100000                                                               127.98ns           10.00w               
-  key find n=100000                                                                71.85ns            9.00w               
-  map find n=100000                                                                93.14ns            3.00w               
-  aug fold n=100000                                                         4_912_647.33ns            8.00w        2.71%  
-  key fold n=100000                                                         4_915_491.10ns            8.00w        2.71%  
-  map fold n=100000                                                         1_043_557.91ns            3.00w        0.58%  
-  aug measure O(1) n=100000                                                        11.04ns            3.00w               
-  key measure O(1) n=100000                                                        11.68ns            3.00w               
-  map measure O(n) fold n=100000                                            1_094_786.49ns            3.00w        0.60%  
-  map measure O(log n) max_elt n=100000                                            29.10ns            3.00w               
+  aug creation n=1000                           290.11w         290.11w       425_919.62ns       73_564.00w        0.25%  
+  kpoly creation n=1000                         255.58w         255.58w       408_901.02ns       72_563.00w        0.24%  
+  kmono creation n=1000                         258.57w         258.57w       282_106.70ns       72_558.00w        0.17%  
+  map creation n=1000                           141.50w         141.50w       183_882.56ns       57_341.00w        0.11%  
+  aug add n=1000                                                                  420.36ns           86.00w               
+  kpoly add n=1000                                                                403.49ns           85.00w               
+  kmono add n=1000                                                                287.69ns           85.00w               
+  map add n=1000                                                                  154.83ns           66.00w               
+  aug remove n=1000                                                               299.61ns           58.00w               
+  kpoly remove n=1000                                                             295.08ns           57.00w               
+  kmono remove n=1000                                                             195.92ns           56.00w               
+  map remove n=1000                                                               123.86ns           45.00w               
+  aug find n=1000                                                                  75.19ns           10.00w               
+  kpoly find n=1000                                                                51.83ns           10.00w               
+  kmono find n=1000                                                                41.73ns            9.00w               
+  map find n=1000                                                                  46.93ns            3.00w               
+  aug fold n=1000                                                               6_609.23ns            8.00w               
+  kpoly fold n=1000                                                             6_970.81ns            8.00w               
+  kmono fold n=1000                                                             6_564.59ns            8.00w               
+  map fold n=1000                                                               5_888.33ns            3.00w               
+  aug measure O(1) n=1000                                                          10.17ns            3.00w               
+  kpoly measure O(1) n=1000                                                        10.21ns            3.00w               
+  kmono measure O(1) n=1000                                                         9.68ns            3.00w               
+  map measure O(n) fold n=1000                                                  6_100.87ns            3.00w               
+  map measure O(log n) max_elt n=1000                                              18.44ns            3.00w               
+  aug creation n=100000                   2_515_011.50w   2_515_011.50w   170_582_958.29ns   12_434_298.00w      100.00%  
+  kpoly creation n=100000                 2_523_416.90w   2_523_416.90w   165_395_600.21ns   12_334_297.00w       96.96%  
+  kmono creation n=100000                 2_524_276.20w   2_524_276.20w   139_010_667.67ns   12_334_292.00w       81.49%  
+  map creation n=100000                   1_676_784.60w   1_676_784.60w    88_051_683.13ns    9_964_205.00w       51.62%  
+  aug add n=100000                                                                945.99ns          156.00w               
+  kpoly add n=100000                                                              907.97ns          155.00w               
+  kmono add n=100000                                                              639.57ns          155.00w               
+  map add n=100000                                                                340.13ns          120.00w               
+  aug remove n=100000                                                             616.30ns          107.00w               
+  kpoly remove n=100000                                                           585.40ns          106.00w               
+  kmono remove n=100000                                                           404.59ns          105.00w               
+  map remove n=100000                                                             239.90ns           87.00w               
+  aug find n=100000                                                               110.79ns           10.00w               
+  kpoly find n=100000                                                              82.04ns           10.00w               
+  kmono find n=100000                                                              69.99ns            9.00w               
+  map find n=100000                                                                83.71ns            3.00w               
+  aug fold n=100000                                                         5_113_492.99ns            8.00w        3.00%  
+  kpoly fold n=100000                                                       4_972_856.86ns            8.00w        2.92%  
+  kmono fold n=100000                                                       4_735_423.70ns            8.00w        2.78%  
+  map fold n=100000                                                           874_966.60ns            3.00w        0.51%  
+  aug measure O(1) n=100000                                                        10.59ns            3.00w               
+  kpoly measure O(1) n=100000                                                      10.48ns            3.00w               
+  kmono measure O(1) n=100000                                                       9.68ns            3.00w               
+  map measure O(n) fold n=100000                                              919_575.73ns            3.00w        0.54%  
+  map measure O(log n) max_elt n=100000                                            28.28ns            3.00w               
                                                                                                                           
