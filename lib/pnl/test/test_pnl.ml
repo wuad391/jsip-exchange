@@ -73,13 +73,13 @@ let%expect_test "scale in, partial close, then mark" =
   print_summary pnl Harness.alice;
   [%expect
     {|
-    AAPL: inv=100 avg=$151.00 ref=$154.00 realized=$400.00 unrealized=$300.00
+    0: inv=100 avg=$151.00 ref=$154.00 realized=$400.00 unrealized=$300.00
     TOTAL: realized=$400.00 unrealized=$300.00 pnl=$700.00
     |}];
   print_summary pnl Harness.bob;
   [%expect
     {|
-    AAPL: inv=-100 avg=$151.00 ref=$154.00 realized=-$400.00 unrealized=-$300.00
+    0: inv=-100 avg=$151.00 ref=$154.00 realized=-$400.00 unrealized=-$300.00
     TOTAL: realized=-$400.00 unrealized=-$300.00 pnl=-$700.00
     |}]
 ;;
@@ -114,7 +114,7 @@ let%expect_test "position flip: long to short in one fill" =
   print_summary pnl Harness.charlie;
   [%expect
     {|
-    AAPL: inv=-30 avg=$110.00 ref=$112.00 realized=$500.00 unrealized=-$60.00
+    0: inv=-30 avg=$110.00 ref=$112.00 realized=$500.00 unrealized=-$60.00
     TOTAL: realized=$500.00 unrealized=-$60.00 pnl=$440.00
     |}]
 ;;
@@ -137,7 +137,7 @@ let%expect_test "open position with no reference price yet" =
   print_summary pnl Harness.alice;
   [%expect
     {|
-    AAPL: inv=10 avg=$100.00 ref=n/a realized=$0.00 unrealized=$0.00
+    0: inv=10 avg=$100.00 ref=n/a realized=$0.00 unrealized=$0.00
     TOTAL: realized=$0.00 unrealized=$0.00 pnl=$0.00
     |}]
 ;;
