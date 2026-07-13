@@ -35,6 +35,10 @@ let color_p90 = "#e3b341"
 let color_p99 = "#f85149"
 let color_max = "#bc8cff"
 
+(* P&L sign colours: profit green, loss red (flat/zero stays muted). *)
+let color_pnl_up = "#3fb950"
+let color_pnl_down = "#f85149"
+
 let text ?(color = fg) ?(size = "13px") ?(weight = "400") s =
   Vdom.Node.create
     "span"
@@ -197,15 +201,28 @@ let render_participants (rows : Display.participant_row list) =
       [ th ~align:"left" "participant"
       ; th ~align:"right" "orders/s"
       ; th ~align:"right" "resting"
+      ; th ~align:"right" "P&L"
       ]
   in
   let row (r : Display.participant_row) =
+    let pnl_color =
+      if r.pnl_cents > 0
+      then color_pnl_up
+      else if r.pnl_cents < 0
+      then color_pnl_down
+      else muted
+    in
     Vdom.Node.create
       "tr"
       ~attrs:[]
       [ td ~align:"left" r.name
       ; td ~align:"right" (Int.to_string r.orders_per_sec)
       ; td ~color:muted ~align:"right" (Int.to_string r.resting_orders)
+      ; td
+          ~color:pnl_color
+          ~align:"right"
+          (Jsip_types.Price.to_string_dollar
+             (Jsip_types.Price.of_int_cents r.pnl_cents))
       ]
   in
   panel

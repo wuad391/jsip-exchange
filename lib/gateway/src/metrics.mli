@@ -42,6 +42,14 @@ val record_processed
   -> busy:Time_ns.Span.t
   -> unit
 
+(** Fold the matching engine's post-match [events] into cumulative
+    per-participant P&L: fills move both parties' positions, trade reports
+    refresh the mark price open positions are valued at. Called from the
+    matching loop after {!record_processed}. Unlike the per-window counters,
+    this P&L accumulates over the whole session — it is never cleared by the
+    per-second reset. *)
+val record_events : t -> Exchange_event.t list -> unit
+
 (** A fresh reader that receives one {!Exchange_stats.t} per second until the
     reader is closed. *)
 val subscribe : t -> Exchange_stats.t Pipe.Reader.t
