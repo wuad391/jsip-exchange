@@ -50,6 +50,13 @@ val create : Request.t -> order_id:Order_id.t -> t
 (** {2 Accessors} *)
 
 val order_id : t -> Order_id.t
+
+(** The participant-supplied id from the originating request, carried on the
+    live order so the matching engine can label fills without a side table.
+    [t] has no [bin_io] and market data projects to {!Level}/{!Bbo}, so this
+    stays off the wire — do not add [bin_io] to [t] without revisiting that. *)
+val client_order_id : t -> Client_order_id.t
+
 val symbol : t -> Symbol_id.t
 val participant : t -> Participant.t
 val side : t -> Side.t

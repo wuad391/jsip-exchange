@@ -20,15 +20,15 @@ module Symbol_registry = struct
   ;;
 end
 
-(* We store an additional client_order_id_lookup so the matching machine can
-   easily create Fill events (which require client order ids) from orders
-   (which do not have client order ids for anonymity) *)
+(* [client_order_tables] maps a participant's [client_order_id] to their live
+   order, so a client can cancel by the id they chose. Fills need the reverse
+   direction (order -> client_order_id); we get that straight off [Order.t],
+   which now carries its [client_order_id], rather than from a side table. *)
 type t =
   { symbols : Symbol_registry.t
   ; order_id_gen : Order_id.Generator.t
   ; mutable next_fill_id : int
   ; client_order_tables : Order.t Client_order_id.Table.t Participant.Table.t
-  ; client_order_id_lookup : Client_order_id.t Order_id.Table.t
   }
 [@@deriving sexp_of]
 
@@ -37,7 +37,6 @@ let create symbols =
   ; order_id_gen = Order_id.Generator.create ()
   ; next_fill_id = 1
   ; client_order_tables = Hashtbl.create (module Participant)
-  ; client_order_id_lookup = Hashtbl.create (module Order_id)
   }
 ;;
 
@@ -71,47 +70,18 @@ let get_client_order t participant client_order_id =
 ;;
 
 let remove_client_order t participant client_order_id =
-  let client_order_table_opt =
-    Hashtbl.find t.client_order_tables participant
-  in
-  match client_order_table_opt with
+  match Hashtbl.find t.client_order_tables participant with
   | None -> ()
-  | Some table ->
-    let client_order_opt = Hashtbl.find_and_remove table client_order_id in
-    (match client_order_opt with
-     | None -> ()
-     | Some client_order ->
-       Hashtbl.remove t.client_order_id_lookup (Order.order_id client_order))
-;;
-
-(* Precondition: [order_id] is registered in [client_order_id_lookup]. This
-   holds for every order we look up here — [add_client_order] registers an
-   order the moment it can rest, and it stays registered until it is fully
-   filled or cancelled (see [remove_client_order]). Looking up an
-   unregistered id is an internal invariant violation, so we raise with the
-   offending id rather than returning an option a caller could quietly drop. *)
-let get_client_order_id t order_id =
-  match Hashtbl.find t.client_order_id_lookup order_id with
-  | Some client_order_id -> client_order_id
-  | None ->
-    raise_s
-      [%message
-        "Matching_engine.get_client_order_id: order_id not registered"
-          (order_id : Order_id.t)]
+  | Some table -> Hashtbl.remove table client_order_id
 ;;
 
 let add_client_order t client_order_id order =
-  let order_id = Order.order_id order in
   let participant = Order.participant order in
   let client_order_table =
     Hashtbl.find_or_add t.client_order_tables participant ~default:(fun () ->
       Hashtbl.create (module Client_order_id))
   in
-  Hashtbl.add_exn client_order_table ~key:client_order_id ~data:order;
-  Hashtbl.add_exn
-    t.client_order_id_lookup
-    ~key:order_id
-    ~data:client_order_id
+  Hashtbl.add_exn client_order_table ~key:client_order_id ~data:order
 ;;
 
 (* END client order id functions *)
@@ -132,8 +102,7 @@ let rec match_loop t ~book ~order ~fill_id =
       Order.fill order ~by:fill_size;
       Order.fill resting ~by:fill_size;
       let aggressor_client_order_id, resting_client_order_id =
-        ( get_client_order_id t (Order.order_id order)
-        , get_client_order_id t (Order.order_id resting) )
+        Order.client_order_id order, Order.client_order_id resting
       in
       if Order.is_fully_filled resting
       then (
