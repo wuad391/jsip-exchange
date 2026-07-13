@@ -36,6 +36,17 @@ module Display : sig
     }
   [@@deriving sexp_of, compare, equal]
 
+  (** One participant's net profit-and-loss, aggregated across every symbol
+      they have traded, in integer cents (matching {!Jsip_types.Price}). The
+      view formats [total_cents] to dollars and colors it by sign. *)
+  module Participant_pnl : sig
+    type t =
+      { participant : string
+      ; total_cents : int
+      }
+    [@@deriving sexp_of, compare, equal]
+  end
+
   type t =
     { title : string
     ; counter : string
@@ -46,6 +57,12 @@ module Display : sig
         directory. Always visible in the chrome — independent of the
         event-list filters — so the user can keep an eye on the live market
         while drilling into specific event categories. *)
+    ; participant_pnl : Participant_pnl.t list
+    (** Net P&L per participant, sorted by [total_cents] descending (biggest
+        winner first, ties broken by name). Accumulated from the audit
+        stream's {!Jsip_types.Exchange_event.Fill} and [Trade_report] events,
+        so — like [bbo_panel] — it is always visible and independent of the
+        event-list filters. *)
     ; category_chips : Chip.t list
     ; substring_field : substring_field
     ; visible_events : (Event_log.Color.t * string) list
