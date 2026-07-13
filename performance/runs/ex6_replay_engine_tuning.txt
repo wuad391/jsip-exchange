@@ -68,16 +68,39 @@ maintenance, and BBO is read twice per submit and twice per cancel while each
 order only enqueues/dequeues once — so moving the work to the write side is a
 clear net win.
 
-Directional latency (same contention caveat as above)
------------------------------------------------------
-                     after2 (contended)   after3 (light)   note
-  submit p50           4.10 us              2.05 us         median, fairly robust
-  submit p99          32.77 us             16.38 us
-  cancel p99.9         2.10 ms            262.14 us ... (cancel) 32.77 us
-  wall                28.67 s               3.72 s          DOMINATED by contention
-Treat these as consistent-with-the-profile, not as an isolated speedup number.
-For a clean latency delta we would need to run before/after back-to-back at the
-same contention (the after2 binary was not preserved).
+Absolute numbers: the cumulative journey (O(n) -> fully tuned)
+-------------------------------------------------------------
+Two kinds of number here. ALLOCATION and GC COUNTS are deterministic (same seed
+=> same work every run), so they compare exactly across any run. WALL and
+LATENCY depend on box contention, so those come from a back-to-back run of the
+two binaries one right after the other at load ~3-5 both times -- and the tuned
+leg actually ran at the HIGHER load (5.15 vs 2.82), so its advantage is
+understated, not inflated.
+
+Deterministic (1M actions, contention-independent):
+  state                          alloc w/action   minor GC   major GC
+  O(n) baseline (pre-PR#19)          3049.9          2957        86
+  + PR#19  O(log) BBO                 145.9           158        29
+  + reverse-table removal             141.6           153        28
+  + level-cache + dup-check (now)     140.8           152        28
+  => 21.7x less allocation, 19.5x fewer minor GCs, cumulative.
+
+Matched back-to-back (1M actions, same box, consecutive):
+                        O(n) baseline    fully tuned    factor
+  wall                    47.16 s          4.57 s        10.3x
+  throughput              21.2k act/s      218.9k act/s  10.3x
+  submit p50              65.54 us          2.05 us       32x
+  submit p99            524.29 us          16.38 us       32x
+  cancel p99           131.07 us           8.19 us       16x
+  events                 identical         identical     (correctness)
+
+Where the wins came from (submit p50, the headline latency):
+  O(n) 65.54us -> PR#19 4.10us (16x, the big structural win: no more O(n)
+  list-fold BBO) -> reverse-table 4.10us (flat here; that win was on the fill
+  path) -> level-cache + dup-check 2.05us (another 2x). PR#19 did the heavy
+  lifting on allocation and latency; this session's three tweaks then doubled
+  submit again on top by deleting the residual per-read fold and the redundant
+  hashtable probes -- CPU-cycle wins, which is why they barely move allocation.
 
 What's next
 -----------
