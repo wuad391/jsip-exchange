@@ -13,6 +13,7 @@
 
 open! Core
 open Jsip_types
+open Jsip_gateway
 
 (** A single labelled toggle in the filter row. The bonsai_term layer renders
     each chip as bracketed text colored by [enabled] and prefixed with its
@@ -35,14 +36,33 @@ module Display : sig
     }
   [@@deriving sexp_of, compare, equal]
 
+  (** One participant's net profit-and-loss, aggregated across every symbol
+      they have traded, in integer cents (matching {!Jsip_types.Price}). The
+      view formats [total_cents] to dollars and colors it by sign. *)
+  module Participant_pnl : sig
+    type t =
+      { participant : string
+      ; total_cents : int
+      }
+    [@@deriving sexp_of, compare, equal]
+  end
+
   type t =
     { title : string
     ; counter : string
-    ; bbo_panel : (Symbol.t * Bbo.t) list
-    (** Snapshot of the latest BBO per symbol, in first-appearance order.
-        Always visible in the chrome — independent of the event-list filters
-        — so the user can keep an eye on the live market while drilling into
-        specific event categories. *)
+    ; bbo_panel : (string * Bbo.t) list
+    (** Snapshot of the latest BBO per symbol, in first-appearance order,
+        with the symbol already rendered to its display label (name if the
+        directory knows it, else the raw id) so the view layer needs no
+        directory. Always visible in the chrome — independent of the
+        event-list filters — so the user can keep an eye on the live market
+        while drilling into specific event categories. *)
+    ; participant_pnl : Participant_pnl.t list
+    (** Net P&L per participant, sorted by [total_cents] descending (biggest
+        winner first, ties broken by name). Accumulated from the audit
+        stream's {!Jsip_types.Exchange_event.Fill} and [Trade_report] events,
+        so — like [bbo_panel] — it is always visible and independent of the
+        event-list filters. *)
     ; category_chips : Chip.t list
     ; substring_field : substring_field
     ; visible_events : (Event_log.Color.t * string) list
@@ -54,7 +74,10 @@ end
 
 type t
 
-val create : unit -> t
+(** Create the initial state. [directory] (default
+    {!Jsip_gateway.Symbol_directory.empty}) is the id<->name map used to
+    render event lines and the BBO panel; the default renders raw ids. *)
+val create : ?directory:Symbol_directory.t -> unit -> t
 
 (** Deliver a new exchange event. The controller appends it to the log; the
     next call to [display] will include it if the current filter admits. *)

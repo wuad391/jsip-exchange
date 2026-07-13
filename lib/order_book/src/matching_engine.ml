@@ -1,31 +1,22 @@
 open! Core
 open Jsip_types
 
-(* Interns each symbol to a small int id and indexes order books by that id
-   instead of by the symbol string, so a lookup becomes one string hash plus
-   an O(1) array index instead of an O(log n) tree walk of string
-   comparisons. The symbol set is fixed at [create] and never grows, so the
-   ids stay stable for the engine's lifetime. *)
+(* Ex4 phase 1: symbols are ints end-to-end, so a caller handing us a
+   Symbol_id.t already has the array index — there is no name left to hash. A
+   lookup is a bounds check plus an O(1) array index, nothing else. *)
 module Symbol_registry = struct
-  type t =
-    { ids : int Symbol.Table.t
-    ; books : Order_book.t array
-    }
-  [@@deriving sexp_of]
+  type t = { books : Order_book.t array } [@@deriving sexp_of]
 
-  let create (symbols : Symbol.t list) : t =
-    let books = List.map symbols ~f:Order_book.create |> Array.of_list in
-    let ids =
-      List.mapi symbols ~f:(fun id symbol -> symbol, id)
-      |> Hashtbl.of_alist_exn (module Symbol)
-    in
-    { ids; books }
+  let create (num_symbols : int) : t =
+    { books =
+        Array.init num_symbols ~f:(fun i ->
+          Order_book.create (Symbol_id.of_int i))
+    }
   ;;
 
-  let find t symbol =
-    match Hashtbl.find t.ids symbol with
-    | None -> None
-    | Some id -> Some t.books.(id)
+  let find t symbol_id =
+    let i = Symbol_id.to_int symbol_id in
+    if i >= 0 && i < Array.length t.books then Some t.books.(i) else None
   ;;
 end
 

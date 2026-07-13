@@ -41,7 +41,7 @@ open Jsip_order_book
 (* Setup helpers *)
 (* ---------------------------------------------------------------- *)
 
-let aapl = Symbol.of_string "AAPL"
+let aapl = Symbol_id.of_int 0
 let alice = Participant.of_string "Alice"
 let bob = Participant.of_string "Bob"
 let client_order_id_test_ref = ref 1
@@ -80,9 +80,9 @@ let book_with_n_asks ?(min_price = 10_000) ?(same_price = false) n =
   book, gen
 ;;
 
-(** Build a matching engine with [n] resting sells on AAPL. *)
+(** Build a matching engine with [n] resting sells on symbol id 0. *)
 let engine_with_n_asks ?(min_price = 10_000) n =
-  let engine = Matching_engine.create [ aapl ] in
+  let engine = Matching_engine.create 1 in
   for i = 1 to n do
     ignore
       (Matching_engine.submit
@@ -102,13 +102,9 @@ let engine_with_n_asks ?(min_price = 10_000) n =
 ;;
 
 (** Build a matching engine trading [n] distinct (empty) symbols. Returns the
-    engine and the last symbol created, so a lookup pays the full cost
-    regardless of how the underlying structure orders its keys. *)
+    engine and its last valid id, for benchmarking a lookup. *)
 let engine_with_n_symbols n =
-  let symbols =
-    List.init n ~f:(fun i -> Symbol.of_string [%string "SYM%{i#Int}"])
-  in
-  Matching_engine.create symbols, List.last_exn symbols
+  Matching_engine.create n, Symbol_id.of_int (n - 1)
 ;;
 
 (* ---------------------------------------------------------------- *)
@@ -420,6 +416,20 @@ let bench_symbol_lookup ~n =
     ignore (Matching_engine.book engine symbol : Order_book.t option))
 ;;
 
+(* The reject path's lookup: an id one past the last valid one fails the
+   bounds check in [Symbol_registry.find] and returns [None] without touching
+   the array. Benched alongside the hit case to confirm that rejecting an
+   out-of-range symbol is also O(1) and independent of [n]. *)
+let bench_symbol_lookup_miss ~n =
+  let engine, _last_valid = engine_with_n_symbols n in
+  let out_of_range = Symbol_id.of_int n in
+  Bench.Test.create
+    ~name:[%string "book_lookup_miss (n=%{n#Int})"]
+    (fun () ->
+       ignore
+         (Matching_engine.book engine out_of_range : Order_book.t option))
+;;
+
 (* ---------------------------------------------------------------- *)
 (* Allocation measurement *)
 (* ---------------------------------------------------------------- *)
@@ -552,6 +562,7 @@ let () =
              (List.map sizes ~f:(fun n -> bench_snapshot ~n)) )
        ; ( "symbol-lookup"
          , Bench.make_command
-             (List.map symbol_counts ~f:(fun n -> bench_symbol_lookup ~n)) )
+             (List.concat_map symbol_counts ~f:(fun n ->
+                [ bench_symbol_lookup ~n; bench_symbol_lookup_miss ~n ])) )
        ])
 ;;

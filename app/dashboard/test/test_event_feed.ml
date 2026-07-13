@@ -1,13 +1,14 @@
 open! Core
 open Jsip_types
 open Jsip_dashboard
+open Jsip_symbol_directory
 
 (* [Event_feed.format] is what the browser feed pane draws, so these pin the
    text and color of every event kind — and, via the [symbol] field,
    [symbol_of_event] (note [cancel_reject] carries no symbol). One event per
    variant so a wording or coloring change shows up here as a readable diff. *)
 
-let sym = Symbol.of_string "AAPL"
+let sym = Symbol_id.of_int 0
 let alice = Participant.of_string "alice"
 let bob = Participant.of_string "bob"
 
@@ -96,26 +97,47 @@ let%expect_test "format renders each event kind" =
   [%expect
     {|
     order_accept
-    ((symbol (AAPL)) (text "ACCEPTED id=7 AAPL BUY 100@$150.00 DAY")
-     (color #3fb950))
+    ((symbol (0)) (text "ACCEPTED id=7 0 BUY 100@$150.00 DAY") (color #3fb950))
     fill
-    ((symbol (AAPL))
+    ((symbol (0))
      (text
-      "FILL fill_id=1 AAPL $150.00 x50 aggressor=7(alice w/ client order ID = 1) BUY resting=3(bob w/ client order ID = 2)")
+      "FILL fill_id=1 0 $150.00 x50 aggressor=7(alice w/ client order ID = 1) BUY resting=3(bob w/ client order ID = 2)")
      (color #39c5cf))
     order_cancel
-    ((symbol (AAPL))
-     (text "CANCELLED id=7 AAPL remaining=25 reason=PARTICIPANT_REQUESTED")
+    ((symbol (0))
+     (text "CANCELLED id=7 0 remaining=25 reason=PARTICIPANT_REQUESTED")
      (color #e3b341))
     order_reject
-    ((symbol (AAPL)) (text "REJECTED AAPL SELL 10@$140.00 reason=unknown symbol")
+    ((symbol (0)) (text "REJECTED 0 SELL 10@$140.00 reason=unknown symbol")
      (color #f85149))
     cancel_reject
     ((symbol ()) (text "REJECTED CANCEL because no such order") (color #f0883e))
     bbo
-    ((symbol (AAPL)) (text "BBO AAPL bid=$149.90 x5 ask=$150.10 x7")
-     (color #58a6ff))
+    ((symbol (0)) (text "BBO 0 bid=$149.90 x5 ask=$150.10 x7") (color #58a6ff))
     trade_report
-    ((symbol (AAPL)) (text "TRADE AAPL $150.05 x3") (color #bc8cff))
+    ((symbol (0)) (text "TRADE 0 $150.05 x3") (color #bc8cff))
+    |}]
+;;
+
+let%expect_test "format resolves the symbol id to its name via the directory"
+  =
+  let directory = Symbol_directory.of_names [ Symbol.of_string "AAPL" ] in
+  let find name = List.Assoc.find_exn events name ~equal:String.equal in
+  (* The [symbol] field still carries the raw id (for tab filtering); only
+     the display [text] gains the name. The hand-formatted fill line and a
+     [%string] line both pick it up. *)
+  print_s
+    [%sexp
+      (Event_feed.format ~directory (find "fill") : Event_feed.feed_row)];
+  print_s
+    [%sexp (Event_feed.format ~directory (find "bbo") : Event_feed.feed_row)];
+  [%expect
+    {|
+    ((symbol (0))
+     (text
+      "FILL fill_id=1 AAPL $150.00 x50 aggressor=7(alice w/ client order ID = 1) BUY resting=3(bob w/ client order ID = 2)")
+     (color #39c5cf))
+    ((symbol (0)) (text "BBO AAPL bid=$149.90 x5 ask=$150.10 x7")
+     (color #58a6ff))
     |}]
 ;;

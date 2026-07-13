@@ -5,9 +5,21 @@ open Jsip_gateway
 
 (* --- Constants --- *)
 
-let aapl = Symbol.of_string "AAPL"
-let tsla = Symbol.of_string "TSLA"
-let goog = Symbol.of_string "GOOG"
+(* Ex4 phase 1: symbols are ints end-to-end, so the test symbols are just the
+   ids the default 3-symbol engine trades (see [create]). The AAPL/TSLA/GOOG
+   names live only in these binding names now, for the reader's benefit. *)
+let aapl = Symbol_id.of_int 0
+let tsla = Symbol_id.of_int 1
+let goog = Symbol_id.of_int 2
+
+(* A directory that gives those ids the names their bindings already imply,
+   so a test can exercise the phase-2 render path (ids -> names) instead of
+   the raw-id fallback. Ordering matches [aapl]/[tsla]/[goog] = 0/1/2. *)
+let directory =
+  Symbol_directory.of_names
+    (List.map [ "AAPL"; "TSLA"; "GOOG" ] ~f:Symbol.of_string)
+;;
+
 let alice = Participant.of_string "Alice"
 let bob = Participant.of_string "Bob"
 let charlie = Participant.of_string "Charlie"
@@ -26,9 +38,9 @@ let new_client_order_id () =
   Client_order_id.of_int !client_order_id_test_ref
 ;;
 
-let create ?(symbols = [ aapl; tsla; goog ]) () =
+let create ?(num_symbols = 3) () =
   reset_client_order_id_test_ref ();
-  { engine = Matching_engine.create symbols }
+  { engine = Matching_engine.create num_symbols }
 ;;
 
 let engine t = t.engine
@@ -201,14 +213,14 @@ let submit_quiet_ ?participant t request =
 
 let print_book t symbol =
   match Matching_engine.book t.engine symbol with
-  | None -> print_endline [%string "unknown symbol %{symbol#Symbol}"]
+  | None -> print_endline [%string "unknown symbol %{symbol#Symbol_id}"]
   | Some book -> Order_book.snapshot book |> Book.to_string |> print_endline
 ;;
 
 let print_bbo t symbol =
   match Matching_engine.book t.engine symbol with
-  | None -> print_endline [%string "BBO %{symbol#Symbol}: unknown symbol"]
+  | None -> print_endline [%string "BBO %{symbol#Symbol_id}: unknown symbol"]
   | Some book ->
     let bbo = Order_book.best_bid_offer book |> Bbo.to_string in
-    print_endline [%string "BBO %{symbol#Symbol}: %{bbo}"]
+    print_endline [%string "BBO %{symbol#Symbol_id}: %{bbo}"]
 ;;

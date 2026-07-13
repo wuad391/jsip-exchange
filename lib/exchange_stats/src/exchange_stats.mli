@@ -97,7 +97,7 @@ end
     gives the ask-minus-bid spread when both are present. *)
 module Top_of_book : sig
   type t =
-    { symbol : Symbol.t
+    { symbol : Symbol_id.t
     ; bbo : Bbo.t
     }
   [@@deriving sexp, bin_io]

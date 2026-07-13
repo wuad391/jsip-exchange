@@ -1,6 +1,7 @@
 open! Core
 open Jsip_types
 open Jsip_scenario_runner
+open Jsip_symbol_directory
 module Fundamental_oracle = Jsip_fundamental.Fundamental_oracle
 module Spammer = Jsip_bots.Spammer
 module Noise_trader = Jsip_bots.Noise_trader
@@ -17,9 +18,9 @@ let description =
 let symbol = Symbol.of_string "AAPL"
 let initial_price_cents = 15000
 
-let oracle_config : Fundamental_oracle.Config.t =
-  Symbol.Map.of_alist_exn
-    [ ( symbol
+let oracle_config ~symbol_id : Fundamental_oracle.Config.t =
+  Symbol_id.Map.of_alist_exn
+    [ ( symbol_id
       , { Fundamental_oracle.Config.initial_price_cents
         ; volatility_cents_per_sec = 3.0
         ; mean_reversion_strength = 0.05
@@ -128,7 +129,7 @@ let queue_flood_params : Spammer.Config.resource_exhaustion_params =
    [tick_interval] live on the spec (the per-instance tuning point);
    queue-flood ticks fastest because its attack is purely about rate. Add
    more archetypes by adding a params record above and a row here. *)
-let spammer_specs =
+let spammer_specs ~symbols =
   List.map
     [ "fan-out-storm", 1001, Time_ns.Span.of_ms 10.0, fan_out_storm_params
     ; "deep-sweep", 1002, Time_ns.Span.of_ms 10.0, deep_sweep_params
@@ -139,16 +140,16 @@ let spammer_specs =
       let behavior : Spammer.Config.behavior = Resource_exhaustion params in
       Bot_spec.T
         { bot = (module Spammer)
-        ; config = Spammer.Config.create ~symbols:[ symbol ] ~behavior
+        ; config = Spammer.Config.create ~symbols ~behavior
         ; participant = Participant.of_string participant
-        ; symbols = [ symbol ]
+        ; symbols
         ; rng_seed = seed
         ; tick_interval
         ; is_marketdata_consumer = true
         })
 ;;
 
-let market_maker_spec =
+let market_maker_spec ~symbols =
   Bot_spec.T
     { bot = (module Market_maker_bot)
     ; config =
@@ -157,9 +158,9 @@ let market_maker_spec =
           ~size_per_level:10
           ~num_levels:5
           ~inventory_skew_cents_per_share:1
-          ~symbols:[ symbol ]
+          ~symbols
     ; participant = Participant.of_string "market-maker"
-    ; symbols = [ symbol ]
+    ; symbols
     ; rng_seed = 2001
     ; tick_interval = Time_ns.Span.of_sec 1.0
     ; is_marketdata_consumer = true
@@ -168,18 +169,18 @@ let market_maker_spec =
 
 (* A noise trader supplies organic two-sided activity so the book has real
    liquidity for the spammers and market maker to churn against. *)
-let noise_trader_spec =
+let noise_trader_spec ~symbols =
   Bot_spec.T
     { bot = (module Noise_trader)
     ; config =
         Noise_trader.create_config
-          ~symbols:[ symbol ]
+          ~symbols
           ~avg_size:8
           ~tick_chance:0.8
           ~aggressiveness_pct:50
           ~ioc_pct:40
     ; participant = Participant.of_string "noise-trader"
-    ; symbols = [ symbol ]
+    ; symbols
     ; rng_seed = 3001
     ; tick_interval = Time_ns.Span.of_ms 200.0
     ; is_marketdata_consumer = true
@@ -191,12 +192,12 @@ let noise_trader_spec =
    window fills with their prints, so it reacts to the artificial volatility
    they inject -- letting us watch a strategy bot behave against a market
    being actively attacked, not just the market maker and noise trader. *)
-let momentum_trader_spec =
+let momentum_trader_spec ~symbol_id =
   Bot_spec.T
     { bot = (module Momentum_trader)
     ; config =
         Momentum_trader.Config.create_exn
-          ~symbol
+          ~symbol:symbol_id
           ~window_capacity:5
           ~threshold_cents:15
           ~max_order_size:25
@@ -204,7 +205,7 @@ let momentum_trader_spec =
           ~cooldown_ticks:1
           ()
     ; participant = Participant.of_string "momentum-trader"
-    ; symbols = [ symbol ]
+    ; symbols = [ symbol_id ]
     ; rng_seed = 4001
     ; tick_interval = Time_ns.Span.of_ms 500.0
     ; is_marketdata_consumer = true
@@ -212,12 +213,18 @@ let momentum_trader_spec =
 ;;
 
 let configure () : Scenario_config.t =
+  let directory = Symbol_directory.of_names [ symbol ] in
+  let symbol_id = Symbol_directory.id_exn directory symbol in
+  let symbols = [ symbol_id ] in
   { name
-  ; symbols = [ symbol ]
-  ; oracle_config
+  ; directory
+  ; oracle_config = oracle_config ~symbol_id
   ; news = []
   ; bots =
-      spammer_specs
-      @ [ market_maker_spec; noise_trader_spec; momentum_trader_spec ]
+      spammer_specs ~symbols
+      @ [ market_maker_spec ~symbols
+        ; noise_trader_spec ~symbols
+        ; momentum_trader_spec ~symbol_id
+        ]
   }
 ;;

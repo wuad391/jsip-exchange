@@ -1,6 +1,7 @@
 open! Core
 open Jsip_types
 open Jsip_scenario_runner
+open Jsip_symbol_directory
 module Fundamental_oracle = Jsip_fundamental.Fundamental_oracle
 
 let name = "book-filler"
@@ -18,9 +19,11 @@ let symbol = Symbol.of_string "AAPL"
    sitting at least $5 off the fundamental so nothing ever fills. Dial
    [orders_per_tick] or the [tick_interval] down for a gentler run. *)
 let configure () : Scenario_config.t =
+  let directory = Symbol_directory.of_names [ symbol ] in
+  let symbol_id = Symbol_directory.id_exn directory symbol in
   let oracle_config =
-    Symbol.Map.of_alist_exn
-      [ ( symbol
+    Symbol_id.Map.of_alist_exn
+      [ ( symbol_id
         , { Fundamental_oracle.Config.initial_price_cents = 15000
           ; volatility_cents_per_sec = 5.0
           ; mean_reversion_strength = 0.1
@@ -29,7 +32,7 @@ let configure () : Scenario_config.t =
       ]
   in
   let book_filler_config : Jsip_bots.Book_filler_sadat.Config.t =
-    { symbols = [ symbol ]
+    { symbols = [ symbol_id ]
     ; orders_per_tick = 50
     ; order_size = 1
     ; price_offset_cents = 500
@@ -38,7 +41,7 @@ let configure () : Scenario_config.t =
     }
   in
   { name
-  ; symbols = [ symbol ]
+  ; directory
   ; oracle_config
   ; news = []
   ; bots =
@@ -46,7 +49,7 @@ let configure () : Scenario_config.t =
           { bot = (module Jsip_bots.Book_filler_sadat)
           ; config = book_filler_config
           ; participant = Participant.of_string "BookFiller"
-          ; symbols = [ symbol ]
+          ; symbols = [ symbol_id ]
           ; rng_seed = 0
           ; tick_interval = Time_ns.Span.of_ms 100.0
           ; is_marketdata_consumer = false

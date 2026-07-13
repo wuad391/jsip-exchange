@@ -109,7 +109,7 @@ end
 
 module Top_of_book = struct
   type t =
-    { symbol : Symbol.t
+    { symbol : Symbol_id.t
     ; bbo : Bbo.t
     }
   [@@deriving sexp, bin_io]

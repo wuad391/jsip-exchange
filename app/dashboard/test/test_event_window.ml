@@ -11,7 +11,7 @@ open Jsip_dashboard
 
 let event : Exchange_event.t =
   Trade_report
-    { symbol = Symbol.of_string "AAPL"
+    { symbol = Symbol_id.of_int 0
     ; price = Price.of_int_cents 15000
     ; size = Size.of_int 1
     }

@@ -6,14 +6,17 @@
 
 open! Core
 open! Async
-open Jsip_types
+open Jsip_symbol_directory
 
 type t
 
-(** Start a server on the given port with the given symbols. Returns the
-    server handle and the port it is actually listening on (useful when you
-    pass port 0 to get an OS-assigned port). *)
-val start : symbols:Symbol.t list -> port:int -> unit -> t Deferred.t
+(** Start a server on the given port trading the symbols in [directory]
+    (which fixes both the count and the id<->name mapping; the engine runs on
+    ids [0 .. num_symbols - 1] and the server serves [directory] over
+    {!Rpc_protocol.symbol_directory_rpc}). Returns the server handle and the
+    port it is actually listening on (useful when you pass port 0 to get an
+    OS-assigned port). *)
+val start : directory:Symbol_directory.t -> port:int -> unit -> t Deferred.t
 
 (** The port the server is listening on. *)
 val port : t -> int

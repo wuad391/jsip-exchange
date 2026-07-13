@@ -8,14 +8,12 @@ open Jsip_types
 
 let%expect_test "window folds counts / per-participant / busy, then resets" =
   let dispatcher = Dispatcher.create () in
-  let engine =
-    Jsip_order_book.Matching_engine.create [ Symbol.of_string "AAPL" ]
-  in
+  let engine = Jsip_order_book.Matching_engine.create 1 in
   let metrics =
     Metrics.create
       ~dispatcher
       ~matching_engine:engine
-      ~symbols:[ Symbol.of_string "AAPL" ]
+      ~num_symbols:1
       ~request_queue_length:(fun () -> 7)
   in
   let alice = Participant.of_string "alice" in

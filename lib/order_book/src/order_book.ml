@@ -23,7 +23,7 @@ let sexp_of_side_book (m : side_book) : Sexp.t =
 ;;
 
 type t =
-  { symbol : Symbol.t
+  { symbol : Symbol_id.t
   ; mutable bids : side_book
   ; mutable asks : side_book
   ; id_hash : (Order_id.t, Order.t) Hashtbl.t
@@ -50,12 +50,12 @@ let set_side t side m =
 ;;
 
 let add t order =
-  if not (Symbol.equal (Order.symbol order) t.symbol)
+  if not (Symbol_id.equal (Order.symbol order) t.symbol)
   then
     raise_s
       [%message
         "Order_book.add: order symbol does not match this book"
-          ~book_symbol:(t.symbol : Symbol.t)
+          ~book_symbol:(t.symbol : Symbol_id.t)
           (order : Order.t)]
   else if Size.( <= ) (Order.remaining_size order) Size.zero
   then
@@ -160,8 +160,8 @@ let snapshot_side t (side : Side.t) : Level.t list =
     | Buy -> Map.to_alist ~key_order:`Decreasing (side_map t side)
     | Sell -> Map.to_alist ~key_order:`Increasing (side_map t side)
   in
-  List.map ordered ~f:(fun (price, q) : Level.t ->
-    { price; size = level_size q })
+  List.map ordered ~f:(fun (price, q) ->
+    ({ price; size = level_size q } : Level.t))
 ;;
 
 let snapshot t =
