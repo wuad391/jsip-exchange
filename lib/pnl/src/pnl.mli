@@ -1,7 +1,7 @@
 (** Per-participant, per-symbol profit-and-loss (P&L) tracking.
 
     A [t] accumulates, for every {!Jsip_types.Participant.t} trading a
-    {!Jsip_types.Symbol.t}, three running quantities:
+    {!Jsip_types.Symbol_id.t}, three running quantities:
 
     - {b inventory}: the signed share position (positive = long, negative =
       short);
@@ -66,7 +66,7 @@ module Summary : sig
   (** One symbol's line in a {!t}. *)
   module Per_symbol : sig
     type t =
-      { symbol : Symbol.t
+      { symbol : Symbol_id.t
       ; inventory : int
       (** Signed share position: positive long, negative short, zero flat. *)
       ; average_entry_price : Price.t option

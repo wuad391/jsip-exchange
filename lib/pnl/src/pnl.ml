@@ -24,13 +24,13 @@ module Position = struct
 end
 
 type t =
-  { positions : Position.t Map.M(Symbol).t Map.M(Participant).t
-  ; reference_prices : Price.t Map.M(Symbol).t
+  { positions : Position.t Map.M(Symbol_id).t Map.M(Participant).t
+  ; reference_prices : Price.t Map.M(Symbol_id).t
   }
 
 let empty =
   { positions = Map.empty (module Participant)
-  ; reference_prices = Map.empty (module Symbol)
+  ; reference_prices = Map.empty (module Symbol_id)
   }
 ;;
 
@@ -45,7 +45,7 @@ let set_position t ~participant ~symbol position =
   let by_symbol =
     Option.value
       (Map.find t.positions participant)
-      ~default:(Map.empty (module Symbol))
+      ~default:(Map.empty (module Symbol_id))
   in
   let by_symbol = Map.set by_symbol ~key:symbol ~data:position in
   { t with positions = Map.set t.positions ~key:participant ~data:by_symbol }
@@ -160,7 +160,7 @@ let unrealized_cents ~inventory ~average_entry_price ~reference_price =
 module Summary = struct
   module Per_symbol = struct
     type t =
-      { symbol : Symbol.t
+      { symbol : Symbol_id.t
       ; inventory : int
       ; average_entry_price : Price.t option
       ; reference_price : Price.t option
@@ -188,7 +188,7 @@ module Summary = struct
   ;;
 
   let row (r : Per_symbol.t) =
-    let symbol = Symbol.to_string r.symbol in
+    let symbol = Symbol_id.to_string r.symbol in
     let inventory = Int.to_string r.inventory in
     let avg = price_opt r.average_entry_price in
     let ref_ = price_opt r.reference_price in
@@ -217,7 +217,7 @@ let summary t participant =
   let by_symbol =
     Option.value
       (Map.find t.positions participant)
-      ~default:(Map.empty (module Symbol))
+      ~default:(Map.empty (module Symbol_id))
   in
   let per_symbol =
     Map.to_alist by_symbol
