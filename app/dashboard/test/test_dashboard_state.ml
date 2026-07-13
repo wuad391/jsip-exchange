@@ -117,11 +117,13 @@ let%expect_test "display projects the window into render-ready pane data" =
               Jsip_types.Participant.of_string "alice"
           ; order_count = 3
           ; resting_orders = 1
+          ; pnl_cents = 12345
           }
         ; { Exchange_stats.Participant_stats.participant =
               Jsip_types.Participant.of_string "zoe"
           ; order_count = 9
           ; resting_orders = 0
+          ; pnl_cents = -6700
           }
         ]
     ; top_of_book = []
@@ -152,8 +154,8 @@ let%expect_test "display projects the window into render-ready pane data" =
     ((live_mb 4) (heap_mb 8) (peak_mb 12) (minor_per_sec 2) (major_per_sec 1)
      (submit_p99_us 120) (submit_max_us 200) (submit_per_sec 300)
      (participants
-      (((name zoe) (orders_per_sec 9) (resting_orders 0))
-       ((name alice) (orders_per_sec 3) (resting_orders 1))))
+      (((name zoe) (orders_per_sec 9) (resting_orders 0) (pnl_cents -6700))
+       ((name alice) (orders_per_sec 3) (resting_orders 1) (pnl_cents 12345))))
      (market_data
       ((label "market data") (max_depth 7) (total_depth 12) (num_pipes 4)
        (max_depth_series (0 7)))))

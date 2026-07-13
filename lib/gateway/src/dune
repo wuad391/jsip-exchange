@@ -5,6 +5,7 @@
   jsip_types
   jsip_symbol_directory
   jsip_exchange_stats
+  jsip_pnl
   jsip_order_book
   async
   core)

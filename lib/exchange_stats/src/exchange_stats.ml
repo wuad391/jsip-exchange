@@ -78,11 +78,13 @@ module Participant_stats = struct
   (* [order_count] is the raw number of orders this participant submitted
      during the sample window; the dashboard divides it by the snapshot's
      [sample_period_sec] to show a per-second rate, so the rate is honest
-     whatever the sample interval is. *)
+     whatever the sample interval is. [pnl_cents] is cumulative net P&L
+     (realized + unrealized), in cents — a running total, not per-window. *)
   type t =
     { participant : Participant.t
     ; order_count : int
     ; resting_orders : int
+    ; pnl_cents : int
     }
   [@@deriving sexp, bin_io]
 end

@@ -108,6 +108,7 @@ module Display = struct
     { name : string
     ; orders_per_sec : int
     ; resting_orders : int
+    ; pnl_cents : int
     }
   [@@deriving sexp_of, equal]
 
@@ -199,6 +200,7 @@ let participants_display window : Display.participant_row list =
       { Display.name = Jsip_types.Participant.to_string p.participant
       ; orders_per_sec = per_second p.order_count ~period
       ; resting_orders = p.resting_orders
+      ; pnl_cents = p.pnl_cents
       })
     (* Busiest sender first (the flooding bot rises to the top); ties broken
        by name so the ordering is stable. *)

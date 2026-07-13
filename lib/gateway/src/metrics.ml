@@ -3,6 +3,7 @@ open! Async
 open Jsip_types
 open Jsip_order_book
 open Jsip_exchange_stats
+open Jsip_pnl
 
 (* Cap on latency samples retained per sample window. A burst of millions of
    orders should not let a single snapshot allocate without bound; we keep
@@ -38,6 +39,8 @@ type t =
        [live_words_sample_interval] so the per-sample snapshot can read the
        O(1) [Gc.quick_stat] and never walk the heap itself. *)
     mutable last_live_words : int
+  ; mutable pnl : Pnl.t
+  ; mutable traded : Participant.Set.t
   ; subscribers : Exchange_stats.t Pipe.Writer.t Bag.t
   }
 
@@ -56,6 +59,8 @@ let create ~dispatcher ~matching_engine ~num_symbols ~request_queue_length =
   ; orders_per_sec = Participant.Table.create ()
   ; busy_max_us = 0.
   ; last_live_words = 0
+  ; pnl = Pnl.empty
+  ; traded = Participant.Set.empty
   ; subscribers = Bag.create ()
   }
 ;;
@@ -81,6 +86,24 @@ let record_processed t ~kind ~latency ~busy =
   t.busy_max_us <- Float.max t.busy_max_us (Time_ns.Span.to_us busy)
 ;;
 
+(* Fold the matching engine's events into cumulative per-participant P&L: a
+   [Fill] moves both parties' positions and marks them as seen; a
+   [Trade_report] refreshes the mark price used to value open positions.
+   Cumulative — unlike the per-window counters, [pnl] and [traded] are never
+   cleared by [reset_window]. *)
+let record_events t events =
+  List.iter events ~f:(fun (event : Exchange_event.t) ->
+    match event with
+    | Fill ({ aggressor_participant; resting_participant; _ } as fill) ->
+      t.pnl <- Pnl.apply_fill t.pnl fill;
+      t.traded
+      <- Set.add (Set.add t.traded aggressor_participant) resting_participant
+    | Trade_report _ -> t.pnl <- Pnl.apply_trade_report t.pnl event
+    | Order_accept _ | Order_cancel _ | Order_reject _ | Cancel_reject _
+    | Best_bid_offer_update _ ->
+      ())
+;;
+
 let subscribe t =
   let reader, writer = Pipe.create () in
   let elt = Bag.add t.subscribers writer in
@@ -90,24 +113,29 @@ let subscribe t =
   reader
 ;;
 
-(* Union the participants seen submitting this window with those holding
-   resting orders now, so the table shows both a bot that only sends and a
-   bot whose orders are piling up. *)
+(* Union the participants seen submitting this window, those holding resting
+   orders now, and those carrying P&L from earlier fills — so the table shows
+   a bot that only sends, one whose orders are piling up, and one that traded
+   and went idle but still has realized P&L. *)
 let per_participant t =
   let resting = Matching_engine.resting_order_counts t.matching_engine in
   let participants =
     Set.union
-      (Participant.Set.of_list (Hashtbl.keys t.orders_per_sec))
-      (Map.key_set resting)
+      (Set.union
+         (Participant.Set.of_list (Hashtbl.keys t.orders_per_sec))
+         (Map.key_set resting))
+      t.traded
   in
   Set.to_list participants
   |> List.map ~f:(fun participant ->
+    let summary : Pnl.Summary.t = Pnl.summary t.pnl participant in
     { Exchange_stats.Participant_stats.participant
     ; (* Raw window count; the dashboard divides by [sample_period_sec]. *)
       order_count =
         Hashtbl.find t.orders_per_sec participant |> Option.value ~default:0
     ; resting_orders =
         Map.find resting participant |> Option.value ~default:0
+    ; pnl_cents = summary.total_cents
     })
 ;;
 

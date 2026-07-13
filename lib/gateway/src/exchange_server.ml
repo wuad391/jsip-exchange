@@ -85,7 +85,8 @@ let start_matching_loop ~engine ~dispatcher ~metrics message_reader =
            metrics
            ~kind
            ~latency:(Time_ns.diff matched_at enqueued_at)
-           ~busy:(Time_ns.diff done_at before)))
+           ~busy:(Time_ns.diff done_at before);
+         Metrics.record_events metrics events))
 ;;
 
 let start ~directory ~port () =

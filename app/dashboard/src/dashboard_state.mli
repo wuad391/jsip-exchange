@@ -67,12 +67,13 @@ module Display : sig
     }
   [@@deriving sexp_of, equal]
 
-  (** A row of the per-participant table, one participant's current-second
-      send rate and resting-order count. *)
+  (** A row of the per-participant table: one participant's current-second
+      send rate, resting-order count, and cumulative net P&L in cents. *)
   type participant_row =
     { name : string
     ; orders_per_sec : int
     ; resting_orders : int
+    ; pnl_cents : int
     }
   [@@deriving sexp_of, equal]
 

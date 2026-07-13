@@ -62,12 +62,17 @@ end
     of order requests (submits and cancels) that arrived from the participant
     this window — the dashboard divides it by [sample_period_sec] for a
     per-second rate, and high values pick out a flooding bot.
-    [resting_orders] is the live order count across all symbols right now. *)
+    [resting_orders] is the live order count across all symbols right now.
+    [pnl_cents] is the participant's cumulative net P&L. *)
 module Participant_stats : sig
   type t =
     { participant : Participant.t
     ; order_count : int
     ; resting_orders : int
+    ; pnl_cents : int
+    (** Cumulative net P&L (realized + unrealized) across all symbols, in
+        cents. Unlike [order_count] this is a running total as of this
+        snapshot, not a per-window quantity. *)
     }
   [@@deriving sexp, bin_io]
 end
