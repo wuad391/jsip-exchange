@@ -6,16 +6,17 @@ type t =
   { participant : Participant.t
   ; reader : Exchange_event.t Pipe.Reader.t
   ; writer : Exchange_event.t Pipe.Writer.t
+  ; limit : Bounded_pipe.Limit.t
   }
 
-let create participant =
+let create participant ~limit =
   let reader, writer = Pipe.create () in
-  { participant; reader; writer }
+  { participant; reader; writer; limit }
 ;;
 
 let participant t = t.participant
 let reader t = t.reader
-let push t event = Pipe.write_without_pushback_if_open t.writer event
+let push t event = Bounded_pipe.push t.writer ~limit:t.limit event
 let close t = Pipe.close t.writer
 let is_closed t = Pipe.is_closed t.writer
 let queue_length t = Pipe.length t.writer

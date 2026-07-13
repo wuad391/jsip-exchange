@@ -21,13 +21,30 @@ open Jsip_types
 
 type t
 
-(** Create a dispatcher.
+(** Per-pipe bounding for the three outbound families the dispatcher owns.
+    Each family carries its own {!Bounded_pipe.Limit} so a slow subscriber's
+    buffer can't grow without bound (see {!Bounded_pipe} for why a fan-out
+    can't just rely on [Pipe.write] backpressure). The concrete policy per
+    family is chosen in {!Config.default}. *)
+module Config : sig
+  type t =
+    { market_data : Bounded_pipe.Limit.t
+    ; audit : Bounded_pipe.Limit.t
+    ; session : Bounded_pipe.Limit.t
+    }
+  [@@deriving sexp_of]
 
-    Events whose audience is a single participant (order-lifecycle responses
-    and [Fill] events) are currently handed to a stub [push_to_session] that
-    prints them on stdout, prefixed with the target participant. Wiring this
-    up to real [Session] outbound pipes is a week-2 exercise. *)
-val create : unit -> t
+  (** The same limit for every family — convenient for tests and simple
+      servers. *)
+  val uniform : Bounded_pipe.Limit.t -> t
+
+  (** The server-wide default limits: where the "pick a policy per pipe
+      family" decision from exercises-part-3 §3a.1 lives. *)
+  val default : t
+end
+
+(** Create a dispatcher whose outbound pipes are bounded per [config]. *)
+val create : Config.t -> t
 
 (** Subscribe to public market data for one or more [symbols]. The same pipe
     receives events for every requested symbol; the dispatcher avoids

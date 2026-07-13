@@ -25,9 +25,23 @@ let default_directory ~num_symbols =
   |> Symbol_directory.of_names
 ;;
 
+(* E2E tests drain their feeds promptly and send only a handful of orders, so
+   any positive cap leaves behavior identical to the old unbounded pipes —
+   these tests exercise the full RPC path, not the bound itself. *)
+let e2e_dispatcher_config =
+  Dispatcher.Config.uniform
+    { max_length = 10_000; policy = Bounded_pipe.Policy.Drop_newest }
+;;
+
 let with_server ~num_symbols f =
   let directory = default_directory ~num_symbols in
-  let%bind server = Exchange_server.start ~directory ~port:0 () in
+  let%bind server =
+    Exchange_server.start
+      ~directory
+      ~dispatcher_config:e2e_dispatcher_config
+      ~port:0
+      ()
+  in
   let port = Exchange_server.port server in
   Monitor.protect
     (fun () -> f ~server ~port)

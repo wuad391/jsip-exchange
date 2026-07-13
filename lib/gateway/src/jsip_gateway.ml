@@ -1,3 +1,4 @@
+module Bounded_pipe = Bounded_pipe
 module Protocol = Protocol
 module Rpc_protocol = Rpc_protocol
 module Session = Session

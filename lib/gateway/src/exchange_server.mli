@@ -15,8 +15,17 @@ type t
     ids [0 .. num_symbols - 1] and the server serves [directory] over
     {!Rpc_protocol.symbol_directory_rpc}). Returns the server handle and the
     port it is actually listening on (useful when you pass port 0 to get an
-    OS-assigned port). *)
-val start : directory:Symbol_directory.t -> port:int -> unit -> t Deferred.t
+    OS-assigned port).
+
+    [dispatcher_config] sets the per-subscriber pipe bounds — how much a slow
+    market-data, audit, or session consumer may buffer before its policy
+    (drop or disconnect) takes effect. See {!Dispatcher.Config}. *)
+val start
+  :  directory:Symbol_directory.t
+  -> dispatcher_config:Dispatcher.Config.t
+  -> port:int
+  -> unit
+  -> t Deferred.t
 
 (** The port the server is listening on. *)
 val port : t -> int
