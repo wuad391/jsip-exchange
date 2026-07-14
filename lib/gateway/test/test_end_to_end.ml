@@ -12,6 +12,17 @@ open Jsip_gateway
 open Jsip_test_harness
 open E2e_helpers
 
+(* Tight, no-refill rate limits for the rate-limiter tests below. Refill is
+   zero so budgets never regenerate mid-test, making the expect output
+   independent of wall-clock timing. *)
+let limits ~submit_burst ~cancel_burst : Session.Limits.t =
+  { submit_burst
+  ; submit_refill_per_sec = 0.
+  ; cancel_burst
+  ; cancel_refill_per_sec = 0.
+  }
+;;
+
 (* ---------------------------------------------------------------- *)
 (* Log in tests *)
 (* ---------------------------------------------------------------- *)
@@ -448,4 +459,125 @@ let%expect_test "dispatcher: closing a subscriber's reader removes the \
           (Dispatcher.For_testing.audit_subscriber_count dispatcher : int)];
   [%expect {| ("after closing reader_b" (count 0)) |}];
   return ()
+;;
+
+(* ---------------------------------------------------------------- *)
+(* Rate-limit tests (exercises 3b.2 / 3b.3) *)
+(* ---------------------------------------------------------------- *)
+
+let%expect_test "rate limits are tracked per participant" =
+  with_server
+    ~limits:(limits ~submit_burst:1 ~cancel_burst:1)
+    ~num_symbols:1
+    (fun ~server:_ ~port ->
+       let%bind alice = connect_as ~port Harness.alice in
+       let%bind bob = connect_as ~port Harness.bob in
+       (* Alice spends her one submit token. *)
+       let%bind () =
+         rpc_submit
+           alice
+           (Harness.buy ~price_cents:10000 ~client_order_id:1 ())
+       in
+       [%expect {| [for Alice] ACCEPTED id=1 0 BUY 100@$100.00 DAY |}];
+       (* Her next submit is over budget and rejected. *)
+       let%bind () =
+         rpc_submit
+           alice
+           (Harness.buy ~price_cents:9900 ~client_order_id:2 ())
+       in
+       [%expect
+         {| [for Alice] REJECTED 0 BUY 100@$99.00 reason=rate limit exceeded |}];
+       (* Bob's budget is his own — Alice flooding doesn't lock him out. *)
+       let%bind () =
+         rpc_submit bob (Harness.buy ~price_cents:9800 ~client_order_id:1 ())
+       in
+       [%expect {| [for Bob] ACCEPTED id=2 0 BUY 100@$98.00 DAY |}];
+       return ())
+;;
+
+let%expect_test "the cancel limit is separate from the submit limit" =
+  with_server
+    ~limits:(limits ~submit_burst:1 ~cancel_burst:1)
+    ~num_symbols:1
+    (fun ~server:_ ~port ->
+       let%bind alice = connect_as ~port Harness.alice in
+       (* Alice rests one order, spending her only submit token. *)
+       let%bind () =
+         rpc_submit
+           alice
+           (Harness.buy ~price_cents:10000 ~client_order_id:1 ())
+       in
+       [%expect {| [for Alice] ACCEPTED id=1 0 BUY 100@$100.00 DAY |}];
+       (* A second submit is over the submit budget... *)
+       let%bind () =
+         rpc_submit
+           alice
+           (Harness.buy ~price_cents:9900 ~client_order_id:2 ())
+       in
+       [%expect
+         {| [for Alice] REJECTED 0 BUY 100@$99.00 reason=rate limit exceeded |}];
+       (* ...but the independent cancel budget still lets her cancel order 1. *)
+       let%bind () = rpc_cancel alice (Harness.cancel ~client_order_id:1) in
+       [%expect
+         {| [for Alice] CANCELLED id=1 0 remaining=100 reason=PARTICIPANT_REQUESTED |}];
+       return ())
+;;
+
+let%expect_test "cancels over the cancel limit are rejected" =
+  with_server
+    ~limits:(limits ~submit_burst:2 ~cancel_burst:1)
+    ~num_symbols:1
+    (fun ~server:_ ~port ->
+       let%bind alice = connect_as ~port Harness.alice in
+       (* Rest two orders; the submit budget of 2 admits both. *)
+       let%bind () =
+         rpc_submit
+           alice
+           (Harness.buy ~price_cents:10000 ~client_order_id:1 ())
+       in
+       [%expect {| [for Alice] ACCEPTED id=1 0 BUY 100@$100.00 DAY |}];
+       let%bind () =
+         rpc_submit
+           alice
+           (Harness.buy ~price_cents:9900 ~client_order_id:2 ())
+       in
+       [%expect {| [for Alice] ACCEPTED id=2 0 BUY 100@$99.00 DAY |}];
+       (* The first cancel spends the single cancel token. *)
+       let%bind () = rpc_cancel alice (Harness.cancel ~client_order_id:1) in
+       [%expect
+         {| [for Alice] CANCELLED id=1 0 remaining=100 reason=PARTICIPANT_REQUESTED |}];
+       (* The second cancel is over the cancel budget and rejected. *)
+       let%bind () = rpc_cancel alice (Harness.cancel ~client_order_id:2) in
+       [%expect
+         {| [for Alice] REJECTED CANCEL because rate limit exceeded |}];
+       return ())
+;;
+
+let%expect_test "a rate-limited submit never reaches the book" =
+  with_server
+    ~limits:(limits ~submit_burst:1 ~cancel_burst:1)
+    ~num_symbols:1
+    (fun ~server:_ ~port ->
+       let%bind alice = connect_as ~port Harness.alice in
+       let%bind () =
+         rpc_submit
+           alice
+           (Harness.buy ~price_cents:10000 ~client_order_id:1 ())
+       in
+       [%expect {| [for Alice] ACCEPTED id=1 0 BUY 100@$100.00 DAY |}];
+       let%bind () =
+         rpc_submit
+           alice
+           (Harness.buy ~price_cents:9900 ~client_order_id:2 ())
+       in
+       [%expect
+         {| [for Alice] REJECTED 0 BUY 100@$99.00 reason=rate limit exceeded |}];
+       (* The gateway stopped the second order before the engine, so only the
+          first rests on the book. *)
+       let%bind book = rpc_book alice Harness.aapl in
+       let book = Option.value_exn book in
+       [%test_result: int]
+         (List.length book.bids + List.length book.asks)
+         ~expect:1;
+       return ())
 ;;

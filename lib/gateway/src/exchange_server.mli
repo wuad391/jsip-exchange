@@ -15,8 +15,15 @@ type t
     ids [0 .. num_symbols - 1] and the server serves [directory] over
     {!Rpc_protocol.symbol_directory_rpc}). Returns the server handle and the
     port it is actually listening on (useful when you pass port 0 to get an
-    OS-assigned port). *)
-val start : directory:Symbol_directory.t -> port:int -> unit -> t Deferred.t
+    OS-assigned port). [limits] sets the per-participant submit/cancel rate
+    limits (default {!Session.Limits.default}); tests pass tight limits to
+    exercise the limiter deterministically. *)
+val start
+  :  ?limits:Session.Limits.t
+  -> directory:Symbol_directory.t
+  -> port:int
+  -> unit
+  -> t Deferred.t
 
 (** The port the server is listening on. *)
 val port : t -> int

@@ -7,7 +7,6 @@ open Jsip_symbol_directory
 module Connection_state = struct
   type t = { mutable session : Session.t option }
 
-  let participant t = Option.map t.session ~f:Session.participant
   let session t = t.session
   let update_session t session = t.session <- Some session
 end
@@ -51,6 +50,11 @@ type t =
    without the server's memory growing unboundedly. *)
 let message_queue_size_budget = 1024
 
+(* Reason string carried on the [Order_reject] / [Cancel_reject] event a
+   client receives when it exceeds its per-participant rate limit (see
+   {!Session.submit_limiter} / {!Session.cancel_limiter}). *)
+let rate_limit_exceeded_reason = "rate limit exceeded"
+
 let handle_submit ~message_writer ~metrics (message : Message.t) =
   let enqueued_at = Time_ns.now () in
   let participant =
@@ -89,10 +93,10 @@ let start_matching_loop ~engine ~dispatcher ~metrics message_reader =
          Metrics.record_events metrics events))
 ;;
 
-let start ~directory ~port () =
+let start ?(limits = Session.Limits.default) ~directory ~port () =
   let num_symbols = Symbol_directory.num_symbols directory in
   let engine = Matching_engine.create num_symbols in
-  let dispatcher = Dispatcher.create () in
+  let dispatcher = Dispatcher.create ~limits () in
   let message_reader, message_writer = Pipe.create () in
   Pipe.set_size_budget message_writer message_queue_size_budget;
   let metrics =
@@ -113,26 +117,44 @@ let start ~directory ~port () =
                match Connection_state.session state with
                | None ->
                  return (Or_error.error_string "User is not logged in.")
-               | Some _session ->
+               | Some session ->
                  (* The participant is established at login and attached
                     server-side, so the client's request never carries it —
                     this is what makes an order attributable to the
                     authenticated session rather than a client-supplied name. *)
-                 let participant =
-                   Option.value
-                     (Connection_state.participant state)
-                     ~default:(Participant.of_string "anon")
-                 in
-                 let%bind result =
-                   handle_submit
-                     ~message_writer
-                     ~metrics
-                     (Request { participant; request })
-                 in
-                 (match result with
-                  | Ok () -> return (Ok ())
-                  | Error _ ->
-                    return (Or_error.error_string "Request submission error")))
+                 let participant = Session.participant session in
+                 (* Rate-limit at the gateway, before the message reaches the
+                    matching engine: an over-budget submit is rejected here
+                    and never enters the bounded request queue. The reject is
+                    routed through [Dispatcher.dispatch] like every other
+                    reject, so it reaches both the client's session feed and
+                    the audit log. *)
+                 if not
+                      (Rate_limiter.try_consume
+                         (Session.submit_limiter session)
+                         ~now:(Time_ns.now ()))
+                 then (
+                   Dispatcher.dispatch
+                     dispatcher
+                     [ Exchange_event.Order_reject
+                         { participant
+                         ; request
+                         ; reason = rate_limit_exceeded_reason
+                         }
+                     ];
+                   return (Ok ()))
+                 else (
+                   let%bind result =
+                     handle_submit
+                       ~message_writer
+                       ~metrics
+                       (Request { participant; request })
+                   in
+                   match result with
+                   | Ok () -> return (Ok ())
+                   | Error _ ->
+                     return
+                       (Or_error.error_string "Request submission error")))
         ; Rpc.Rpc.implement' Rpc_protocol.book_query_rpc (fun state symbol ->
             ignore state;
             Matching_engine.book engine symbol
@@ -145,20 +167,40 @@ let start ~directory ~port () =
         ; Rpc.Rpc.implement
             Rpc_protocol.cancel_order_rpc
             (fun state client_order_id ->
-               match Connection_state.participant state with
+               (* Fetch the session (not just the participant) so we can
+                  reach its [cancel_limiter]. *)
+               match Connection_state.session state with
                | None ->
                  return (Or_error.error_string "User is not logged in.")
-               | Some participant ->
-                 let%bind result =
-                   handle_submit
-                     ~message_writer
-                     ~metrics
-                     (Cancel { participant; client_order_id })
-                 in
-                 (match result with
-                  | Ok () -> return (Ok ())
-                  | Error _ ->
-                    return (Or_error.error_string "Cancel submission error")))
+               | Some session ->
+                 let participant = Session.participant session in
+                 (* Independent cancel budget: a submit flood does not touch
+                    it, and vice versa. *)
+                 if not
+                      (Rate_limiter.try_consume
+                         (Session.cancel_limiter session)
+                         ~now:(Time_ns.now ()))
+                 then (
+                   Dispatcher.dispatch
+                     dispatcher
+                     [ Exchange_event.Cancel_reject
+                         { participant
+                         ; client_order_id
+                         ; reason = rate_limit_exceeded_reason
+                         }
+                     ];
+                   return (Ok ()))
+                 else (
+                   let%bind result =
+                     handle_submit
+                       ~message_writer
+                       ~metrics
+                       (Cancel { participant; client_order_id })
+                   in
+                   match result with
+                   | Ok () -> return (Ok ())
+                   | Error _ ->
+                     return (Or_error.error_string "Cancel submission error")))
         ; Rpc.Pipe_rpc.implement
             Rpc_protocol.market_data_rpc
             (fun state symbols ->

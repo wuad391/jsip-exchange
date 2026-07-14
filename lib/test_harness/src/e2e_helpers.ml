@@ -25,9 +25,9 @@ let default_directory ~num_symbols =
   |> Symbol_directory.of_names
 ;;
 
-let with_server ~num_symbols f =
+let with_server ?limits ~num_symbols f =
   let directory = default_directory ~num_symbols in
-  let%bind server = Exchange_server.start ~directory ~port:0 () in
+  let%bind server = Exchange_server.start ?limits ~directory ~port:0 () in
   let port = Exchange_server.port server in
   Monitor.protect
     (fun () -> f ~server ~port)

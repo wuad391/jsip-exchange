@@ -21,13 +21,10 @@ open Jsip_types
 
 type t
 
-(** Create a dispatcher.
-
-    Events whose audience is a single participant (order-lifecycle responses
-    and [Fill] events) are currently handed to a stub [push_to_session] that
-    prints them on stdout, prefixed with the target participant. Wiring this
-    up to real [Session] outbound pipes is a week-2 exercise. *)
-val create : unit -> t
+(** Create a dispatcher. [limits] configures the per-participant submit and
+    cancel rate limits for the sessions this dispatcher creates (default
+    {!Session.Limits.default}). *)
+val create : ?limits:Session.Limits.t -> unit -> t
 
 (** Subscribe to public market data for one or more [symbols]. The same pipe
     receives events for every requested symbol; the dispatcher avoids
